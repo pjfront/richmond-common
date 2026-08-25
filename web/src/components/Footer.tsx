@@ -15,7 +15,7 @@ export default function Footer() {
             <p className="text-xs mt-2 text-slate-400">
               Not affiliated with the City of Richmond.
             </p>
-            <p className="text-xs mt-1 text-slate-500">
+            <p className="text-xs mt-1 text-slate-400">
               v{packageJson.version}
             </p>
           </div>

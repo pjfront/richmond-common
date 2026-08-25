@@ -1,4 +1,5 @@
 import { cache } from 'react'
+import { unstable_cache } from 'next/cache'
 import {
   supabase,
   RICHMOND_FIPS,
@@ -8,6 +9,7 @@ import {
   filterGovernmentEntityFlags,
   COLS_MEETING_LIST,
   COLS_MEETING_BANNER,
+  COLS_UPCOMING_ELECTION,
   COLS_FLAG_SUMMARY,
   COLS_PUBLIC_RECORD_LIST,
   COLS_CONTRIBUTION_PUBLIC,
@@ -76,7 +78,6 @@ import type {
   AgendaItemDetail,
   AgendaItemRef,
   AgendaItemSibling,
-  RelatedTopicItem,
   NeighborhoodCouncil,
   Provenance,
   FilingPeriodBriefing,
@@ -88,8 +89,15 @@ import type {
 import { CONFIDENCE_PUBLISHED } from '../thresholds'
 import { commentSourceToProvenance } from '../provenance'
 import { addToMatrix, emptyMatrix } from '../contributionBuckets'
+import { UPCOMING_ELECTION_CACHE_SECONDS } from '../read-path-cache'
+import { failReadPath, ReadPathUnavailableError } from '../read-path-unavailable'
 
 // ── Election Cycle Tracking (B.24) ────────────────────────
+
+type UpcomingElection = Pick<
+  Election,
+  'id' | 'election_date' | 'election_type' | 'election_name'
+>
 
 export async function getElections(
   cityFips = RICHMOND_FIPS,
@@ -108,22 +116,44 @@ export async function getElections(
 }
 
 
+const getUpcomingElectionCached = unstable_cache(
+  async (cityFips: string, today: string): Promise<UpcomingElection | null> => {
+    const { data, error } = await supabase
+      .from('elections')
+      .select(COLS_UPCOMING_ELECTION)
+      .eq('city_fips', cityFips)
+      .gte('election_date', today)
+      .order('election_date', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+
+    if (error) failReadPath('Upcoming election', error)
+    return data ? data as UpcomingElection : null
+  },
+  ['upcoming-election-read-v1'],
+  { revalidate: UPCOMING_ELECTION_CACHE_SECONDS },
+)
+
 /** Get the next upcoming election (for banners, CTAs). */
 export async function getUpcomingElection(
   cityFips = RICHMOND_FIPS,
-): Promise<Election | null> {
+): Promise<UpcomingElection | null> {
   const today = new Date().toISOString().split('T')[0]
-  const { data, error } = await supabase
-    .from('elections')
-    .select('*')
-    .eq('city_fips', cityFips)
-    .gte('election_date', today)
-    .order('election_date', { ascending: true })
-    .limit(1)
-    .single()
+  try {
+    return await getUpcomingElectionCached(cityFips, today)
+  } catch (error) {
+    if (!(error instanceof ReadPathUnavailableError)) throw error
 
-  if (error || !data) return null
-  return data as Election
+    // The cached loader rejects so an outage is never cached as a truthful
+    // absence. The root layout remains available and a later render can retry.
+    const context = process.env.RICHMOND_BUILD_USES_PRODUCTION_DATA === 'false'
+      ? ' during explicitly inert CI build'
+      : ''
+    console.warn(
+      `[Richmond Commons] Upcoming election unavailable${context}; omitting the navigation link for this render. ACTION: If this warning persists, check Supabase election read health.`,
+    )
+    return null
+  }
 }
 
 

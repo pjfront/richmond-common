@@ -677,3 +677,91 @@ civic decisions and upcoming agendas discoverable without advertising the full
 historical item corpus to every crawler. Exact-count and response-length guards
 surface growth or API-cap changes instead of silently publishing a truncated
 index.
+
+## 2026-08-24: Recover image-only Form 497 Part 1 filings with offline OCR
+
+**Decision:** Before the optional full-filing Kimi vision route, image-only
+Form 497 filings may use a bounded local OCR pass only when the scan has four
+pages or fewer. The OCR output must positively contain the Form 497 title, the
+Part 1 contributions-received heading, at least two valid dates, and a
+comma-formatted monetary amount. Only OCR lines at 0.80 confidence or higher
+enter the transcript. The existing DeepSeek V4 Pro text extractor then produces
+structured rows, and every returned contributor name, date, and amount must be
+present in the OCR transcript. Zero rows or any ungrounded value fail closed.
+
+**Boundary:** RapidOCR and ONNX Runtime execute locally on the GitHub runner;
+source images are rendered into a temporary directory and deleted before the
+local-OCR function returns. Images do not leave the runner during that stage;
+only its validated transcript is sent to DeepSeek. The packages install only
+in NetFile jobs. This does not add an LLM provider, credential, paid vision
+call, fallback, production replay, or data correction. The two Luna exceptions
+remain exactly failed negated-motion vote explainers and image-only Form 460
+summary recovery. Separately, if `MOONSHOT_API_KEY` is already configured and
+local OCR or DeepSeek fails, the pre-existing optional Kimi fallback can render
+and send the filing's page images to Kimi. This change does not configure it.
+
+**Evidence:** Two official one-page Anderson for Mayor 2026 filings that left
+three consecutive bounded NetFile runs retryable were tested from their source
+PDFs: filings 217243030 and 217243444. Pinned RapidOCR 3.9.2 with ONNX Runtime
+1.29.0 recovered each contributor name, the 2026-05-16 contribution date, and
+the $2,500 amount; the deterministic grounding check passed for both. The
+source/evidence packet is
+`docs/audits/2026-08-24-form497-local-ocr-containment.md`.
+
+**Rationale:** Configuring Kimi or widening Luna would add a provider dependency
+and either an unbenchmarked route or a third Luna exception. Offline OCR plus
+the already-approved DeepSeek text path is cheaper, privacy-preserving, and
+more contained. Tight page, character, confidence, header, and row-grounding
+guards prevent this narrow recovery from becoming an unbounded OCR pipeline.
+
+## 2026-08-24: Hold merged S29 discovery changes behind a source-controlled phase gate
+
+**Decision:** Keep the S29 public treatment disabled in source through the 14
+complete UTC-day baseline. Merged PR #110 (the rolling 24-month agenda-item
+sitemap) and PR #119 (sourced metadata, JSON-LD, and expanded sitemap
+discovery) remain present and tested, but their public runtime behavior is
+selected only when `S29_PUBLIC_TREATMENT_ENABLED` changes in a reviewed
+treatment commit. While the flag is false, page metadata, structured-data
+rendering, and sitemap inventory match the production anchor at
+`0ff9fd50443d8d13e15a4d83845b2997cfc1054a`.
+
+**Enforcement:** `docs/s29-release-phase.json` records the phase, production
+anchor, and held merge SHAs. `tests/test_s29_release_phase.py` requires the
+source phase to match that record and requires every affected runtime surface
+to use the gate. Sitemap unit tests separately pin the four stable baseline
+paths and its existing meeting, agenda-item, and council-member inventory.
+
+**Boundary:** This is a release-sequencing control, not a rejection of the
+approved treatment. The treatment flip happens only after 14 complete UTC
+baseline days are frozen and the operator approves its exact release SHA. It
+does not deploy, create a Preview, publish a firewall rule, send email, apply a
+migration, change production data, or broaden S26/S28.
+
+**Rationale:** Automatic Git deployments are disabled, but an exact production
+release must still come from current canonical `main`. A source-controlled gate
+allows baseline-safe reliability and containment fixes to ship from `main`
+without silently exposing already-merged treatment SEO or sitemap behavior.
+
+## 2026-08-24: Make nine public summary views honor caller RLS
+
+**Decision:** Set `security_invoker = true` on exactly the nine public views
+reported as `security_definer_view` errors by the Supabase Security Advisor:
+`v_permit_activity`, `v_license_summary`, `v_code_enforcement_summary`,
+`v_behested_by_official`, `v_lobbyist_clients`, `v_body_meeting_counts`,
+`v_body_roster`, `v_entity_connections`, and `v_topic_stats`. Their underlying
+tables already have row-level security and intended public read policies, so
+the API caller's permissions and row policies should govern each view.
+
+**Boundary:** Migration 146 changes only those view reloptions. It does not
+redefine a view, change a grant or policy, modify a function, or rewrite data.
+Security Advisor warnings about intentional public read RPCs, mutable invoker
+search paths, and duplicate indexes remain outside this focused change.
+
+**Rollback:** Run `ALTER VIEW public.<view_name> RESET (security_invoker);` for
+each of the nine names above. This restores PostgreSQL's default owner-context
+view behavior without changing rows or the stored view definitions.
+
+**Rationale:** Owner-context views can bypass the RLS visibility boundaries
+that the project relies on, including later source-cancellation and
+agenda-retirement policies. Invoker semantics remove that bypass while
+preserving the existing public access intended by the underlying policies.

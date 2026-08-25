@@ -7,7 +7,12 @@ import {
   welcomeContentKey,
   type DeliveryResult,
 } from '@/lib/email-delivery'
+import {
+  COUNCIL_ORIENTATION_SOURCE_COLUMNS,
+  RICHMOND_COUNCIL_BODY_TYPE,
+} from '@/lib/orientation-scope'
 import { clientKey, enforceRateLimit } from '@/lib/rate-limit'
+import { richmondDateKey } from '@/lib/richmond-date'
 import { emailHash, logEvent, requestContext } from '@/lib/logger'
 import type { SubscribeResponse, EmailSubscriber, Provenance } from '@/lib/types'
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -47,12 +52,13 @@ async function sendNextOrientationToSubscriber(
   activationId: string,
 ): Promise<DeliveryResult | null> {
   try {
-    const today = new Date().toISOString().split('T')[0]
+    const today = richmondDateKey()
     const { data: meeting } = await supabase
       .from('meetings')
-      .select('id, meeting_date, orientation_preview, orientation_preview_provenance, agenda_url')
+      .select(COUNCIL_ORIENTATION_SOURCE_COLUMNS)
       .eq('city_fips', RICHMOND_FIPS)
       .eq('meeting_type', 'regular')
+      .eq('bodies.body_type', RICHMOND_COUNCIL_BODY_TYPE)
       .gte('meeting_date', today)
       .is('source_cancelled_at', null)
       .not('orientation_preview', 'is', null)

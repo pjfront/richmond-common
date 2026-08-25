@@ -1,6 +1,15 @@
 # PAC Pages V2: Three-Layer Redesign
 
-**Status:** Index V2 shipped (commit 90967d2). Profile-page V2 next, informed by [docs/design/INTERACTIVE-DATA-VIZ.md](INTERACTIVE-DATA-VIZ.md) (research synthesis landed 2026-04-29).
+> **Detail-profile plan archived 2026-08-23.** The S29 UX cut retired the
+> public detail-profile matrix, timeline, and cycle-selector pattern. Political
+> committees, unions, and companies now share a sentence-first detail profile
+> followed by the underlying money-in, money-out, and
+> independent-expenditure receipts. The shipped PAC index V2 remains unchanged.
+> Keep the detail-profile proposal below only as design history; do not resume
+> it without a new operator decision.
+
+**Status:** Index V2 shipped. Detail-profile V2 superseded by the S29 shared
+sentence-first entity profile.
 **Date:** 2026-04-29
 **Drives:** I134 V2 graduation, I137 (Explore-then-detail formalization), companion to I129 (Contributions menu rename).
 

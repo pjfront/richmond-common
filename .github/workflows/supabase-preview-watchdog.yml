@@ -1,0 +1,168 @@
+name: Supabase Preview Watchdog
+run-name: Supabase Preview Watchdog | source_run=${{ github.event.workflow_run.id }}
+
+on:
+  workflow_run:
+    workflows: ["Supabase Preview"]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+# Deliberately no lifecycle concurrency group and no status permission: this
+# independent timer cannot block Preview verification, cleanup, or merge gates.
+jobs:
+  watchdog:
+    if: >-
+      startsWith(github.event.workflow_run.display_title,
+                 'Supabase Preview | action=bootstrap | pr=')
+    runs-on: ubuntu-latest
+    timeout-minutes: 125
+    env:
+      SUPABASE_PARENT_PROJECT_REF: ahrwvmizzykyyfavdvfv
+
+    steps:
+      # This inline program is loaded from the default-branch workflow. It must
+      # validate the completed run and PR before any external credential enters
+      # a later step.
+      - name: Validate exact completed bootstrap run and PR identity
+        id: identity
+        uses: actions/github-script@v8
+        env:
+          EVENT_RUN_ID: ${{ github.event.workflow_run.id }}
+          EVENT_RUN_TITLE: ${{ github.event.workflow_run.display_title }}
+        with:
+          script: |
+            const runId = Number(process.env.EVENT_RUN_ID)
+            const title = process.env.EVENT_RUN_TITLE
+            if (!Number.isSafeInteger(runId) || runId <= 0) {
+              core.setFailed('workflow_run lacks a valid immutable run ID')
+              return
+            }
+            const match = /^Supabase Preview \| action=bootstrap \| pr=([1-9][0-9]*)$/.exec(title)
+            if (!match) {
+              core.setFailed('workflow_run title does not prove one bootstrap PR identity')
+              return
+            }
+            const prNumber = Number(match[1])
+            const { data: run } = await github.rest.actions.getWorkflowRun({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: runId,
+            })
+            const expectedRepo = `${context.repo.owner}/${context.repo.repo}`
+            const trustedPath = /^\.github\/workflows\/supabase-preview\.yml(?:@refs\/heads\/main)?$/
+            // GitHub REST exposes a dynamic `run-name` in both `name` and
+            // `display_title`; it does not preserve the static workflow name
+            // in `run.name`. Bind both fields to the already exact title.
+            if (run.id !== runId || run.name !== title ||
+                run.display_title !== title || run.status !== 'completed' ||
+                run.event !== 'repository_dispatch' ||
+                run.repository?.full_name !== expectedRepo ||
+                run.head_repository?.full_name !== expectedRepo ||
+                run.head_branch !== 'main' || !trustedPath.test(run.path || '') ||
+                !/^[a-f0-9]{40}$/.test(run.head_sha || '')) {
+              core.setFailed('completed run API state does not prove a trusted-main Supabase Preview bootstrap')
+              return
+            }
+            const startedAt = Date.parse(run.run_started_at || '')
+            const completedAt = Date.parse(run.updated_at || '')
+            if (!Number.isFinite(startedAt) || !Number.isFinite(completedAt) ||
+                completedAt < startedAt) {
+              core.setFailed('completed run API timestamps are not a bounded bootstrap window')
+              return
+            }
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber,
+            })
+            if (pr.base.ref !== 'main' ||
+                pr.head.repo?.full_name !== expectedRepo ||
+                !/^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/.test(pr.head.ref) ||
+                pr.head.ref.includes('..') || pr.head.ref.includes('@{') ||
+                pr.head.ref.includes('//') || pr.head.ref.endsWith('/') ||
+                pr.head.ref.endsWith('.')) {
+              core.setFailed(`PR #${prNumber} no longer proves a safe same-repository main-target identity`)
+              return
+            }
+            core.setOutput('pr_number', String(prNumber))
+            core.setOutput('git_branch', pr.head.ref)
+            core.setOutput('started_at', run.run_started_at)
+            core.setOutput('completed_at', run.updated_at)
+
+      - name: Check out trusted watchdog controller
+        uses: actions/checkout@v5
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Snapshot the sole exact immutable branch
+        id: snapshot
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          PREVIEW_PR_NUMBER: ${{ steps.identity.outputs.pr_number }}
+          PREVIEW_GIT_BRANCH: ${{ steps.identity.outputs.git_branch }}
+          BOOTSTRAP_STARTED_AT: ${{ steps.identity.outputs.started_at }}
+          BOOTSTRAP_COMPLETED_AT: ${{ steps.identity.outputs.completed_at }}
+        run: >-
+          python src/supabase_preview.py watchdog-snapshot
+          --parent-ref "$SUPABASE_PARENT_PROJECT_REF"
+          --pr-number "$PREVIEW_PR_NUMBER"
+          --git-branch "$PREVIEW_GIT_BRANCH"
+          --bootstrap-started-at "$BOOTSTRAP_STARTED_AT"
+          --bootstrap-completed-at "$BOOTSTRAP_COMPLETED_AT"
+
+      - name: Wait only until immutable creation time plus 110 minutes
+        if: steps.snapshot.outputs.present == 'true'
+        timeout-minutes: 112
+        shell: bash
+        env:
+          SNAPSHOT_CREATED_AT: ${{ steps.snapshot.outputs.created_at }}
+        run: |
+          created_epoch="$(date -u -d "$SNAPSHOT_CREATED_AT" +%s)" || exit 1
+          now_epoch="$(date -u +%s)"
+          # GNU date truncates fractional seconds. The one-second cushion makes
+          # the integer deadline no earlier than the exact Python deadline.
+          deadline_epoch="$((created_epoch + 6601))"
+          delay="$((deadline_epoch - now_epoch))"
+          if [ "$delay" -gt 6601 ]; then
+            echo "::error::ACTION: Do not create or retry a Preview. Give this run URL to a coding assistant; the watchdog deadline exceeded its fixed 110-minute window."
+            exit 1
+          fi
+          if [ "$delay" -gt 0 ]; then
+            sleep "$delay"
+          fi
+
+      - name: Hard-delete only the snapshotted immutable Preview
+        if: steps.snapshot.outputs.present == 'true'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+          PREVIEW_PR_NUMBER: ${{ steps.identity.outputs.pr_number }}
+          PREVIEW_GIT_BRANCH: ${{ steps.identity.outputs.git_branch }}
+          SNAPSHOT_BRANCH_ID: ${{ steps.snapshot.outputs.branch_id }}
+          SNAPSHOT_PROJECT_REF: ${{ steps.snapshot.outputs.project_ref }}
+          SNAPSHOT_CREATED_AT: ${{ steps.snapshot.outputs.created_at }}
+        run: >-
+          python src/supabase_preview.py watchdog-cleanup
+          --parent-ref "$SUPABASE_PARENT_PROJECT_REF"
+          --pr-number "$PREVIEW_PR_NUMBER"
+          --git-branch "$PREVIEW_GIT_BRANCH"
+          --snapshot-branch-id "$SNAPSHOT_BRANCH_ID"
+          --snapshot-project-ref "$SNAPSHOT_PROJECT_REF"
+          --snapshot-created-at "$SNAPSHOT_CREATED_AT"
+
+      - name: Give the operator a clear watchdog failure action
+        if: failure()
+        run: >-
+          echo "::error::ACTION: Do not create or retry a Supabase Preview. Give this run URL to a coding assistant with: In Richmond Commons, verify the 90-minute Preview expiry sweep is healthy, inventory only exact immutable Preview state, and contain this watchdog failure without deleting any replacement."

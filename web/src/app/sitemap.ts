@@ -1,6 +1,8 @@
 import type { MetadataRoute } from 'next'
 import { electionToSlug } from '@/lib/queries/elections'
 import { nameToSlug } from '@/lib/queries/_shared'
+import { getOfficials } from '@/lib/queries/council'
+import { getAgendaItemSlugs, getMeetings } from '@/lib/queries/meetings'
 import {
   getRecentAgendaItemSlugs,
   getSitemapCommissions,
@@ -10,6 +12,7 @@ import {
   getSitemapOfficials,
   getSitemapOrganizationSlugs,
 } from '@/lib/queries/sitemap'
+import { S29_PUBLIC_TREATMENT_ENABLED } from '@/lib/s29-release-phase'
 import { SITE_URL } from '@/lib/structured-data'
 
 // Sitemap regeneration is deliberately daily. Dynamic URL enumeration is a
@@ -18,6 +21,14 @@ import { SITE_URL } from '@/lib/structured-data'
 export const revalidate = 86400
 
 const MAX_SITEMAP_URLS = 50_000
+
+/** Existing production discovery retained for the measured S29 baseline. */
+export const BASELINE_STATIC_PATHS = [
+  '/',
+  '/meetings',
+  '/council',
+  '/about',
+] as const
 
 /**
  * Canonical, indexable, non-redirecting public routes.
@@ -45,7 +56,6 @@ export const PUBLIC_STATIC_PATHS = [
   '/unions',
   '/corporations',
   '/donors',
-  '/influence/methodology',
   '/subscribe',
   '/about',
 ] as const
@@ -70,7 +80,43 @@ export function agendaItemSitemapCutoffUtc(asOf: Date): string {
   ].join('-')
 }
 
-export async function buildSitemap(asOf: Date): Promise<MetadataRoute.Sitemap> {
+export async function buildBaselineSitemap(): Promise<MetadataRoute.Sitemap> {
+  const staticPages: MetadataRoute.Sitemap = [
+    { url: SITE_URL, changeFrequency: 'weekly', priority: 1 },
+    { url: `${SITE_URL}/meetings`, changeFrequency: 'weekly', priority: 0.9 },
+    { url: `${SITE_URL}/council`, changeFrequency: 'monthly', priority: 0.8 },
+    { url: `${SITE_URL}/about`, changeFrequency: 'monthly', priority: 0.5 },
+  ]
+
+  // These calls intentionally preserve the sitemap inventory deployed at the
+  // production anchor. The approved bounded replacement stays source-held
+  // until the baseline window closes.
+  const meetings = await getMeetings()
+  const itemSlugs = await getAgendaItemSlugs()
+  const officials = await getOfficials(undefined, { councilOnly: true })
+
+  const meetingPages: MetadataRoute.Sitemap = meetings.map((meeting) => ({
+    url: `${SITE_URL}/meetings/${meeting.id}`,
+    lastModified: meeting.meeting_date,
+    changeFrequency: 'monthly' as const,
+    priority: 0.7,
+  }))
+  const itemPages: MetadataRoute.Sitemap = itemSlugs.map((item) => ({
+    url: `${SITE_URL}/meetings/${item.meeting_id}/items/${encodeURIComponent(item.item_number.toLowerCase())}`,
+    lastModified: item.meeting_date,
+    changeFrequency: 'monthly' as const,
+    priority: 0.6,
+  }))
+  const councilPages: MetadataRoute.Sitemap = officials.map((official) => ({
+    url: `${SITE_URL}/council/${nameToSlug(official.name)}`,
+    changeFrequency: 'monthly' as const,
+    priority: 0.6,
+  }))
+
+  return [...staticPages, ...meetingPages, ...itemPages, ...councilPages]
+}
+
+export async function buildTreatmentSitemap(asOf: Date): Promise<MetadataRoute.Sitemap> {
   const staticPages: MetadataRoute.Sitemap = PUBLIC_STATIC_PATHS.map((path) => ({
     url: path === '/' ? SITE_URL : `${SITE_URL}${path}`,
     changeFrequency: path === '/' || path === '/meetings' ? 'weekly' : 'monthly',
@@ -174,6 +220,12 @@ export async function buildSitemap(asOf: Date): Promise<MetadataRoute.Sitemap> {
     throw new Error('Sitemap exceeds 50,000 URLs; split it with generateSitemaps().')
   }
   return uniqueEntries
+}
+
+export async function buildSitemap(asOf: Date): Promise<MetadataRoute.Sitemap> {
+  return S29_PUBLIC_TREATMENT_ENABLED
+    ? buildTreatmentSitemap(asOf)
+    : buildBaselineSitemap()
 }
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {

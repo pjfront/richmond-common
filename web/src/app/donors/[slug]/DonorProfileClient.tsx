@@ -3,7 +3,7 @@
 /**
  * DonorProfileClient — owns cycle-scope state for the donor profile page.
  *
- * Follows OrgProfileClient pattern (S28.3) simplified for individuals:
+ * Legacy cycle-scoped donor detail retained for individual profiles:
  * cycle-scope chips + cycle bars timeline + giving table.
  * No independent expenditures (individuals don't file IEs).
  */

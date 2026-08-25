@@ -19,11 +19,24 @@ jobs:
     # This first release is deliberately canary-only. A separate post-canary
     # change adds the Monday schedule; this typed dispatch cannot broadcast.
     if: >-
+      github.event_name == 'repository_dispatch' &&
       github.event.action == 'subscriber-digest-canary' &&
+      github.actor == github.repository_owner &&
       github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
+      - name: Validate the empty canary request before secrets
+        env:
+          CLIENT_PAYLOAD: ${{ toJSON(github.event.client_payload) }}
+        run: |
+          set -euo pipefail
+          if ! jq -e 'type == "object" and length == 0' \
+              <<<"$CLIENT_PAYLOAD" > /dev/null; then
+            echo "::error::ACTION: Do not trigger the canary again. Give this run URL to a coding assistant and ask it to remove every unexpected subscriber-digest-canary payload field before sending a new owner-only typed event."
+            exit 1
+          fi
+
       - name: Verify the deployed digest capability
         id: capability
         env:

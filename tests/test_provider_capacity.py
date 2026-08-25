@@ -279,9 +279,14 @@ def test_playbook_explains_manual_gap_and_gives_novice_action():
     assert "remove emails, tokens" in section
     assert "`ACTION: Open PowerShell" in section
     assert (
-        "gh api --method POST repos/pjfront/richmond-common/dispatches "
-        "--raw-field event_type=alerting-run --raw-field "
-        '"client_payload[mode]=monthly" --silent'
+        "'{\"event_type\":\"alerting-run\","
+        "\"client_payload\":{\"mode\":\"monthly\"}}' | gh api "
+        "--method POST repos/pjfront/richmond-common/dispatches "
+        "--input - --silent"
     ) in section
+    assert "--raw-field" not in section
+    assert "gh auth status" in section
+    assert "active account is pjfront" in section
+    assert "skipped job or no new run is a failure" in section
     assert "--hostname" not in section
     assert "--ref" not in section

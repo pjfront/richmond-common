@@ -28,7 +28,10 @@ NEXTREQUEST_OPEN_RECONCILE_LIMIT = 25
 NEXTREQUEST_RECENT_DOCUMENT_LIMIT = 50
 NEXTREQUEST_AUTHORITATIVE_INTERVAL_HOURS = 24
 NEXTREQUEST_DETECTOR_LOOKBACK_DAYS = 14
+NEXTREQUEST_DETECTOR_DETAIL_LIMIT = 5
+NEXTREQUEST_DETECTOR_DOCUMENT_LIMIT = 5
 NEXTREQUEST_RETRY_SCOPE_LIMIT = 100
+NEXTREQUEST_RETRY_ATTEMPT_LIMIT = 5
 
 
 def _select_open_reconciliation_ids(
@@ -148,6 +151,54 @@ def _bounded_retry_request_ids(request_ids: list[str] | None) -> list[str]:
     return bounded
 
 
+def _append_deferred_failures(
+    results: dict,
+    request_ids: list[str],
+    *,
+    stage: str,
+    reason: str,
+) -> None:
+    """Keep unattempted request IDs in the durable retry artifact."""
+    if not request_ids:
+        return
+    stats = results.setdefault("stats", {})
+    failures = list(stats.get("failures") or [])
+    failures.extend(
+        {
+            "request_id": request_id,
+            "stage": stage,
+            "error": reason,
+        }
+        for request_id in request_ids
+    )
+    stats["failures"] = failures
+    stats["failure_count"] = len(failures)
+    stats["failed_request_ids"] = sorted({
+        str(failure.get("request_id"))
+        for failure in failures
+        if failure.get("request_id")
+    })
+    failure_counts: dict[str, int] = {}
+    for failure in failures:
+        failure_stage = str(failure.get("stage") or "unknown")
+        failure_counts[failure_stage] = failure_counts.get(failure_stage, 0) + 1
+    stats["failure_counts"] = failure_counts
+
+
+def _is_rate_limit_error(exc: BaseException) -> bool:
+    """Return whether a portal exception is an HTTP 429."""
+    return getattr(getattr(exc, "response", None), "status_code", None) == 429
+
+
+def _has_rate_limit_failure(results: dict) -> bool:
+    """Return whether an earlier scrape phase already hit the portal limit."""
+    return any(
+        failure.get("stage") == "rate_limit"
+        for failure in (results.get("stats", {}).get("failures") or [])
+        if isinstance(failure, dict)
+    )
+
+
 def sync_nextrequest(
     conn,
     city_fips: str,
@@ -176,11 +227,17 @@ def sync_nextrequest(
     )
     print("  Fetching from NextRequest client API...")
     if retry_scope is not None:
+        retry_attempt_scope = retry_scope[:NEXTREQUEST_RETRY_ATTEMPT_LIMIT]
+        deferred_retry_scope = retry_scope[NEXTREQUEST_RETRY_ATTEMPT_LIMIT:]
         print(
             "::notice title=NextRequest bounded retry::"
-            f"Retrying {len(retry_scope)} persisted request(s); "
-            "broad listing and reconciliation are disabled"
+            f"Retrying {len(retry_attempt_scope)} of {len(retry_scope)} "
+            "persisted request(s); broad listing and reconciliation are "
+            "disabled"
         )
+    else:
+        retry_attempt_scope = None
+        deferred_retry_scope = []
 
     since_date = None
     authoritative_listing_due = sync_type == "full" and not detector_event
@@ -248,11 +305,20 @@ def sync_nextrequest(
     # detail for recent rows to apply mutable field/status amendments.
     skip_details = authoritative_listing_due
 
-    if retry_scope is not None:
+    if retry_attempt_scope is not None:
         results = scrape_request_ids(
-            retry_scope,
+            retry_attempt_scope,
             city_fips=city_fips,
             include_documents=True,
+        )
+        _append_deferred_failures(
+            results,
+            deferred_retry_scope,
+            stage="retry_slice_deferred",
+            reason=(
+                "Deferred without portal access by the five-request "
+                "detector retry limit"
+            ),
         )
         # A targeted retry can update only named rows. It must never provide
         # evidence for global request/document tombstones.
@@ -266,6 +332,11 @@ def sync_nextrequest(
             city_fips=city_fips,
             skip_details=skip_details,
             include_documents=not skip_details,
+            detail_limit=(
+                NEXTREQUEST_DETECTOR_DETAIL_LIMIT
+                if detector_event
+                else None
+            ),
         )
 
     # Submitted-date pagination cannot see an old request that just closed or
@@ -282,7 +353,11 @@ def sync_nextrequest(
             })
         }
         index_failures = []
-        if results.get("request_listing_complete") is True:
+        portal_rate_limited = _has_rate_limit_failure(results)
+        if (
+            not portal_rate_limited
+            and results.get("request_listing_complete") is True
+        ):
             try:
                 from nextrequest_scraper import list_all_public_document_ids
 
@@ -294,6 +369,7 @@ def sync_nextrequest(
                     all_public_document_ids
                 )
             except Exception as exc:
+                portal_rate_limited = _is_rate_limit_error(exc)
                 results["public_document_listing_complete"] = False
                 index_failures.append({
                     "request_id": "public-documents-full-index",
@@ -301,30 +377,44 @@ def sync_nextrequest(
                     "error": f"{type(exc).__name__}: {exc}"[:500],
                 })
         try:
-            recent_document_ids = list_recent_document_request_ids(
-                city_fips=city_fips,
-                limit=NEXTREQUEST_RECENT_DOCUMENT_LIMIT,
+            recent_document_ids = (
+                []
+                if portal_rate_limited
+                else list_recent_document_request_ids(
+                    city_fips=city_fips,
+                    limit=(
+                        NEXTREQUEST_DETECTOR_DOCUMENT_LIMIT
+                        if detector_event
+                        else NEXTREQUEST_RECENT_DOCUMENT_LIMIT
+                    ),
+                )
             )
         except Exception as exc:
             recent_document_ids = []
+            portal_rate_limited = _is_rate_limit_error(exc)
             index_failures.append({
                 "request_id": "public-documents-index",
                 "stage": "documents_index",
                 "error": f"{type(exc).__name__}: {exc}"[:500],
             })
 
-        targeted_ids = list(dict.fromkeys(
-            request_id
-            for request_id in recent_document_ids
-            if request_id not in base_reconciled_ids
-        ))
-        targeted_ids.extend(
-            _select_open_reconciliation_ids(
-                conn,
-                city_fips,
-                exclude=base_reconciled_ids | set(targeted_ids),
-            )
+        targeted_ids = (
+            []
+            if portal_rate_limited
+            else list(dict.fromkeys(
+                request_id
+                for request_id in recent_document_ids
+                if request_id not in base_reconciled_ids
+            ))
         )
+        if not detector_event and not portal_rate_limited:
+            targeted_ids.extend(
+                _select_open_reconciliation_ids(
+                    conn,
+                    city_fips,
+                    exclude=base_reconciled_ids | set(targeted_ids),
+                )
+            )
         if targeted_ids:
             reconciliation = scrape_request_ids(
                 targeted_ids,
@@ -380,6 +470,8 @@ def sync_nextrequest(
         "failed_request_ids": failed_request_ids,
         "retry_scope_applied": retry_scope is not None,
         "retry_scope_size": len(retry_scope or []),
+        "retry_attempt_size": len(retry_attempt_scope or []),
+        "retry_deferred_size": len(deferred_retry_scope),
         "retryable_incomplete": failure_count > 0,
         "incomplete_count": failure_count,
         "incomplete_reasons": (

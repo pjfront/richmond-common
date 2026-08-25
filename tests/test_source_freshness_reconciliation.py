@@ -145,6 +145,43 @@ def test_nextrequest_watcher_detects_same_count_status_and_document_changes(
     )
 
 
+def test_nextrequest_watcher_hashes_are_stable_across_tied_row_order(
+    monkeypatch,
+):
+    request_rows = [
+        {
+            "id": "26-101",
+            "request_state": "Open",
+            "request_date": "08/20/2026",
+        },
+        {
+            "id": "26-102",
+            "request_state": "Open",
+            "request_date": "08/20/2026",
+        },
+    ]
+    document_rows = [
+        {"id": 9001, "pretty_id": "26-101", "created_at": "08/20/2026"},
+        {"id": 9002, "pretty_id": "26-102", "created_at": "08/20/2026"},
+    ]
+    reverse = {"value": False}
+
+    def _get(url, **_kwargs):
+        rows = document_rows if "/client/documents?" in url else request_rows
+        ordered = list(reversed(rows)) if reverse["value"] else rows
+        return json.dumps({
+            "total_count": len(rows),
+            "documents" if "/client/documents?" in url else "requests": ordered,
+        }).encode()
+
+    monkeypatch.setattr(change_detector, "_get", _get)
+    first = change_detector.check_nextrequest()
+    reverse["value"] = True
+    second = change_detector.check_nextrequest()
+
+    assert first == second
+
+
 def test_changed_existing_escribe_revision_is_reconciled_without_deletion():
     from pipelines.escribemeetings import sync_escribemeetings
 

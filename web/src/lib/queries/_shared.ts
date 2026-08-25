@@ -84,8 +84,8 @@ export const COLS_MEETING_LIST = 'id, city_fips, document_id, body_id, meeting_d
 /** Meeting columns for banner/CTA — minimal */
 export const COLS_MEETING_BANNER = 'id, meeting_date, meeting_type, body_id, agenda_url'
 
-/** Related-topic agenda cards plus the meeting fields used for recency and outcome labels. */
-export const COLS_RELATED_TOPIC_ITEM = 'id, meeting_id, item_number, title, summary_headline, topic_label, category, financial_amount, public_comment_count, meetings!inner(meeting_date, city_fips, minutes_url)'
+/** Election columns shared by the navigation and upcoming-election CTAs. */
+export const COLS_UPCOMING_ELECTION = 'id, election_date, election_type, election_name'
 
 /** Complete official profile row. Named even though it is intentionally the
  *  full public row so a future schema addition cannot silently expand every

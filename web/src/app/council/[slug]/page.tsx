@@ -19,6 +19,7 @@ import OperatorGate from '@/components/OperatorGate'
 import OperatorCouncilSections from '@/components/OperatorCouncilSections'
 import SuggestCorrectionLink from '@/components/SuggestCorrectionLink'
 import ComparativeContext from '@/components/ComparativeContext'
+import { S29_PUBLIC_TREATMENT_ENABLED } from '@/lib/s29-release-phase'
 import {
   canonicalUrl,
   councilProfileStructuredData,
@@ -50,12 +51,14 @@ export async function generateMetadata(
   return {
     title,
     description,
-    alternates: { canonical: url },
+    ...(S29_PUBLIC_TREATMENT_ENABLED
+      ? { alternates: { canonical: url } }
+      : {}),
     openGraph: {
       title: `${title} | Richmond Commons`,
       description,
       type: 'profile',
-      url,
+      ...(S29_PUBLIC_TREATMENT_ENABLED ? { url } : {}),
     },
   }
 }
@@ -85,19 +88,21 @@ export default async function CouncilMemberPage({
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <script
-        id="council-profile-structured-data"
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{
-          __html: serializeJsonLd(councilProfileStructuredData({
-            name: official.name,
-            role: official.role,
-            seat: official.seat,
-            slug,
-            isCurrent: official.is_current,
-          })),
-        }}
-      />
+      {S29_PUBLIC_TREATMENT_ENABLED && (
+        <script
+          id="council-profile-structured-data"
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: serializeJsonLd(councilProfileStructuredData({
+              name: official.name,
+              role: official.role,
+              seat: official.seat,
+              slug,
+              isCurrent: official.is_current,
+            })),
+          }}
+        />
+      )}
       {/* ── Layer 1: Identity & Role Context (T6) ────────────────── */}
       <div className="mb-6">
         <Link href="/council" className="text-sm text-civic-navy-light hover:text-civic-navy">

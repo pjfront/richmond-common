@@ -14,6 +14,8 @@ import {
   type SelectedPersistedRecap,
 } from './email-content-source'
 import { RICHMOND_LOCAL_ISSUES } from './local-issues'
+import { isRichmondCouncilOrientationMeeting } from './orientation-scope'
+import { richmondDateKey } from './richmond-date'
 import type { Provenance } from './types'
 
 export const MAX_BROADCAST_RECIPIENTS = 500
@@ -360,6 +362,7 @@ interface RetryMeeting extends PersistedRecapSource {
   orientation_preview: string | null
   orientation_preview_provenance: Provenance | null
   agenda_url: string | null
+  bodies: { body_type: string } | null
 }
 
 interface DeliveryRetryTask {
@@ -393,7 +396,7 @@ const DIGEST_CONTENT_KEY = new RegExp(
   `^week:(\\d{4}-\\d{2}-\\d{2})(?::activation:${UUID_PART})?$`,
   'i',
 )
-const RETRY_MEETING_COLUMNS = `${RECAP_SOURCE_COLUMNS}, orientation_preview, orientation_preview_provenance, agenda_url`
+const RETRY_MEETING_COLUMNS = `${RECAP_SOURCE_COLUMNS}, orientation_preview, orientation_preview_provenance, agenda_url, bodies(body_type)`
 const MAX_DIGEST_SOURCE_ROWS = 250
 export const MAX_DIGEST_MEETINGS_PER_WEEK = 50
 export const MAX_DIGEST_PREFERENCE_ROWS = 1_000
@@ -738,7 +741,7 @@ export async function retryPendingEmailDeliveries(
   const topicLabelsById = new Map(
     RICHMOND_LOCAL_ISSUES.map((issue) => [issue.id, issue.label]),
   )
-  const today = now.slice(0, 10)
+  const today = richmondDateKey(new Date(now))
   const retryRows: DeliveryRetryTask[] = []
   for (const { row, parsed, subscriber } of candidates) {
     if (parsed.kind === 'welcome') {
@@ -760,12 +763,14 @@ export async function retryPendingEmailDeliveries(
       const meeting = directMeetingsById.get(parsed.meetingId)
       const preview = meeting?.orientation_preview
       if (!meeting || meeting.city_fips !== RICHMOND_FIPS || meeting.source_cancelled_at
+        || !isRichmondCouncilOrientationMeeting(meeting)
         || typeof preview !== 'string' || preview.trim() === ''
         || meeting.meeting_date < today) {
         staleRows.push({
           id: row.id,
           failureKind: 'source_unavailable',
-          reason: 'Orientation source is missing, cancelled, past, or unavailable',
+          reason: ('Orientation source is missing, cancelled, past, unavailable, '
+            + 'or outside regular City Council meetings'),
           manualReview: false,
         })
         continue

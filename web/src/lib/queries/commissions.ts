@@ -70,7 +70,6 @@ import type {
   AgendaItemDetail,
   AgendaItemRef,
   AgendaItemSibling,
-  RelatedTopicItem,
   NeighborhoodCouncil,
   Provenance,
   FilingPeriodBriefing,

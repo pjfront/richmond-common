@@ -2,41 +2,52 @@ name: Data Quality Checks
 
 run-name: >-
   Data Quality Checks — ${{ github.event.schedule ||
-  github.event.inputs.create_decisions || github.event_name }}
+  github.event.action || github.event_name }}
 
 on:
   # Crons restored 2026-07 (P0.4) with budget rails threaded (P0.0).
   schedule:
     - cron: '0 7 * * *'    # daily quality checks
     - cron: '0 12 * * 5'   # Friday deep pass
-  workflow_dispatch:
-    inputs:
-      city_fips:
-        description: 'City FIPS code (default: Richmond CA)'
-        required: false
-        default: '0660620'
-        type: string
-      create_decisions:
-        description: 'Create decision queue entries for issues found'
-        required: false
-        default: false
-        type: boolean
+  # Manual checks are read-only and execute only the trusted default-branch
+  # workflow. Scheduled runs retain their existing decision-queue behavior.
+  repository_dispatch:
+    types: [operator-data-quality-check]
 
 permissions:
   contents: read
 
 jobs:
   quality-checks:
-    if: github.ref == 'refs/heads/main'
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'schedule' ||
+       (github.event_name == 'repository_dispatch' &&
+        github.event.action == 'operator-data-quality-check' &&
+        github.actor == github.repository_owner))
     runs-on: ubuntu-latest
-    # A live bounded-retry run took 5m16s end to end; keep enough headroom for
-    # both the reasoning attempt and its single deterministic fallback.
+    # A scheduled bounded-retry run took 5m16s end to end; keep enough headroom
+    # for its reasoning attempt and single deterministic fallback. The manual
+    # read-only path skips self-assessment entirely.
     timeout-minutes: 10
     env:
       RICHMOND_API_MONTHLY_CAP_USD: ${{ vars.RICHMOND_API_MONTHLY_CAP_USD || '5.00' }}
       RICHMOND_API_BUDGET_LOCK: ${{ vars.RICHMOND_API_BUDGET_LOCK || '' }}
 
     steps:
+      - name: Validate the empty read-only request before secrets
+        id: request
+        if: github.event_name == 'repository_dispatch'
+        env:
+          CLIENT_PAYLOAD: ${{ toJSON(github.event.client_payload) }}
+        run: |
+          set -euo pipefail
+          if ! jq -e 'type == "object" and length == 0' \
+              <<<"$CLIENT_PAYLOAD" > /dev/null; then
+            echo "::error::ACTION: Do not retry or request data writes. Give this run URL to a coding assistant and ask it to remove every unexpected operator-data-quality-check payload field before sending a new typed event."
+            exit 1
+          fi
+
       - uses: actions/checkout@v5
 
       - uses: actions/setup-python@v6
@@ -50,32 +61,25 @@ jobs:
       - name: Run data quality checks
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          INPUT_CITY_FIPS: ${{ github.event.inputs.city_fips || '0660620' }}
-          INPUT_CREATE_DECISIONS: ${{ github.event.inputs.create_decisions || 'false' }}
+          INPUT_CITY_FIPS: '0660620'
         run: |
           set -euo pipefail
           cd src
           if [ "$INPUT_CITY_FIPS" != "0660620" ]; then
-            echo "::error::Richmond Commons only accepts city_fips=0660620"
+            echo "::error::ACTION: Do not retry this check. Give this run URL to a coding assistant and ask it to restore the fixed Richmond, California FIPS 0660620."
             exit 1
           fi
           ARGS=(--city-fips "$INPUT_CITY_FIPS" --check --known-issues confidence_tier_desync)
-          if [ "$INPUT_CREATE_DECISIONS" = "true" ]; then
-            ARGS+=(--create-decisions)
-          elif [ "$INPUT_CREATE_DECISIONS" != "false" ]; then
-            echo "::error::create_decisions must be true or false"
-            exit 1
-          fi
           python data_quality_checks.py "${ARGS[@]}"
 
       - name: Upload quality report
-        if: always()
+        if: always() && steps.request.outcome != 'failure'
         run: |
           set -euo pipefail
           cd src
           FIPS="$INPUT_CITY_FIPS"
           if [ "$FIPS" != "0660620" ]; then
-            echo "::error::Richmond Commons only accepts city_fips=0660620"
+            echo "::error::ACTION: Do not retry this report. Give this run URL to a coding assistant and ask it to restore the fixed Richmond, California FIPS 0660620."
             exit 1
           fi
           python data_quality_checks.py \
@@ -83,16 +87,14 @@ jobs:
             --format json > /tmp/quality-report.json
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          INPUT_CITY_FIPS: ${{ github.event.inputs.city_fips || '0660620' }}
+          INPUT_CITY_FIPS: '0660620'
 
-      - name: Self-assessment
-        if: always()
+      - name: Scheduled self-assessment and decision queue
+        if: always() && github.event_name == 'schedule'
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           EVENT_SCHEDULE: ${{ github.event.schedule || '' }}
-          EVENT_NAME: ${{ github.event_name }}
-          INPUT_CREATE_DECISIONS: ${{ github.event.inputs.create_decisions || 'false' }}
         run: |
           set -euo pipefail
           cd src
@@ -102,22 +104,11 @@ jobs:
           else
             DAYS=1
           fi
-          ARGS=(--days "$DAYS")
-          if [ "$EVENT_NAME" = "schedule" ]; then
-            ARGS+=(--create-decisions)
-          elif [ "$EVENT_NAME" != "workflow_dispatch" ]; then
-            echo "::error::unsupported event for decision creation: $EVENT_NAME"
-            exit 1
-          elif [ "$INPUT_CREATE_DECISIONS" = "true" ]; then
-            ARGS+=(--create-decisions)
-          elif [ "$INPUT_CREATE_DECISIONS" != "false" ]; then
-            echo "::error::create_decisions must be true or false"
-            exit 1
-          fi
+          ARGS=(--days "$DAYS" --create-decisions)
           python self_assessment.py "${ARGS[@]}"
 
       - name: Upload report artifact
-        if: always()
+        if: always() && steps.request.outcome != 'failure'
         uses: actions/upload-artifact@v5
         with:
           name: quality-report-${{ github.run_id }}

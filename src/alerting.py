@@ -15,8 +15,8 @@ Outputs (to --out-dir, consumed by the workflow):
   outputs.env       — KEY=VALUE lines appended to $GITHUB_OUTPUT
                       (send_email, alert_count, mode, subject)
   email_body.txt    — composed message (plain text)
-  issues.jsonl      — one line per NEW alert-worthy finding, for the
-                      deduplicated GitHub-issue audit trail
+  issues.jsonl      — one line per actionable alert or reviewed monitor update,
+                      for the deduplicated GitHub-issue audit trail
 
 Exit codes: 0 = the alerting ran (alerts are DATA in the outputs, not exit
 codes); nonzero = the alerting itself broke. The workflow pings the external
@@ -77,6 +77,12 @@ TELEMETRY_COST_ALERT_ID = "cost-telemetry-unavailable"
 TELEMETRY_SUBSCRIBER_ALERT_ID = "subscriber-telemetry-unavailable"
 PROVIDER_CAPACITY_ALERT_ID = "provider-capacity-unavailable-or-drifted"
 PROVIDER_USAGE_REVIEW_ID = "monthly-provider-usage-review"
+REVIEWED_RECAP_EXPECTATION_ID = "past_meetings_have_transcript_recap_within_5_days"
+REVIEWED_RECAP_MEETING_DATES = frozenset({
+    "2026-07-07",
+    "2026-07-21",
+    "2026-07-28",
+})
 PROVIDER_CAPACITY_CHECK_IDS = frozenset({
     "vercel_plan",
     "supabase_project_health",
@@ -357,6 +363,68 @@ def split_failures(results: list[dict], active: dict[str, dict],
 
 def _severity(result: dict) -> str:
     return (result.get("expectation") or {}).get("severity", "medium")
+
+
+def _iso_date_token(value: Any) -> str:
+    """Normalize one date without accepting datetimes or fuzzy input."""
+    if isinstance(value, dt.datetime):
+        return ""
+    if isinstance(value, dt.date):
+        return value.isoformat()
+    if not isinstance(value, str):
+        return ""
+    try:
+        parsed = dt.date.fromisoformat(value)
+    except ValueError:
+        return ""
+    return parsed.isoformat() if value == parsed.isoformat() else ""
+
+
+def _is_bounded_post_expiry_monitor(
+    result: dict,
+    notification_state: Optional[dict[str, dict[str, str]]] = None,
+) -> bool:
+    """Keep only an exact, reviewed failure set status-only until it passes.
+
+    This is deliberately narrower than a renewed suppression: the expired row
+    remains visible in periodic summaries, and any error, missing date, or new
+    meeting date fails closed into the normal actionable escalation.
+    """
+    if result.get("id") != REVIEWED_RECAP_EXPECTATION_ID:
+        return False
+    issue_state = (notification_state or {}).get(REVIEWED_RECAP_EXPECTATION_ID)
+    if not isinstance(issue_state, dict) or not _github_date(
+        str(issue_state.get("created_at") or "")
+    ):
+        return False
+
+    suppression = result.get("suppression") or {}
+    if suppression.get("post_expiry") != "monitor_exact_meeting_dates_until_pass":
+        return False
+    if result.get("status") != "fail":
+        return False
+
+    configured = suppression.get("monitor_only_meeting_dates")
+    if not isinstance(configured, list) or not configured:
+        return False
+    allowed = {_iso_date_token(value) for value in configured}
+    if "" in allowed or len(allowed) != len(configured):
+        return False
+    if allowed != REVIEWED_RECAP_MEETING_DATES:
+        return False
+
+    failures = result.get("failures") or []
+    if not failures:
+        return False
+    observed: set[str] = set()
+    for failure in failures:
+        if not isinstance(failure, dict):
+            return False
+        meeting_date = _iso_date_token(failure.get("meeting_date"))
+        if not meeting_date:
+            return False
+        observed.add(meeting_date)
+    return observed.issubset(allowed)
 
 
 def _calendar_should_alert(event: dict) -> bool:
@@ -660,6 +728,11 @@ def load_notification_state(path: Optional[Path]) -> dict[str, dict[str, str]]:
         if alert_id:
             state[alert_id] = {
                 "created_at": str(issue.get("createdAt") or ""),
+                "monitor_only": (
+                    "true"
+                    if "<!-- richmond-alert-status:monitor-only -->" in body
+                    else "false"
+                ),
                 # This marker is written only when the alert body is emitted.
                 # GitHub's generic updatedAt is not trusted because comments,
                 # labels, or outside activity can change it.
@@ -898,7 +971,11 @@ def decide_alerts(
                 evidence=evidence,
             ))
     for r in splits["expired"]:
-        if not _notification_due(str(r.get("id") or ""), today, notice_state):
+        if _is_bounded_post_expiry_monitor(r, notice_state):
+            continue
+        alert_id = str(r.get("id") or "")
+        prior_monitor = notice_state.get(alert_id, {}).get("monitor_only") == "true"
+        if not prior_monitor and not _notification_due(alert_id, today, notice_state):
             continue
         suppression = r.get("suppression") or {}
         evidence = _bounded_failure_evidence(r)
@@ -1090,7 +1167,7 @@ def decide_alerts(
                         "judge Vercel rolling usage or Supabase billing-cycle usage."),
                 action_kind="direct",
                 action=("By the 7th, follow the five steps in PROVIDER USAGE AND "
-                        "LIMITS below. If every indicator is below 80%, neither "
+                        "LIMITS below. If every indicator is below 75%, neither "
                         "provider shows paused, restricted, or projected overage, "
                         "and the plans remain Vercel Hobby and Supabase Pro, "
                         "archive this email; otherwise use the copy-ready prompt "
@@ -1139,6 +1216,7 @@ def compose_email(mode: str, today: dt.date, alerts: list[dict],
                   run_url: str = "not available",
                   site_health: Optional[dict[str, Any]] = None,
                   provider_capacity: Optional[dict[str, Any]] = None,
+                  notification_state: Optional[dict[str, dict[str, str]]] = None,
                   ) -> tuple[str, str]:
     """Return (subject, body). Plain text, scannable in a phone notification."""
     site = "Richmond Commons"
@@ -1177,6 +1255,11 @@ def compose_email(mode: str, today: dt.date, alerts: list[dict],
         cal["overdue"] or cal["due_soon"] or open_issues or
         graduations.get("count") or site_state.get("status") == "fail"
     )
+    reviewed_monitors = [
+        str(result.get("id") or "")
+        for result in splits["expired"]
+        if _is_bounded_post_expiry_monitor(result, notification_state)
+    ]
     if alerts:
         subject = (f"[{site}] ACTION — {len(alerts)} item"
                    f"{'s' if len(alerts) != 1 else ''} — {today.isoformat()}")
@@ -1220,6 +1303,11 @@ def compose_email(mode: str, today: dt.date, alerts: list[dict],
             "Status only: unresolved, suppressed, or previously notified "
             "items remain on their bounded reminder schedule."
         )
+        if reviewed_monitors:
+            lines.append(
+                "Rows labeled reviewed, monitor-until-pass require no action; "
+                "that label replaces any earlier alert action for those rows."
+            )
         lines.append("")
     else:
         lines.append("ACTION: None — no reply or technical work is needed.")
@@ -1262,6 +1350,13 @@ def compose_email(mode: str, today: dt.date, alerts: list[dict],
     for r in splits["visible"]:
         if _severity(r) not in ("high",) and r.get("status") != "error":
             lines.append(f"  [visible, {_severity(r)}] {r['id']}")
+    for r in splits["expired"]:
+        if _is_bounded_post_expiry_monitor(r, notification_state):
+            lines.append(
+                f"  [reviewed, monitor-until-pass] {r['id']} ({_severity(r)})"
+            )
+        else:
+            lines.append(f"  [expired suppression] {r['id']} ({_severity(r)})")
     lines.append("")
 
     lines.append(f"SITE HEALTH: {site_state.get('status', 'not_checked')}")
@@ -1357,7 +1452,7 @@ def compose_email(mode: str, today: dt.date, alerts: list[dict],
             "the project filter on All projects.",
             "2. Select the Richmond Commons project. Review Active CPU, data "
             "transfer, requests, ISR reads/writes, function usage, build usage, "
-            "and Web Analytics. Flag any value at or above 80%, any paused "
+            "and Web Analytics. Flag any value at or above 75%, any paused "
             "resource, or an unexpected jump.",
             "3. Sign in at https://supabase.com/dashboard/org/_/usage, choose "
             "the current billing cycle, and review All projects before selecting "
@@ -1365,7 +1460,7 @@ def compose_email(mode: str, today: dt.date, alerts: list[dict],
             "4. Review total and cached egress, database size, compute, Auth, "
             "Storage, Edge Functions, Realtime, and Branching. Flag any projected "
             "overage, restriction, unexpected paid add-on, or non-default branch.",
-            "5. If everything is below 80%, neither provider shows paused, "
+            "5. If everything is below 75%, neither provider shows paused, "
             "restricted, or projected overage, and plans remain Vercel Hobby and "
             "Supabase Pro, archive this email; no reply is needed. Otherwise copy "
             "the prompt below and add only the non-secret rows or screenshots.",
@@ -1474,8 +1569,69 @@ def compose_issue_body(alert: dict, today: dt.date, mode: str,
     return "\n".join(lines)
 
 
+def _reviewed_monitor_issue_updates(
+    splits: dict[str, list[dict]],
+    notification_state: Optional[dict[str, dict[str, str]]],
+) -> list[dict]:
+    """Build a status-only refresh for the exact open reviewed recap issue."""
+    updates: list[dict] = []
+    for result in splits["expired"]:
+        if not _is_bounded_post_expiry_monitor(result, notification_state):
+            continue
+        issue_state = (notification_state or {}).get(
+            REVIEWED_RECAP_EXPECTATION_ID, {}
+        )
+        if issue_state.get("monitor_only") == "true":
+            continue
+        updates.append(make_alert(
+            kind="monitor_only",
+            alert_id=REVIEWED_RECAP_EXPECTATION_ID,
+            title="Reviewed July recap gap is monitoring-only",
+            detail=("The rolling check reports one or more gaps only within "
+                    "the reviewed July 7, July 21, and July 28 cohort; no later "
+                    "meeting is failing. The issue stays open until the liveness "
+                    "check passes; any new meeting date, error, or malformed "
+                    "result alerts normally."),
+            action_kind="direct",
+            action=("None — do not renew the suppression or replay production "
+                    "meetings merely to clear this check."),
+        ))
+    return updates
+
+
+def compose_monitor_issue_body(alert: dict) -> str:
+    """Render status without advancing the actionable reminder timestamp."""
+    validate_alert_contract([alert])
+    return "\n".join([
+        alert_issue_marker(alert["id"]),
+        "<!-- richmond-alert-status:monitor-only -->",
+        f"ACTION: {alert['action']}",
+        "",
+        f"WHY: {alert['detail']}",
+        "",
+        "This reviewed status replaces the issue's earlier action. The issue "
+        "will close automatically after the check passes.",
+    ])
+
+
+def _issue_title(alert: dict) -> str:
+    """Keep both actionable and status-only issue notifications action-first."""
+    if alert.get("kind") == "monitor_only":
+        return _safe_operator_text(f"ACTION: None — {alert['title']}", 240)
+    return _safe_operator_text(f"ACTION: {alert['title']}", 240)
+
+
 def should_send(mode: str, alerts: list[dict]) -> bool:
     return bool(alerts) or mode in ("weekly", "monthly")
+
+
+def _recovered_liveness_alert_ids(results: list[dict]) -> list[str]:
+    """Return passing liveness IDs whose open alert issues can be closed."""
+    return [
+        str(result["id"])
+        for result in results
+        if result.get("status") == "pass" and result.get("id")
+    ]
 
 
 # ── Live data collection ──────────────────────────────────────────────────
@@ -1635,26 +1791,32 @@ def main() -> int:
         mode, today, alerts, splits, cal, live["cost"], live["counts"],
         live["subscribers"], grads, args.open_alert_issues,
         args.oldest_alert_issue, run_url, site_health,
-        live["provider_capacity"],
+        live["provider_capacity"], notification_state,
     )
     send = should_send(mode, alerts)
+    monitor_updates = _reviewed_monitor_issue_updates(
+        splits, notification_state,
+    )
+    issue_records = [
+        *[alert for alert in alerts if alert["kind"] in ISSUE_ALERT_KINDS],
+        *monitor_updates,
+    ]
 
     out = Path(args.out_dir)
     out.mkdir(parents=True, exist_ok=True)
     (out / "email_body.txt").write_text(body, encoding="utf-8")
     with (out / "issues.jsonl").open("w", encoding="utf-8") as f:
-        for a in alerts:
-            if a["kind"] in ISSUE_ALERT_KINDS:
-                issue_body = compose_issue_body(a, today, mode, run_url)
-                f.write(json.dumps({"id": a["id"],
-                                    "title": _safe_operator_text(
-                                        f"ACTION: {a['title']}", 240,
-                                    ),
-                                    "body": issue_body}) + "\n")
-    recovered_alert_ids = [
-        str(r["id"]) for r in live["results"]
-        if r.get("status") == "pass" and r.get("id")
-    ]
+        for alert in issue_records:
+            monitor_only = alert["kind"] == "monitor_only"
+            issue_body = (
+                compose_monitor_issue_body(alert)
+                if monitor_only
+                else compose_issue_body(alert, today, mode, run_url)
+            )
+            f.write(json.dumps({"id": alert["id"],
+                                "title": _issue_title(alert),
+                                "body": issue_body}) + "\n")
+    recovered_alert_ids = _recovered_liveness_alert_ids(live["results"])
     if site_health.get("status") == "pass":
         recovered_alert_ids.append("public-site-health")
     if "cost" not in live["telemetry_errors"]:
@@ -1676,6 +1838,7 @@ def main() -> int:
         f.write(f"mode={mode}\n")
         f.write(f"send_email={'true' if send else 'false'}\n")
         f.write(f"alert_count={len(alerts)}\n")
+        f.write(f"issue_count={len(issue_records)}\n")
         f.write(f"subject={subject}\n")
     (out / "alert_summary.json").write_text(json.dumps({
         "date": today.isoformat(), "mode": mode, "alerts": alerts,

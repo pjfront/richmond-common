@@ -2,10 +2,9 @@ name: DB Backup
 
 # Weekly encrypted logical backup of the live Supabase Postgres.
 #
-# WHY THIS EXISTS (2026-07-05): the project moved to Supabase's free tier,
-# which has NO automatic backups. This database is the only copy of years
+# WHY THIS EXISTS (2026-07-05): the encrypted logical copy remains useful
+# defense in depth alongside Supabase Pro backups. The database contains years
 # of scraped meetings, contributions, comments, and paid-for enrichments.
-# A weekly pg_dump is the floor for data safety.
 #
 # WHY ENCRYPTED: this repo is public, and Actions artifacts on public
 # repos are downloadable by anyone. The dump contains email_subscribers
@@ -23,16 +22,35 @@ name: DB Backup
 on:
   schedule:
     - cron: '0 9 * * 0'   # Sundays 09:00 UTC
-  workflow_dispatch:
+  repository_dispatch:
+    types: [operator-db-backup]
 
 permissions:
   contents: read
 
 jobs:
   backup:
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'schedule' ||
+       (github.event_name == 'repository_dispatch' &&
+        github.event.action == 'operator-db-backup' &&
+        github.actor == github.repository_owner))
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
+      - name: Validate the empty backup request before secrets
+        if: github.event_name == 'repository_dispatch'
+        env:
+          CLIENT_PAYLOAD: ${{ toJSON(github.event.client_payload) }}
+        run: |
+          set -euo pipefail
+          if ! jq -e 'type == "object" and length == 0' \
+              <<<"$CLIENT_PAYLOAD" > /dev/null; then
+            echo "::error::ACTION: Do not retry this backup. Give this run URL to a coding assistant and ask it to remove every unexpected operator-db-backup payload field before sending a new typed event."
+            exit 1
+          fi
+
       - name: Install postgres client (v17 — must match server major version)
         run: |
           # ubuntu-latest ships postgresql-client 16; the Supabase server
@@ -65,7 +83,7 @@ jobs:
           DB_BACKUP_PASSPHRASE: ${{ secrets.DB_BACKUP_PASSPHRASE }}
         run: |
           if [ -z "$DB_BACKUP_PASSPHRASE" ]; then
-            echo "::error::DB_BACKUP_PASSPHRASE secret missing — refusing to upload an unencrypted dump to a public repo"
+            echo "::error::ACTION: Do not retry or upload any dump. Ask a coding assistant to verify DB_BACKUP_PASSPHRASE in repository Actions settings without displaying it."
             exit 1
           fi
           openssl enc -aes-256-cbc -pbkdf2 -salt \
@@ -85,7 +103,7 @@ jobs:
           TABLES=$(grep -c "TABLE DATA" /tmp/toc.txt || true)
           echo "Backup contains $TABLES table-data sections"
           if [ "$TABLES" -lt 30 ]; then
-            echo "::error::Backup looks incomplete ($TABLES table-data sections < 30)"
+            echo "::error::ACTION: Do not use or restore this backup. Give this run URL to a coding assistant and ask it to diagnose why only $TABLES table-data sections were captured."
             exit 1
           fi
           rm /tmp/verify.dump

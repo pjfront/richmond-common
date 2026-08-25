@@ -110,6 +110,62 @@ export default function ElectionsMethodologyPage() {
         </p>
       </section>
 
+      <section
+        id="campaign-record-csv-field-guide"
+        className="mb-12 scroll-mt-6"
+      >
+        <h2 className="text-xl font-bold text-civic-navy mb-2">
+          Campaign record CSV field guide
+        </h2>
+        <p className="text-sm text-slate-600 mb-6 leading-relaxed">
+          Downloads from political committee, union, and company profiles use
+          one row per tracked filing record. Blank cells mean the source record
+          did not provide a value; Richmond Commons does not fill them in.
+        </p>
+        <dl className="divide-y divide-slate-200 rounded-lg border border-slate-200">
+          <CsvField
+            name="donor_name, donor_employer"
+            meaning="The contributor name and employer written on the filing. Employer may be blank."
+          />
+          <CsvField
+            name="recipient_committee_name, recipient_candidate_name"
+            meaning="The receiving committee and, when known, the candidate associated with it."
+          />
+          <CsvField
+            name="recipient_committee_id"
+            meaning="The Richmond Commons identifier for a matched receiving committee. It is not a committee registration number and may be blank."
+          />
+          <CsvField
+            name="candidate_name"
+            meaning="The candidate or beneficiary named on an independent-expenditure record. It may be blank."
+          />
+          <CsvField
+            name="support_or_oppose"
+            meaning="The filing's direction code: S means support, O means oppose, and blank means the direction was not reported."
+          />
+          <CsvField
+            name="amount"
+            meaning="The dollar amount on that individual filing record, not an aggregate calculated by Richmond Commons."
+          />
+          <CsvField
+            name="contribution_date, expenditure_date"
+            meaning="The date reported for the contribution or expenditure, written as YYYY-MM-DD."
+          />
+          <CsvField
+            name="contribution_type, expenditure_code"
+            meaning="Codes carried from the filing for the kind of contribution or expenditure. Unknown or missing codes stay blank."
+          />
+          <CsvField
+            name="payee_name, description"
+            meaning="The payee and description reported for an independent expenditure. Either may be blank."
+          />
+          <CsvField
+            name="filing_id"
+            meaning="The filing identifier supplied with the source record. It may be blank when the imported record did not include one."
+          />
+        </dl>
+      </section>
+
       {/* ── Why this matters ──────────────────────────────────── */}
       <section className="mb-12">
         <h2 className="text-xl font-bold text-civic-navy mb-2">
@@ -216,5 +272,18 @@ export default function ElectionsMethodologyPage() {
         </p>
       </footer>
     </article>
+  )
+}
+
+function CsvField({ name, meaning }: { name: string; meaning: string }) {
+  return (
+    <div className="grid gap-1 p-4 sm:grid-cols-[minmax(12rem,1fr)_2fr] sm:gap-4">
+      <dt>
+        <code className="break-words text-xs font-semibold text-civic-navy">
+          {name}
+        </code>
+      </dt>
+      <dd className="text-sm leading-relaxed text-slate-700">{meaning}</dd>
+    </div>
   )
 }

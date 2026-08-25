@@ -641,14 +641,36 @@ def check_socrata() -> dict:
     return timestamps
 
 
+def _stable_rows_hash(rows: list[dict]) -> str:
+    """Hash a row set independently of upstream tie ordering."""
+    canonical_rows = sorted(
+        rows,
+        key=lambda row: json.dumps(
+            row,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ),
+    )
+    return hashlib.sha256(
+        json.dumps(
+            canonical_rows,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+    ).hexdigest()
+
+
 def check_nextrequest() -> dict:
-    """Check NextRequest request revisions and newest public documents.
+    """Observe NextRequest request revisions and newest public documents.
 
     The request list has no global updated-at field, so hash its newest page to
     catch status/due-date/detail changes there. A separately sorted public
-    document page catches releases attached to older requests. The full sync
-    complements this watcher with bounded database-backed open-request detail
-    reconciliation.
+    document page catches releases attached to older requests. Row order is
+    canonicalized because the portal does not provide a stable secondary sort.
+    This watcher is observation-only while the daily/weekly bounded sync owns
+    reconciliation; it must not create a 15-minute portal replay loop.
     """
     try:
         url = f"{NEXTREQUEST_BASE}/client/requests?page_number=1"
@@ -677,14 +699,7 @@ def check_nextrequest() -> dict:
             })
         fingerprint = {
             "total_count": total_count,
-            "recent_requests_hash": hashlib.sha256(
-                json.dumps(
-                    recent_requests,
-                    sort_keys=True,
-                    separators=(",", ":"),
-                    ensure_ascii=False,
-                ).encode("utf-8")
-            ).hexdigest(),
+            "recent_requests_hash": _stable_rows_hash(recent_requests),
         }
     except Exception as e:
         print(f"  ERROR checking NextRequest: {e}")
@@ -722,14 +737,7 @@ def check_nextrequest() -> dict:
             })
         fingerprint.update({
             "public_document_count": document_count,
-            "recent_documents_hash": hashlib.sha256(
-                json.dumps(
-                    recent_documents,
-                    sort_keys=True,
-                    separators=(",", ":"),
-                    ensure_ascii=False,
-                ).encode("utf-8")
-            ).hexdigest(),
+            "recent_documents_hash": _stable_rows_hash(recent_documents),
         })
     except Exception as exc:
         # Preserve the stored document keys through check_all's partial-key
@@ -758,7 +766,10 @@ WATCHERS = {
     "escribemeetings": (check_escribemeetings, "escribemeetings"),
     "netfile": (check_netfile, "netfile"),
     "socrata": (check_socrata, None),  # Socrata has 6 sub-sources; handled specially
-    "nextrequest": (check_nextrequest, "nextrequest"),
+    # Observation-only containment: daily/weekly data-sync owns reconciliation.
+    # Keeping the fingerprint current preserves evidence for a future safe,
+    # delta-targeted watcher without creating per-poll detail fanout today.
+    "nextrequest": (check_nextrequest, None),
     "calaccess": (check_calaccess, "calaccess"),
 }
 

@@ -589,9 +589,10 @@ def test_detector_first_attempt_has_fixed_lookback_not_full_replay(monkeypatch):
         "documents_inserted": 0,
         "documents_skipped_existing": 0,
     })
+    recent = MagicMock(return_value=[])
     monkeypatch.setitem(sys.modules, "nextrequest_scraper", SimpleNamespace(
         scrape_all=broad,
-        list_recent_document_request_ids=lambda **_kwargs: [],
+        list_recent_document_request_ids=recent,
         scrape_request_ids=targeted,
         save_to_db=save,
     ))
@@ -610,8 +611,118 @@ def test_detector_first_attempt_has_fixed_lookback_not_full_replay(monkeypatch):
     assert call["since_date"] is not None
     assert call["skip_details"] is False
     assert call["include_documents"] is True
+    assert call["detail_limit"] == pipeline.NEXTREQUEST_DETECTOR_DETAIL_LIMIT
+    recent.assert_called_once_with(
+        city_fips="0660620",
+        limit=pipeline.NEXTREQUEST_DETECTOR_DOCUMENT_LIMIT,
+    )
     targeted.assert_not_called()
+    sql = "\n".join(call.args[0] for call in cursor.execute.call_args_list)
+    assert "FROM nextrequest_requests" not in sql
     assert result["retry_scope_applied"] is False
+
+
+def test_nextrequest_base_rate_limit_stops_all_later_reconciliation(monkeypatch):
+    from pipelines import nextrequest as pipeline
+
+    base = {
+        "requests": [{
+            "request_number": "26-001",
+            "_incomplete_stages": ["detail", "timeline", "documents"],
+        }],
+        "request_listing_complete": False,
+        "stats": {
+            "total_found": 1,
+            "details_scraped": 0,
+            "documents_found": 0,
+            "failure_count": 1,
+            "failed_request_ids": ["26-001"],
+            "failure_counts": {"rate_limit": 1},
+            "failures": [{
+                "request_id": "26-001",
+                "stage": "rate_limit",
+                "error": "HTTPError: 429 Too Many Requests",
+            }],
+        },
+    }
+    recent = MagicMock()
+    targeted = MagicMock()
+    save = MagicMock(return_value={
+        "requests_inserted": 0,
+        "requests_updated": 1,
+        "documents_inserted": 0,
+        "documents_skipped_existing": 0,
+    })
+    monkeypatch.setitem(sys.modules, "nextrequest_scraper", SimpleNamespace(
+        scrape_all=MagicMock(return_value=base),
+        list_recent_document_request_ids=recent,
+        scrape_request_ids=targeted,
+        save_to_db=save,
+    ))
+    conn = MagicMock()
+    cursor = conn.cursor.return_value.__enter__.return_value
+    cursor.fetchone.return_value = (None,)
+
+    result = pipeline.sync_nextrequest(
+        conn,
+        "0660620",
+        detector_event=False,
+    )
+
+    recent.assert_not_called()
+    targeted.assert_not_called()
+    sql = "\n".join(call.args[0] for call in cursor.execute.call_args_list)
+    assert "FROM nextrequest_requests" not in sql
+    assert result["retryable_incomplete"] is True
+    assert result["failed_request_ids"] == ["26-001"]
+
+
+def test_detector_retry_attempt_is_five_requests_and_defers_the_rest(monkeypatch):
+    from pipelines import nextrequest as pipeline
+
+    targeted = MagicMock(return_value={
+        "requests": [
+            {"request_number": f"26-{index:03d}", "_incomplete_stages": []}
+            for index in range(1, 6)
+        ],
+        "stats": {
+            "total_found": 5,
+            "details_scraped": 5,
+            "documents_found": 0,
+            "failure_count": 0,
+            "failed_request_ids": [],
+            "failure_counts": {},
+            "failures": [],
+        },
+    })
+    save = MagicMock(return_value={
+        "requests_inserted": 0,
+        "requests_updated": 5,
+        "documents_inserted": 0,
+        "documents_skipped_existing": 0,
+    })
+    monkeypatch.setitem(sys.modules, "nextrequest_scraper", SimpleNamespace(
+        scrape_all=MagicMock(),
+        list_recent_document_request_ids=MagicMock(),
+        scrape_request_ids=targeted,
+        save_to_db=save,
+    ))
+    request_ids = [f"26-{index:03d}" for index in range(1, 9)]
+
+    result = pipeline.sync_nextrequest(
+        MagicMock(),
+        "0660620",
+        detector_event=True,
+        retry_request_ids=request_ids,
+    )
+
+    targeted.assert_called_once_with(
+        request_ids[:5], city_fips="0660620", include_documents=True,
+    )
+    assert result["retry_attempt_size"] == 5
+    assert result["retry_deferred_size"] == 3
+    assert result["failed_request_ids"] == request_ids[5:]
+    assert result["retryable_incomplete"] is True
 
 
 def test_nextrequest_retry_scope_over_safety_bound_fails_before_api(
@@ -962,9 +1073,95 @@ def test_document_pagination_state_change_fails_closed():
     with patch(
         "nextrequest_scraper.http_client.get",
         side_effect=[_response(page_one), _response(page_two)],
-    ), patch("nextrequest_scraper.time.sleep"):
+    ) as get, patch("nextrequest_scraper.time.sleep"):
         with pytest.raises(RuntimeError, match="changed during pagination"):
             _fetch_request_documents_with_state("26-042")
+    assert "documents_state_timestamp" not in get.call_args_list[0].kwargs["params"]
+    assert get.call_args_list[1].kwargs["params"][
+        "documents_state_timestamp"
+    ] == 100
+
+
+def test_document_pagination_pins_later_pages_to_first_snapshot():
+    from nextrequest_scraper import _fetch_request_documents_with_state
+
+    pages = [
+        {
+            "total_documents_count": 2,
+            "documents_state_timestamp": 100,
+            "documents": [{"id": 10, "visibility": "Published"}],
+        },
+        {
+            "total_documents_count": 2,
+            "documents_state_timestamp": 100,
+            "documents": [{"id": 11, "visibility": "Published"}],
+        },
+    ]
+    with patch(
+        "nextrequest_scraper.http_client.get",
+        side_effect=[_response(page) for page in pages],
+    ) as get, patch("nextrequest_scraper.time.sleep"):
+        documents, state = _fetch_request_documents_with_state("26-042")
+
+    assert [document["id"] for document in documents] == [10, 11]
+    assert state == 100
+    assert get.call_args_list[1].kwargs["params"] == {
+        "request_id": "26-042",
+        "page_number": 2,
+        "documents_state_timestamp": 100,
+    }
+
+
+def test_targeted_scrape_stops_after_first_rate_limit_and_defers_rest():
+    from nextrequest_scraper import http_client, scrape_request_ids
+
+    response = MagicMock(status_code=429)
+    rate_limit = http_client.HTTPError("429 Too Many Requests", response=response)
+    with patch(
+        "nextrequest_scraper.get_request_detail",
+        side_effect=rate_limit,
+    ) as detail, patch("nextrequest_scraper.time.sleep") as sleep:
+        result = scrape_request_ids(["26-001", "26-002", "26-003"])
+
+    detail.assert_called_once()
+    sleep.assert_not_called()
+    assert result["requests"] == []
+    assert result["stats"]["failed_request_ids"] == [
+        "26-001", "26-002", "26-003",
+    ]
+    assert result["stats"]["failure_counts"] == {
+        "rate_limit": 1,
+        "rate_limit_deferred": 2,
+    }
+
+
+def test_detail_limited_scrape_is_non_authoritative_and_stops_on_429():
+    from nextrequest_scraper import http_client, scrape_all
+
+    summaries = [
+        {"request_number": f"26-{index:03d}", "submitted_date": "2026-08-20"}
+        for index in range(1, 5)
+    ]
+    response = MagicMock(status_code=429)
+    rate_limit = http_client.HTTPError("429 Too Many Requests", response=response)
+    with patch(
+        "nextrequest_scraper.list_all_requests",
+        return_value=(summaries, {"complete": True}),
+    ), patch(
+        "nextrequest_scraper.get_request_detail",
+        side_effect=rate_limit,
+    ) as detail, patch("nextrequest_scraper.time.sleep") as sleep:
+        result = scrape_all(detail_limit=3, include_documents=True)
+
+    detail.assert_called_once()
+    sleep.assert_not_called()
+    assert result["request_listing_complete"] is False
+    assert [row["request_number"] for row in result["requests"]] == [
+        "26-001", "26-002", "26-003",
+    ]
+    assert result["stats"]["failed_request_ids"] == [
+        "26-001", "26-002", "26-003",
+    ]
 
 
 def test_repeated_per_request_document_id_is_not_complete_coverage():

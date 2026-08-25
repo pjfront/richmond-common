@@ -2,7 +2,6 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import type { Metadata } from 'next'
 import { getAgendaItemDetail } from '@/lib/queries'
-import type { RelatedTopicItem } from '@/lib/types'
 import { agendaItemPath } from '@/lib/format'
 import CategoryBadge from '@/components/CategoryBadge'
 import TopicLabel from '@/components/TopicLabel'
@@ -213,84 +212,8 @@ export default async function AgendaItemDetailPage({ params }: ItemPageProps) {
         <OperatorAgendaItemSections agendaItemId={item.id} meetingId={item.meeting_id} />
       </OperatorGate>
 
-      {/* Similar Discussions — semantic similarity via pgvector embeddings.
-          Falls back to topic/category matching when no embedding exists. */}
+      {/* Similar Discussions — semantic similarity via pgvector embeddings. */}
       <SimilarDiscussions itemId={item.id} />
-
-      {/* Fallback: topic/category matching (shown only when no similar items found via embeddings) */}
-      {item.related_topic_items.length > 0 && (() => {
-        const topicItems = item.related_topic_items.filter((ri) => ri.match_tier <= 2)
-        const categoryItems = item.related_topic_items.filter((ri) => ri.match_tier === 3)
-
-        function RelatedItemLink({ ri }: { ri: RelatedTopicItem }) {
-          return (
-            <Link
-              key={ri.id}
-              href={agendaItemPath(ri.meeting_id, ri.item_number)}
-              className="flex items-center justify-between gap-3 py-2.5 px-3 rounded-lg border border-transparent hover:border-civic-navy/20 hover:bg-slate-50 transition-all group"
-            >
-              <div className="flex-1 min-w-0">
-                <p className="text-sm text-slate-800 group-hover:text-civic-navy truncate">
-                  {ri.summary_headline ?? ri.title}
-                </p>
-                <div className="flex items-center gap-2 text-xs text-slate-400 group-hover:text-slate-500">
-                  <span>{formatShortDate(ri.meeting_date)}</span>
-                  {ri.financial_amount && (
-                    <span className="text-civic-amber">{ri.financial_amount}</span>
-                  )}
-                  {ri.public_comment_count > 0 && (
-                    <span>{ri.public_comment_count} comment{ri.public_comment_count !== 1 ? 's' : ''}</span>
-                  )}
-                </div>
-              </div>
-              <span className={`shrink-0 text-xs font-medium px-2 py-0.5 rounded ${
-                ri.vote_outcome === 'passed'
-                  ? 'bg-green-50 text-vote-aye'
-                  : ri.vote_outcome === 'failed'
-                    ? 'bg-red-50 text-vote-nay'
-                    : ri.vote_outcome === 'upcoming'
-                      ? 'bg-blue-50 text-blue-600'
-                      : ri.vote_outcome === 'minutes pending'
-                        ? 'bg-amber-50 text-amber-600'
-                        : 'bg-slate-100 text-slate-500'
-              }`}>
-                {ri.vote_outcome === 'upcoming' ? 'Upcoming' :
-                 ri.vote_outcome === 'minutes pending' ? 'Minutes pending' :
-                 ri.vote_outcome === 'no vote' ? 'No vote' :
-                 ri.vote_outcome === 'passed' ? 'Passed' : 'Failed'}
-              </span>
-            </Link>
-          )
-        }
-
-        return (
-          <div className="mb-6">
-            <h2 className="text-lg font-semibold text-civic-navy mb-1">
-              The Story So Far
-            </h2>
-            <p className="text-xs text-slate-400 mb-3">
-              {topicItems.length > 0
-                ? `${topicItems.length} prior discussion${topicItems.length !== 1 ? 's' : ''} on this topic`
-                : 'Related items from other meetings'}
-            </p>
-            {topicItems.length > 0 && (
-              <div className="space-y-1.5">
-                {topicItems.map((ri) => <RelatedItemLink key={ri.id} ri={ri} />)}
-              </div>
-            )}
-            {categoryItems.length > 0 && (
-              <div className={topicItems.length > 0 ? 'mt-4' : ''}>
-                {topicItems.length > 0 && (
-                  <p className="text-xs text-slate-400 mb-2">Related by category</p>
-                )}
-                <div className="space-y-1.5">
-                  {categoryItems.map((ri) => <RelatedItemLink key={ri.id} ri={ri} />)}
-                </div>
-              </div>
-            )}
-          </div>
-        )
-      })()}
 
       {/* Back to meeting */}
       <div className="mt-8 pt-6 border-t border-slate-200">
