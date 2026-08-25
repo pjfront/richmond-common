@@ -256,6 +256,9 @@ export interface OrgAggregate {
   latest_contribution_date: string | null
   /** Mandatory disclosure per source-tier rules (e.g. Chevron) */
   sponsor_disclosure: string | null
+  /** Five most recent election cycles, including zero-activity cycles.
+   *  Derived from the same contribution rows used for this directory entry. */
+  cycle_bars: Array<{ cycle: number; total: number }>
 }
 
 /** One contribution FROM an org (as donor) TO a committee.  Same shape

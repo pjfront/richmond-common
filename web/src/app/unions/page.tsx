@@ -6,10 +6,11 @@
 
 import type { Metadata } from 'next'
 import { getOrgList } from '@/lib/queries'
-import OrgList from '@/components/OrgList'
+import CampaignEntityIndex from '@/components/CampaignEntityIndex'
+import type { CampaignEntityIndexItem } from '@/components/CampaignEntityIndex'
 
 export const metadata: Metadata = {
-  title: 'Unions | Richmond Commons',
+  title: 'Unions',
   description:
     'Unions that contribute to Richmond political campaigns. See who gives, how much, and which candidates and committees receive the money.',
 }
@@ -17,36 +18,40 @@ export const metadata: Metadata = {
 export default async function UnionsPage() {
   const orgs = await getOrgList()
   const unions = orgs.filter((o) => o.entity_type === 'union')
+  const currentYear = new Date().getFullYear()
+  const defaultCycle = currentYear % 2 === 0 ? currentYear : currentYear + 1
+  const currentCycle = Math.max(
+    ...unions.flatMap((union) => union.cycle_bars.map((bar) => bar.cycle)),
+    defaultCycle,
+  )
+  const items: CampaignEntityIndexItem[] = unions.map((union) => ({
+    id: union.slug,
+    href: `/orgs/${union.slug}`,
+    name: union.display_name,
+    kind: 'union',
+    sponsorDisclosure: union.sponsor_disclosure,
+    cycleBars: union.cycle_bars.map((bar) => ({
+      cycle: bar.cycle,
+      received: 0,
+      given: bar.total,
+    })),
+  }))
 
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <OrgList
-        orgs={unions}
-        heading="Unions"
-        description="Labor unions that give to Richmond political campaigns. Unions give to support labor-friendly candidates and ballot measures."
-      />
-
-      <footer className="mt-12 pt-6 border-t border-slate-100 space-y-2">
-        <p className="text-xs text-slate-400 leading-relaxed">
-          Contribution data from{' '}
-          <a
-            href="https://public.netfile.com/pub2/?AID=RICH"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-civic-navy hover:underline"
-          >
-            NetFile
-          </a>{' '}
-          (City of Richmond e-filing system, Tier 1 source) and CAL-ACCESS
-          (California Secretary of State, Tier 1 source). Organization
-          classification is auto-generated from name patterns and public
-          records.
-        </p>
-        <p className="text-xs text-slate-400">
-          Auto-generated from public records &middot; Updated within ~15
-          minutes of any new filing
-        </p>
-      </footer>
-    </div>
+    <CampaignEntityIndex
+      heading="Unions"
+      description="Labor organizations that appear as donors in Richmond campaign-finance filings. Open a profile to review reported recipients, dates, amounts, and independent spending when available."
+      items={items}
+      currentCycle={currentCycle}
+      singularLabel="union"
+      pluralLabel="unions"
+      sourceNote={
+        <>
+          Organization type is auto-generated from filing names and public
+          records. Treat the label as a filing-based classification, not a
+          statement about an organization&apos;s goals.
+        </>
+      }
+    />
   )
 }

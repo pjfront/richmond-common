@@ -19,89 +19,66 @@
 
 import type { Metadata } from 'next'
 import { getPACListWithCycleBars } from '@/lib/queries'
-import PACIndexClient from './PACIndexClient'
+import CampaignEntityIndex from '@/components/CampaignEntityIndex'
+import type { CampaignEntityIndexItem } from '@/components/CampaignEntityIndex'
 
 export const metadata: Metadata = {
-  title: 'Political Action Committees | Richmond Commons',
+  title: 'Political committees',
   description:
-    'Every Richmond political action committee that influences elections without being controlled by a candidate. Includes general-purpose PACs, independent-expenditure committees, and ballot-measure committees.',
+    'Committees with reported activity in Richmond elections, including general-purpose, independent-spending, and ballot-measure committees.',
 }
 
 export default async function PACIndexPage() {
   const pacs = await getPACListWithCycleBars()
+  const currentYear = new Date().getFullYear()
+  const defaultCycle = currentYear % 2 === 0 ? currentYear : currentYear + 1
 
-  // currentCycle is computed from the data so a future test fixture
-  // doesn't need to know what year it is. PACIndexClient owns the
-  // temporal-filter UI and the sort order within the selected window;
-  // each row's lede prose still narrates current-cycle activity, with
-  // the sparkline carrying the historical context.
+  // Compute the cycle from the data so future fixtures do not need to know
+  // the wall-clock year. The shared directory owns filtering and ordering.
   const currentCycle = Math.max(
     ...pacs.flatMap((p) => p.cycle_bars.map((b) => b.cycle)),
-    new Date().getFullYear(),
+    defaultCycle,
   )
+
+  const items: CampaignEntityIndexItem[] = pacs.map((pac) => ({
+    id: pac.id,
+    href: `/pac/${pac.slug}`,
+    name: displayName(pac.name),
+    kind: 'committee',
+    sponsorDisclosure: pac.sponsor_disclosure,
+    cycleBars: pac.cycle_bars.map((bar) => ({
+      cycle: bar.cycle,
+      received: bar.in_total,
+      given: bar.out_total,
+    })),
+  }))
 
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <header className="mb-6">
-        <h1 className="text-3xl font-bold text-civic-navy">
-          Political action committees
-        </h1>
-        <p className="text-slate-600 mt-2 leading-relaxed max-w-3xl">
-          Committees that raise money to support or oppose Richmond
-          candidates and ballot measures, but that aren&apos;t
-          controlled by any candidate. Includes general-purpose PACs
-          (often union-sponsored), independent-expenditure committees,
-          and ballot-measure committees.
-        </p>
-      </header>
-
-      <div className="mb-6 max-w-3xl rounded-md bg-slate-50 border border-slate-200 px-4 py-3 text-xs text-slate-600 leading-relaxed">
-        <p className="font-semibold text-slate-700 mb-1">
-          How PACs differ from candidate campaigns
-        </p>
-        <p className="mb-1.5">
-          Individual donors can give a candidate&apos;s campaign at most{' '}
-          <strong>$2,500</strong> per election (the City of Richmond
-          contribution limit). PACs face <strong>no per-donor cap</strong>:
-          a single donor can give a PAC tens of thousands of dollars.
-          That&apos;s the structural reason PACs exist; it&apos;s also
-          why a PAC&apos;s top donors matter more individually than a
-          candidate&apos;s.
-        </p>
-        <p>
-          <strong>Independent-expenditure (IE) committees</strong> spend
-          money on ads supporting or opposing a candidate without
-          coordinating with that candidate&apos;s campaign.{' '}
-          <strong>Ballot-measure committees</strong> raise money for or
-          against a specific ballot measure. Both kinds appear here
-          alongside general-purpose PACs.
-        </p>
-      </div>
-
-      <p className="text-xs text-slate-500 mb-6 leading-relaxed bg-civic-amber/[0.04] border-l-2 border-civic-amber/40 px-3 py-2 max-w-3xl">
-        PAC activity for any election typically surges in the final
-        two weeks before voting. The {currentCycle} cycle is still early.
-        Most committees are coasting on prior-cycle activity for now.
-        Check back closer to election day.
-      </p>
-
-      <PACIndexClient pacs={pacs} currentCycle={currentCycle} />
-
-      <footer className="mt-12 pt-6 border-t border-slate-100 space-y-2">
-        <p className="text-xs text-slate-400 leading-relaxed">
-          Data from{' '}
-          <a
-            href="https://public.netfile.com/pub2/?AID=RICH"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-civic-navy hover:underline"
-          >
-            NetFile
-          </a>{' '}
-          and CAL-ACCESS (California Secretary of State). Both Tier 1
-          sources. Updated within ~15 minutes of any new filing.
-        </p>
-      </footer>
-    </div>
+    <CampaignEntityIndex
+      heading="Political committees"
+      description="Committees with reported activity in Richmond elections, including general-purpose, independent-spending, and ballot-measure committees. Open a profile to review the available filing detail."
+      items={items}
+      currentCycle={currentCycle}
+      singularLabel="committee"
+      pluralLabel="committees"
+      afterList={
+        <section className="rounded-lg border border-slate-200 bg-slate-50 p-5">
+          <h2 className="text-lg font-semibold text-civic-navy">
+            How these committees differ from candidate campaigns
+          </h2>
+          <p className="mt-2 text-base leading-7 text-slate-700">
+            Independent-spending committees report spending that is not
+            coordinated with a candidate&apos;s campaign. Ballot-measure
+            committees report activity for or against a measure. Both appear
+            here alongside general-purpose committees.
+          </p>
+        </section>
+      }
+    />
   )
+}
+
+function displayName(name: string): string {
+  const beforeComma = name.split(',')[0].trim()
+  return beforeComma.length >= 6 ? beforeComma : name
 }

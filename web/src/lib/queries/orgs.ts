@@ -11,7 +11,7 @@
  * not money IN.
  */
 
-import { supabase, RICHMOND_FIPS, nameToSlug } from './_shared'
+import { supabase, RICHMOND_FIPS } from './_shared'
 import type {
   OrgAggregate,
   OrgOutgoingRow,
@@ -28,11 +28,6 @@ function currentElectionCycle(): number {
   return y % 2 === 0 ? y : y + 1
 }
 
-/** First day of the current election cycle's contribution window (Jan 1 of year-1). */
-function currentCycleStart(): string {
-  return `${currentElectionCycle() - 1}-01-01`
-}
-
 /** Pull a mandatory disclosure for per-source-tier rules.
  *  Chevron → "Funded by Chevron Richmond" per richmond.md Tier 3 rule. */
 function inferOrgDisclosure(name: string): string | null {
@@ -46,11 +41,6 @@ function cycleOf(dateStr: string | null): number | null {
   const year = parseInt(dateStr.slice(0, 4), 10)
   if (Number.isNaN(year)) return null
   return year % 2 === 0 ? year : year + 1
-}
-
-/** Normalize for name matching (same pattern as pacs.ts donorNameVariantsFor). */
-function normalizeForMatch(s: string): string {
-  return s.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim()
 }
 
 // ─── Index ─────────────────────────────────────────────────────────────
@@ -118,9 +108,16 @@ export async function getOrgList(
     .eq('city_fips', cityFips)
     .range(0, 99999)
 
-  // Track per-group current-cycle totals
-  const cycleStart = currentCycleStart()
+  // Track per-group dates and election-cycle totals from the same bounded
+  // result set. Keeping this aggregation here avoids one query per directory
+  // card when /unions applies the shared cycle filter.
+  const donorToSlug = new Map<string, string>()
+  for (const group of groups.values()) {
+    for (const donorId of group.donor_ids) donorToSlug.set(donorId, group.slug)
+  }
+  const currentCycle = currentElectionCycle()
   const currentCycleBySlug = new Map<string, number>()
+  const cycleTotalsBySlug = new Map<string, Map<number, number>>()
 
   if (dateRows) {
     for (const r of dateRows) {
@@ -128,21 +125,40 @@ export async function getOrgList(
       const date = r.contribution_date as string | null
       const amount = Number(r.amount ?? 0)
       if (!date) continue
-      // Find which group this donor belongs to
-      for (const g of groups.values()) {
-        if (g.donor_ids.includes(donorId)) {
-          const gExt = g as SlugGroup & { earliest?: string; latest?: string }
-          if (!gExt.earliest || date < gExt.earliest) gExt.earliest = date
-          if (!gExt.latest || date > gExt.latest) gExt.latest = date
-          // Accumulate current-cycle total
-          if (date >= cycleStart) {
-            currentCycleBySlug.set(g.slug, (currentCycleBySlug.get(g.slug) ?? 0) + amount)
-          }
-          break
-        }
+      const slug = donorToSlug.get(donorId)
+      if (!slug) continue
+      const group = groups.get(slug)
+      if (!group) continue
+
+      const groupWithDates = group as SlugGroup & {
+        earliest?: string
+        latest?: string
+      }
+      if (!groupWithDates.earliest || date < groupWithDates.earliest) {
+        groupWithDates.earliest = date
+      }
+      if (!groupWithDates.latest || date > groupWithDates.latest) {
+        groupWithDates.latest = date
+      }
+
+      const cycle = cycleOf(date)
+      if (cycle === null) continue
+      const totals = cycleTotalsBySlug.get(slug) ?? new Map<number, number>()
+      totals.set(cycle, (totals.get(cycle) ?? 0) + amount)
+      cycleTotalsBySlug.set(slug, totals)
+      if (cycle === currentCycle) {
+        currentCycleBySlug.set(slug, (currentCycleBySlug.get(slug) ?? 0) + amount)
       }
     }
   }
+
+  const cycleWindow = [
+    currentCycle - 8,
+    currentCycle - 6,
+    currentCycle - 4,
+    currentCycle - 2,
+    currentCycle,
+  ]
 
   const result: OrgAggregate[] = []
   for (const g of groups.values()) {
@@ -159,6 +175,10 @@ export async function getOrgList(
       earliest_contribution_date: gExt.earliest ?? null,
       latest_contribution_date: gExt.latest ?? null,
       sponsor_disclosure: inferOrgDisclosure(g.display_name),
+      cycle_bars: cycleWindow.map((cycle) => ({
+        cycle,
+        total: cycleTotalsBySlug.get(g.slug)?.get(cycle) ?? 0,
+      })),
     })
   }
 
