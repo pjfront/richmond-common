@@ -7,7 +7,6 @@ import type { Metadata } from 'next'
 import { getCompleteOrgList } from '@/lib/queries'
 import CampaignEntityIndex from '@/components/CampaignEntityIndex'
 import type { CampaignEntityDirectoryAvailability } from '@/components/CampaignEntityIndex'
-import { CampaignEntityDataError } from '@/lib/queries/campaign-entity-safety'
 
 export const metadata: Metadata = {
   title: 'Unions',
@@ -16,29 +15,18 @@ export const metadata: Metadata = {
 }
 
 export default async function UnionsPage() {
-  const directoryResult = await getCompleteOrgList().then(
-    () => ({ ok: true as const }),
-    (error: unknown) => ({ ok: false as const, error }),
-  )
+  // Let refresh failures escape. ISR will keep serving the last successful
+  // render instead of replacing it with a cached degraded-state page.
+  await getCompleteOrgList()
   const currentYear = new Date().getFullYear()
   const currentCycle = currentYear % 2 === 0 ? currentYear : currentYear + 1
-  let availability: CampaignEntityDirectoryAvailability =
+  const availability: CampaignEntityDirectoryAvailability =
     'missing-trust-fields'
 
   // Donor entity_type is currently generated from filing-name patterns. Read
   // completeness is still verified, but no union row becomes a public summary
   // item until its classification has stored confidence >= 90% and the row
   // has complete provenance.
-  if (!directoryResult.ok) {
-    const { error } = directoryResult
-    availability =
-      error instanceof CampaignEntityDataError
-        ? error.failure
-        : 'query-error'
-    if (!(error instanceof CampaignEntityDataError)) {
-      console.error('Union directory query failed:', error)
-    }
-  }
 
   return (
     <CampaignEntityIndex

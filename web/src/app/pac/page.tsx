@@ -8,7 +8,6 @@ import type { Metadata } from 'next'
 import { getPACListWithCycleBars } from '@/lib/queries'
 import CampaignEntityIndex from '@/components/CampaignEntityIndex'
 import type { CampaignEntityDirectoryAvailability } from '@/components/CampaignEntityIndex'
-import { CampaignEntityDataError } from '@/lib/queries/campaign-entity-safety'
 
 export const metadata: Metadata = {
   title: 'Political committees',
@@ -17,29 +16,17 @@ export const metadata: Metadata = {
 }
 
 export default async function PACIndexPage() {
-  const directoryResult = await getPACListWithCycleBars().then(
-    () => ({ ok: true as const }),
-    (error: unknown) => ({ ok: false as const, error }),
-  )
+  // Let refresh failures escape. ISR will keep serving the last successful
+  // render instead of replacing it with a cached degraded-state page.
+  await getPACListWithCycleBars()
   const currentYear = new Date().getFullYear()
   const currentCycle = currentYear % 2 === 0 ? currentYear : currentYear + 1
-  let availability: CampaignEntityDirectoryAvailability =
+  const availability: CampaignEntityDirectoryAvailability =
     'missing-trust-fields'
 
-  // Keep the existing bounded read so a query failure or truncated response
-  // is distinguished from the known provenance/confidence blocker. The
-  // aggregate is intentionally not converted into public row DTOs: it lacks
-  // D1's required source fields and D2's numeric confidence score.
-  if (!directoryResult.ok) {
-    const { error } = directoryResult
-    availability =
-      error instanceof CampaignEntityDataError
-        ? error.failure
-        : 'query-error'
-    if (!(error instanceof CampaignEntityDataError)) {
-      console.error('Political committee directory query failed:', error)
-    }
-  }
+  // Keep the bounded read until the operator chooses this placeholder's
+  // publication treatment. The aggregate is intentionally not converted into
+  // public row DTOs: it lacks D1 source fields and D2 numeric confidence.
 
   return (
     <CampaignEntityIndex

@@ -10,11 +10,14 @@ const mocked = vi.hoisted(() => ({
   getOfficialComparativeStats: vi.fn(),
   getOfficialElectionHistory: vi.fn(),
   getAgendaItemDetail: vi.fn(),
+  getPACListWithCycleBars: vi.fn(),
+  getCompleteOrgList: vi.fn(),
 }))
 
 vi.mock('@/lib/queries', () => mocked)
 
 vi.mock('next/navigation', () => ({
+  useSearchParams: vi.fn(() => new URLSearchParams()),
   notFound: vi.fn(() => {
     throw new Error('NEXT_NOT_FOUND')
   }),
@@ -29,6 +32,8 @@ import AgendaItemDetailPage, {
   dynamic as agendaItemDynamic,
   revalidate as agendaItemRevalidate,
 } from '@/app/meetings/[id]/items/[itemNumber]/page'
+import PACIndexPage from '@/app/pac/page'
+import UnionsPage from '@/app/unions/page'
 
 describe('force-static read-path error propagation', () => {
   beforeEach(() => {
@@ -73,5 +78,19 @@ describe('force-static read-path error propagation', () => {
 
     expect(agendaItemDynamic).toBe('force-static')
     expect(agendaItemRevalidate).toBe(86_400)
+  })
+
+  it('lets PAC-directory query failures abort ISR refreshes', async () => {
+    const failure = new Error('transient PAC timeout')
+    mocked.getPACListWithCycleBars.mockRejectedValue(failure)
+
+    await expect(PACIndexPage()).rejects.toBe(failure)
+  })
+
+  it('lets union-directory query failures abort ISR refreshes', async () => {
+    const failure = new Error('transient union timeout')
+    mocked.getCompleteOrgList.mockRejectedValue(failure)
+
+    await expect(UnionsPage()).rejects.toBe(failure)
   })
 })
