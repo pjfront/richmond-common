@@ -64,15 +64,28 @@ describe('POST /api/subscribe credential boundary', () => {
   })
 
   afterEach(() => {
+    vi.useRealTimers()
     vi.clearAllMocks()
   })
 
   it('reactivates as a new welcome cycle without disclosing the manage token', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-25T00:30:00Z'))
     const reactivationQuery = query({
       data: {
         id: 'subscriber-1',
         subscribed_at: '2026-08-15T20:00:00.000Z',
         unsubscribe_token: 'rotated-secret',
+      },
+      error: null,
+    })
+    const orientationQuery = query({
+      data: {
+        id: '22222222-2222-4222-8222-222222222222',
+        meeting_date: '2999-01-01',
+        orientation_preview: 'A current agenda preview.',
+        orientation_preview_provenance: null,
+        agenda_url: null,
       },
       error: null,
     })
@@ -88,16 +101,7 @@ describe('POST /api/subscribe credential boundary', () => {
         error: null,
       }))
       .mockReturnValueOnce(reactivationQuery)
-      .mockReturnValueOnce(query({
-        data: {
-          id: '22222222-2222-4222-8222-222222222222',
-          meeting_date: '2999-01-01',
-          orientation_preview: 'A current agenda preview.',
-          orientation_preview_provenance: null,
-          agenda_url: null,
-        },
-        error: null,
-      }))
+      .mockReturnValueOnce(orientationQuery)
       .mockReturnValueOnce(query())
 
     const response = await POST(request({
@@ -137,6 +141,17 @@ describe('POST /api/subscribe credential boundary', () => {
     }))
     expect(activationWrite.current_activation_at).toBe(activationWrite.subscribed_at)
     expect(activationWrite).not.toHaveProperty('metadata')
+    expect(orientationQuery.select).toHaveBeenCalledWith(
+      expect.stringContaining('bodies!inner(body_type)'),
+    )
+    expect(orientationQuery.eq).toHaveBeenCalledWith(
+      'bodies.body_type',
+      'city_council',
+    )
+    expect(orientationQuery.gte).toHaveBeenCalledWith(
+      'meeting_date',
+      '2026-08-24',
+    )
   })
 
   it('does not disclose a newly created subscriber token either', async () => {
