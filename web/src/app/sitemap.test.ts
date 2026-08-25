@@ -124,7 +124,7 @@ describe('public sitemap', () => {
     expect(paths.some((path) => path.startsWith('/pac/'))).toBe(false)
     expect(paths.some((path) => path.startsWith('/meetings/category/'))).toBe(false)
     expect(paths.some((path) => path.startsWith('/topics/'))).toBe(false)
-    expect(paths).toContain('/influence/methodology')
+    expect(paths).not.toContain('/influence/methodology')
   })
 
   it('does not wire an all-history classification scan into daily sitemap generation', async () => {

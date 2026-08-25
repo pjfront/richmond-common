@@ -4,6 +4,7 @@ import Link from 'next/link'
 export const metadata: Metadata = {
   title: 'Methodology: Campaign Finance Data',
   description: 'How Richmond Commons collects, matches, and presents campaign finance data alongside council voting records.',
+  robots: { index: false, follow: false },
 }
 
 export default function MethodologyPage() {
@@ -14,8 +15,11 @@ function MethodologyContent() {
   return (
     <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <nav className="mb-6">
-        <Link href="/influence" className="text-sm text-civic-navy-light hover:text-civic-navy">
-          ← Influence Map
+        <Link
+          href="/elections/methodology"
+          className="inline-flex min-h-11 items-center text-sm text-civic-navy-light hover:text-civic-navy"
+        >
+          ← How we show campaign contributions
         </Link>
       </nav>
 

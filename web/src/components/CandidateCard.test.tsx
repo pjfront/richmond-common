@@ -15,7 +15,7 @@ vi.mock('./OperatorGate', () => ({
   }) => operatorState.isOperator ? children : fallback,
 }))
 
-vi.mock('@/lib/queries', () => ({
+vi.mock('@/lib/queries/_shared', () => ({
   officialToSlug: (name: string) => name.toLowerCase().replace(/\s+/g, '-'),
 }))
 
@@ -85,12 +85,20 @@ describe('CandidateCard detail link containment', () => {
     operatorState.isOperator = false
   })
 
-  it('keeps the candidate name visible but not linked for residents', () => {
+  it('links residents to the stable candidate anchor on the canonical election page', () => {
     const markup = renderToStaticMarkup(
       <CandidateCard candidate={candidate} electionSlug="2026-primary" />,
     )
 
     expect(markup).toContain('Claudia Jimenez')
+    expect(markup).toContain(
+      'href="/elections/2026-primary#claudia-jimenez"',
+    )
+    expect(markup).toContain(
+      'aria-label="Claudia Jimenez on this election page"',
+    )
+    expect(markup).toContain('id="claudia-jimenez"')
+    expect(markup).toContain('aria-labelledby="claudia-jimenez-name"')
     expect(markup).not.toContain('/elections/2026-primary/candidates/claudia-jimenez')
   })
 
@@ -103,6 +111,9 @@ describe('CandidateCard detail link containment', () => {
 
     expect(markup).toContain(
       'href="/elections/2026-primary/candidates/claudia-jimenez"',
+    )
+    expect(markup).not.toContain(
+      'href="/elections/2026-primary#claudia-jimenez"',
     )
     expect(markup).toContain('inline-flex min-h-11 items-center')
     expect(markup).toContain('Claudia Jimenez')
