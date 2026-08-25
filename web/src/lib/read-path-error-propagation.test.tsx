@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocked = vi.hoisted(() => ({
   findSimilarItems: vi.fn(),
@@ -44,6 +44,10 @@ describe('force-static read-path error propagation', () => {
     mocked.getPastElectionDates.mockResolvedValue([])
     mocked.getOfficialComparativeStats.mockResolvedValue(null)
     mocked.getOfficialElectionHistory.mockResolvedValue([])
+  })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
   })
 
   it('keeps the council route static while letting voting failures abort the render', async () => {
@@ -92,5 +96,16 @@ describe('force-static read-path error propagation', () => {
     mocked.getCompleteOrgList.mockRejectedValue(failure)
 
     await expect(UnionsPage()).rejects.toBe(failure)
+  })
+
+  it('lets only an explicitly inert CI build render without querying', async () => {
+    vi.stubEnv('RICHMOND_BUILD_USES_PRODUCTION_DATA', 'false')
+    mocked.getPACListWithCycleBars.mockRejectedValue(new Error('inert PAC'))
+    mocked.getCompleteOrgList.mockRejectedValue(new Error('inert union'))
+
+    await expect(PACIndexPage()).resolves.toBeDefined()
+    await expect(UnionsPage()).resolves.toBeDefined()
+    expect(mocked.getPACListWithCycleBars).not.toHaveBeenCalled()
+    expect(mocked.getCompleteOrgList).not.toHaveBeenCalled()
   })
 })

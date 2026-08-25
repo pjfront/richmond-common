@@ -16,9 +16,12 @@ export const metadata: Metadata = {
 }
 
 export default async function PACIndexPage() {
-  // Let refresh failures escape. ISR will keep serving the last successful
-  // render instead of replacing it with a cached degraded-state page.
-  await getPACListWithCycleBars()
+  // Production refresh failures escape so ISR keeps serving the last
+  // successful render. The explicit inert CI build skips the read entirely;
+  // that boundary cannot occur through an absent or misspelled value.
+  if (process.env.RICHMOND_BUILD_USES_PRODUCTION_DATA !== 'false') {
+    await getPACListWithCycleBars()
+  }
   const currentYear = new Date().getFullYear()
   const currentCycle = currentYear % 2 === 0 ? currentYear : currentYear + 1
   const availability: CampaignEntityDirectoryAvailability =
