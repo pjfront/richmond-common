@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "release_id": "s29-november-demand-test",
+  "phase": "baseline",
+  "production_anchor_sha": "0ff9fd50443d8d13e15a4d83845b2997cfc1054a",
+  "public_treatment_enabled": false,
+  "held_merges": [
+    {
+      "pull_request": 110,
+      "merge_sha": "c5dbcc7d61d9de4b08f161282c2541bd62184bec",
+      "scope": "rolling_24_month_agenda_item_sitemap"
+    },
+    {
+      "pull_request": 119,
+      "merge_sha": "8b5e2f8d83cbc7814bcea4deb91305ce18c02fe6",
+      "scope": "public_seo_json_ld_and_expanded_sitemap"
+    }
+  ],
+  "treatment_flip_condition": "After 14 complete UTC baseline days are frozen and the exact treatment SHA is approved"
+}

@@ -8,6 +8,7 @@ import { OperatorModeProvider } from "@/components/OperatorModeProvider"
 import { FeedbackModalProvider } from "@/components/FeedbackModal"
 import PrivacyAnalytics from "@/components/PrivacyAnalytics"
 import { getUpcomingElection, electionToSlug } from "@/lib/queries"
+import { S29_PUBLIC_TREATMENT_ENABLED } from "@/lib/s29-release-phase"
 import { serializeJsonLd, siteStructuredData } from "@/lib/structured-data"
 import "./globals.css"
 
@@ -79,11 +80,13 @@ export default async function RootLayout({
   return (
     <html lang="en">
       <body className={`${inter.variable} antialiased flex flex-col min-h-screen`}>
-        <script
-          id="site-structured-data"
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: serializeJsonLd(siteStructuredData()) }}
-        />
+        {S29_PUBLIC_TREATMENT_ENABLED && (
+          <script
+            id="site-structured-data"
+            type="application/ld+json"
+            dangerouslySetInnerHTML={{ __html: serializeJsonLd(siteStructuredData()) }}
+          />
+        )}
         <NuqsAdapter>
           <OperatorModeProvider>
             <FeedbackModalProvider>

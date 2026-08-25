@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const queryMocks = vi.hoisted(() => ({
+  getMeetings: vi.fn(),
+  getAgendaItemSlugs: vi.fn(),
+  getOfficials: vi.fn(),
   getSitemapMeetings: vi.fn(),
   getRecentAgendaItemSlugs: vi.fn(),
   getSitemapOfficials: vi.fn(),
@@ -11,6 +14,15 @@ const queryMocks = vi.hoisted(() => ({
   electionToSlug: vi.fn((election: { election_date: string; election_type: string }) => (
     `${election.election_date.slice(0, 4)}-${election.election_type}`
   )),
+}))
+
+vi.mock('@/lib/queries/meetings', () => ({
+  getMeetings: queryMocks.getMeetings,
+  getAgendaItemSlugs: queryMocks.getAgendaItemSlugs,
+}))
+
+vi.mock('@/lib/queries/council', () => ({
+  getOfficials: queryMocks.getOfficials,
 }))
 
 vi.mock('@/lib/queries/elections', () => ({
@@ -28,14 +40,20 @@ vi.mock('@/lib/queries/sitemap', () => ({
 }))
 
 import {
+  BASELINE_STATIC_PATHS,
   PUBLIC_STATIC_PATHS,
   agendaItemSitemapCutoffUtc,
+  buildBaselineSitemap,
   buildSitemap,
+  buildTreatmentSitemap,
 } from './sitemap'
 
 describe('public sitemap', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    queryMocks.getMeetings.mockResolvedValue([])
+    queryMocks.getAgendaItemSlugs.mockResolvedValue([])
+    queryMocks.getOfficials.mockResolvedValue([])
     queryMocks.getSitemapMeetings.mockResolvedValue([])
     queryMocks.getRecentAgendaItemSlugs.mockResolvedValue([])
     queryMocks.getSitemapOfficials.mockResolvedValue([])
@@ -48,6 +66,47 @@ describe('public sitemap', () => {
   afterEach(() => {
     vi.unstubAllEnvs()
     vi.restoreAllMocks()
+  })
+
+  it('keeps the production sitemap inventory during the measured baseline', async () => {
+    queryMocks.getMeetings.mockResolvedValue([{
+      id: 'meeting-1',
+      meeting_date: '2026-08-01',
+    }])
+    queryMocks.getAgendaItemSlugs.mockResolvedValue([{
+      meeting_id: 'meeting-1',
+      item_number: 'CC-1',
+      meeting_date: '2026-08-01',
+    }])
+    queryMocks.getOfficials.mockResolvedValue([{ name: 'Example Member' }])
+
+    const sitemap = await buildSitemap(new Date('2026-08-18T00:00:00Z'))
+    const urls = sitemap.map((entry) => entry.url)
+
+    expect(urls).toEqual([
+      ...BASELINE_STATIC_PATHS.map((path) => (
+        path === '/'
+          ? 'https://richmondcommons.org'
+          : `https://richmondcommons.org${path}`
+      )),
+      'https://richmondcommons.org/meetings/meeting-1',
+      'https://richmondcommons.org/meetings/meeting-1/items/cc-1',
+      'https://richmondcommons.org/council/example-member',
+    ])
+    expect(queryMocks.getOfficials).toHaveBeenCalledWith(
+      undefined,
+      { councilOnly: true },
+    )
+    expect(queryMocks.getRecentAgendaItemSlugs).not.toHaveBeenCalled()
+    expect(queryMocks.getSitemapElections).not.toHaveBeenCalled()
+  })
+
+  it('keeps the baseline builder independently callable for release checks', async () => {
+    await buildBaselineSitemap()
+
+    expect(queryMocks.getMeetings).toHaveBeenCalledOnce()
+    expect(queryMocks.getAgendaItemSlugs).toHaveBeenCalledOnce()
+    expect(queryMocks.getOfficials).toHaveBeenCalledOnce()
   })
 
   it('includes public indexes and lightweight dynamic public routes', async () => {
@@ -76,7 +135,7 @@ describe('public sitemap', () => {
       created_at: '2026-08-02T00:00:00Z',
     }])
 
-    const sitemap = await buildSitemap(new Date('2026-08-18T00:00:00Z'))
+    const sitemap = await buildTreatmentSitemap(new Date('2026-08-18T00:00:00Z'))
     const urls = sitemap.map((entry) => entry.url)
 
     for (const path of PUBLIC_STATIC_PATHS) {
@@ -104,7 +163,7 @@ describe('public sitemap', () => {
   })
 
   it('excludes redirects, sensitive routes, and every ungraduated/noindex tree', async () => {
-    const paths = (await buildSitemap(new Date('2026-08-18T00:00:00Z')))
+    const paths = (await buildTreatmentSitemap(new Date('2026-08-18T00:00:00Z')))
       .map((entry) => new URL(entry.url).pathname)
 
     expect(paths).not.toContain('/elections')
@@ -128,14 +187,14 @@ describe('public sitemap', () => {
   })
 
   it('does not wire an all-history classification scan into daily sitemap generation', async () => {
-    await buildSitemap(new Date('2026-08-18T00:00:00Z'))
+    await buildTreatmentSitemap(new Date('2026-08-18T00:00:00Z'))
 
     expect(Object.keys(queryMocks)).not.toContain('getSitemapClassifications')
     expect(queryMocks.getRecentAgendaItemSlugs).toHaveBeenCalledOnce()
   })
 
   it('preserves the injected UTC rolling 24-month agenda-item cutoff', async () => {
-    await buildSitemap(new Date('2026-08-18T23:30:00-07:00'))
+    await buildTreatmentSitemap(new Date('2026-08-18T23:30:00-07:00'))
 
     expect(queryMocks.getRecentAgendaItemSlugs).toHaveBeenCalledWith(
       '2024-08-19',
@@ -157,7 +216,7 @@ describe('public sitemap', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     queryMocks.getSitemapMeetings.mockRejectedValue(new Error('inert database'))
 
-    const urls = (await buildSitemap(new Date('2026-08-18T00:00:00Z')))
+    const urls = (await buildTreatmentSitemap(new Date('2026-08-18T00:00:00Z')))
       .map((entry) => entry.url)
 
     expect(urls).toEqual(PUBLIC_STATIC_PATHS.map((path) => (
@@ -171,7 +230,7 @@ describe('public sitemap', () => {
       new Error('temporary outage'),
     )
 
-    await expect(buildSitemap(new Date('2026-08-18T00:00:00Z')))
+    await expect(buildTreatmentSitemap(new Date('2026-08-18T00:00:00Z')))
       .rejects.toThrow('temporary outage')
   })
 
@@ -181,7 +240,7 @@ describe('public sitemap', () => {
       new Error('temporary outage'),
     )
 
-    await expect(buildSitemap(new Date('2026-08-18T00:00:00Z')))
+    await expect(buildTreatmentSitemap(new Date('2026-08-18T00:00:00Z')))
       .rejects.toThrow('temporary outage')
   })
 })
