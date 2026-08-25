@@ -12,6 +12,7 @@ import SubscribeCTA from '@/components/SubscribeCTA'
 import MeetingNarrative from '@/components/MeetingNarrative'
 import RecapEmailPanel from '@/components/RecapEmailPanel'
 import OperatorMeetingSections from '@/components/OperatorMeetingSections'
+import { S29_PUBLIC_TREATMENT_ENABLED } from '@/lib/s29-release-phase'
 import {
   canonicalUrl,
   meetingEventStructuredData,
@@ -37,6 +38,21 @@ export async function generateMetadata(
   const { id } = await params
   const meeting = await getMeeting(id)
   if (!meeting) return { title: 'Meeting Not Found' }
+
+  if (!S29_PUBLIC_TREATMENT_ENABLED) {
+    const title = `${formatDate(meeting.meeting_date)} Meeting`
+    const description = `Richmond City Council ${meeting.meeting_type} meeting on ${formatDate(meeting.meeting_date)}. Agenda items, votes, and plain English summaries.`
+    return {
+      title,
+      description,
+      openGraph: {
+        title: `${title} | Richmond Commons`,
+        description,
+        type: 'article',
+      },
+    }
+  }
+
   const bodyName = meeting.body_name ?? 'Richmond public body'
   const meetingType = meeting.meeting_type.replaceAll('_', ' ')
   const title = `${formatDate(meeting.meeting_date)} — ${bodyName}`
@@ -71,20 +87,22 @@ export default async function MeetingDetailPage({
 
   return (
     <MeetingPageLayout items={meeting.agenda_items} flags={[]} promotedLabels={promotedLabels}>
-      <script
-        id="meeting-structured-data"
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{
-          __html: serializeJsonLd(meetingEventStructuredData({
-            id,
-            meetingDate: meeting.meeting_date,
-            meetingType: meeting.meeting_type,
-            bodyName: meeting.body_name,
-            agendaUrl: meeting.agenda_url,
-            cancelledAt: meeting.source_cancelled_at,
-          })),
-        }}
-      />
+      {S29_PUBLIC_TREATMENT_ENABLED && (
+        <script
+          id="meeting-structured-data"
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: serializeJsonLd(meetingEventStructuredData({
+              id,
+              meetingDate: meeting.meeting_date,
+              meetingType: meeting.meeting_type,
+              bodyName: meeting.body_name,
+              agendaUrl: meeting.agenda_url,
+              cancelledAt: meeting.source_cancelled_at,
+            })),
+          }}
+        />
+      )}
       <OperatorGate>
         <RecordVisit
           type="meeting"

@@ -713,3 +713,31 @@ and either an unbenchmarked route or a third Luna exception. Offline OCR plus
 the already-approved DeepSeek text path is cheaper, privacy-preserving, and
 more contained. Tight page, character, confidence, header, and row-grounding
 guards prevent this narrow recovery from becoming an unbounded OCR pipeline.
+
+## 2026-08-24: Hold merged S29 discovery changes behind a source-controlled phase gate
+
+**Decision:** Keep the S29 public treatment disabled in source through the 14
+complete UTC-day baseline. Merged PR #110 (the rolling 24-month agenda-item
+sitemap) and PR #119 (sourced metadata, JSON-LD, and expanded sitemap
+discovery) remain present and tested, but their public runtime behavior is
+selected only when `S29_PUBLIC_TREATMENT_ENABLED` changes in a reviewed
+treatment commit. While the flag is false, page metadata, structured-data
+rendering, and sitemap inventory match the production anchor at
+`0ff9fd50443d8d13e15a4d83845b2997cfc1054a`.
+
+**Enforcement:** `docs/s29-release-phase.json` records the phase, production
+anchor, and held merge SHAs. `tests/test_s29_release_phase.py` requires the
+source phase to match that record and requires every affected runtime surface
+to use the gate. Sitemap unit tests separately pin the four stable baseline
+paths and its existing meeting, agenda-item, and council-member inventory.
+
+**Boundary:** This is a release-sequencing control, not a rejection of the
+approved treatment. The treatment flip happens only after 14 complete UTC
+baseline days are frozen and the operator approves its exact release SHA. It
+does not deploy, create a Preview, publish a firewall rule, send email, apply a
+migration, change production data, or broaden S26/S28.
+
+**Rationale:** Automatic Git deployments are disabled, but an exact production
+release must still come from current canonical `main`. A source-controlled gate
+allows baseline-safe reliability and containment fixes to ship from `main`
+without silently exposing already-merged treatment SEO or sitemap behavior.
