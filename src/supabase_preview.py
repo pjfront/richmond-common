@@ -71,6 +71,15 @@ TYPEGEN_ACTIVE_TRANSIENT = (
 )
 CREATE_REQUEST_CLOCK_SKEW_SECONDS = 5
 MAX_CONTROL_PLANE_FUTURE_SKEW_SECONDS = 5 * 60
+# Vercel's create response and deployment inventory can converge separately.
+# PR #136 run 32805948044 exposed a deployment roughly 48 seconds after the
+# create request began, after the old 30-second reconciliation path had failed.
+# Ninety seconds absorbs that observed control-plane lag while remaining a
+# small, explicit slice of the 35-minute lifecycle job and its 110-minute
+# independent cleanup watchdog. Mutating create requests are still never
+# retried; this bound covers read-only attestation only.
+VERCEL_CREATE_RECONCILE_MAX_WAIT_SECONDS = 90.0
+VERCEL_CREATE_RECONCILE_POLL_SECONDS = 5.0
 GITHUB_OWNER = "pjfront"
 GITHUB_REPO = "richmond-common"
 EXPECTED_BASELINE_EXTENSIONS = (
@@ -2443,6 +2452,7 @@ class VercelClient:
                 git_repo=git_repo,
                 git_branch=git_branch,
                 source_head_sha=source_head_sha,
+                returned_id=returned_id,
             )
         try:
             if on_created is not None:
@@ -2496,31 +2506,94 @@ class VercelClient:
         git_repo: str,
         git_branch: str,
         source_head_sha: str,
+        returned_id: str = "",
     ) -> str:
-        """Find exactly one freshly created, fully attested deployment; never retry POST."""
-        deadline = time.monotonic() + 30.0
-        while time.monotonic() <= deadline:
-            payload = self.api.request(
-                "GET",
-                "/v6/deployments",
-                query={
-                    "teamId": self.team_id,
-                    "projectId": self.project_id,
-                    "target": "preview",
-                    "sha": source_head_sha,
-                    "limit": "20",
-                },
-            )
+        """Find one fresh exact deployment by bounded reads; never retry POST.
+
+        Vercel may return an immutable ID before the corresponding detail
+        response carries complete Git metadata, and its filtered deployment
+        inventory may become consistent later still. Re-attest the returned ID
+        and the current bounded inventory on every poll. No ID is persisted or
+        mutated until project, Preview target, Git owner/repository/ref/SHA,
+        and creation-time proofs all pass.
+        """
+        returned_id = returned_id.strip()
+        if returned_id and not returned_id.startswith("dpl_"):
+            returned_id = ""
+        deadline = (
+            time.monotonic() + VERCEL_CREATE_RECONCILE_MAX_WAIT_SECONDS
+        )
+        while time.monotonic() < deadline:
+            if returned_id:
+                returned_deployment: VercelDeployment | None = None
+                try:
+                    returned_deployment = self.get_preview_deployment(
+                        returned_id,
+                        git_owner=git_owner,
+                        git_repo=git_repo,
+                        git_branch=git_branch,
+                        source_head_sha=source_head_sha,
+                    )
+                except ApiError as returned_error:
+                    if returned_error.status in {401, 403}:
+                        raise
+                except PreviewError:
+                    pass
+                if returned_deployment is not None:
+                    try:
+                        self._assert_fresh_created_deployment(
+                            returned_deployment,
+                            request_started_at=request_started_at,
+                        )
+                    except PreviewError:
+                        returned_deployment = None
+                    if returned_deployment is not None:
+                        return returned_deployment.id
+                if time.monotonic() >= deadline:
+                    break
+
+            candidate_ids: set[str] = set()
+            try:
+                payload = self.api.request(
+                    "GET",
+                    "/v6/deployments",
+                    query={
+                        "teamId": self.team_id,
+                        "projectId": self.project_id,
+                        "target": "preview",
+                        "sha": source_head_sha,
+                        "limit": "20",
+                    },
+                )
+                rows = _rows(payload, context="Vercel deployment reconciliation")
+            except ApiError as inventory_error:
+                if inventory_error.status in {401, 403}:
+                    raise
+                # A read-only inventory lookup can fail transiently while the
+                # returned immutable ID becomes attestable independently.
+                rows = []
+            except PreviewError:
+                # A malformed successful list response is also safe to retry;
+                # no mutation is replayed and the wall-clock deadline still wins.
+                rows = []
+            if time.monotonic() >= deadline:
+                break
             candidates: list[VercelDeployment] = []
-            rows = _rows(payload, context="Vercel deployment reconciliation")
             if len(rows) >= 20:
                 raise PreviewError(
                     "Vercel deployment reconciliation reached its bounded page limit."
                 )
             for row in rows:
                 deployment_id = str(row.get("uid") or row.get("id") or "").strip()
-                if not deployment_id.startswith("dpl_"):
-                    continue
+                if deployment_id.startswith("dpl_") and deployment_id != returned_id:
+                    candidate_ids.add(deployment_id)
+            ordered_candidate_ids = sorted(candidate_ids)
+            completed_candidate_reads = True
+            for index, deployment_id in enumerate(ordered_candidate_ids):
+                if time.monotonic() >= deadline:
+                    completed_candidate_reads = False
+                    break
+                deployment: VercelDeployment | None = None
                 try:
                     deployment = self.get_preview_deployment(
                         deployment_id,
@@ -2532,16 +2605,41 @@ class VercelClient:
                 except ApiError as candidate_error:
                     if candidate_error.status in {401, 403}:
                         raise
-                    continue
+                    deployment = None
                 except PreviewError:
-                    continue
-                try:
-                    self._assert_fresh_created_deployment(
-                        deployment, request_started_at=request_started_at
+                    deployment = None
+                if deployment is not None:
+                    try:
+                        self._assert_fresh_created_deployment(
+                            deployment, request_started_at=request_started_at
+                        )
+                    except PreviewError:
+                        deployment = None
+                    if deployment is not None:
+                        candidates.append(deployment)
+                if (
+                    time.monotonic() >= deadline
+                    and index + 1 < len(ordered_candidate_ids)
+                ):
+                    completed_candidate_reads = False
+                    break
+            if not completed_candidate_reads:
+                cleanup_failures: list[str] = []
+                for deployment in candidates:
+                    try:
+                        self.rollback_created_deployment(deployment.id)
+                    except Exception:
+                        cleanup_failures.append(deployment.id)
+                if cleanup_failures:
+                    raise PreviewError(
+                        "Vercel reconciliation deadline expired; retirement "
+                        "needs follow-up for IDs="
+                        + ",".join(cleanup_failures)
+                        + ". ACTION: Do not retry or create another Preview; give "
+                        "this run URL and the listed exact deployment IDs to a "
+                        "coding assistant to verify and retire only those IDs."
                     )
-                except PreviewError:
-                    continue
-                candidates.append(deployment)
+                break
             if len(candidates) == 1:
                 return candidates[0].id
             if len(candidates) > 1:
@@ -2556,16 +2654,22 @@ class VercelClient:
                         "Ambiguous Vercel create produced multiple exact deployments; "
                         "retirement needs follow-up for IDs="
                         + ",".join(cleanup_failures)
+                        + ". ACTION: Do not retry or create another Preview; give "
+                        "this run URL and the listed exact deployment IDs to a "
+                        "coding assistant to verify and retire only those IDs."
                     )
                 raise PreviewError(
                     "Ambiguous Vercel create produced multiple exact deployments; "
                     "all were retired."
                 )
-            time.sleep(5.0)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            time.sleep(min(VERCEL_CREATE_RECONCILE_POLL_SECONDS, remaining))
         raise PreviewError(
-            "Ambiguous Vercel create could not be reconciled to an exact "
-            "deployment. ACTION: inspect the failed run and exact branch/SHA "
-            "deployments before retrying anything."
+            "Ambiguous Vercel create could not be reconciled within the bounded "
+            "read-after-create window. ACTION: inspect the failed run and exact "
+            "branch/SHA deployments before retrying anything."
         )
 
     def rollback_created_deployment(self, deployment_id: str) -> None:
