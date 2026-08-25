@@ -2,8 +2,8 @@ name: Supabase Preview
 run-name: Supabase Preview | action=${{ github.event_name == 'pull_request_target' && 'cleanup' || github.event.client_payload.action }} | pr=${{ github.event.pull_request.number || github.event.client_payload.pr_number }}
 
 # One explicit, non-replacing bootstrap may retain its exact branch only for a
-# SHA-bound type-only follow-up. Supabase native deletion plus the trusted
-# expiry workflow enforce the approved maximum two-hour lifetime.
+# SHA-bound type-only follow-up. Independent trusted 90- and 110-minute
+# hard-delete workflows enforce the normal-operation two-hour ceiling.
 on:
   # repository_dispatch always executes the default-branch workflow SHA/ref.
   # workflow_dispatch is intentionally absent because its selected ref can
@@ -217,7 +217,7 @@ jobs:
           --pr-number "$PREVIEW_PR_NUMBER"
           --git-branch "$PREVIEW_GIT_BRANCH"
           --source-head-sha "$SOURCE_HEAD_SHA"
-          --max-age-seconds 7200
+          --max-age-seconds 4200
 
       - name: Install pinned Supabase CLI for exact-head typegen
         if: >-
@@ -251,7 +251,13 @@ jobs:
             echo "::error::ACTION: Do not retry or create another Preview. Give this run URL to a coding assistant with: In Richmond Commons, verify exact Preview cleanup, then diagnose why database.types.ts exceeds the 2 MB gate."
             exit 1
           fi
-          supabase gen types typescript --project-id "$PREVIEW_BRANCH_REF" --schema public > "$generated"
+          if ! python src/supabase_preview.py generate-types \
+            --project-ref "$PREVIEW_BRANCH_REF" \
+            --output "$generated" \
+            --max-wait-seconds 120; then
+            echo "::error::ACTION: Do not retry or create another Preview. Give this run URL to a coding assistant with: In Richmond Commons, verify exact Preview cleanup, then diagnose the bounded Preview type-generation failure."
+            exit 1
+          fi
           if [ -L "$generated" ] || [ ! -f "$generated" ] || [ "$(stat -c%s "$generated")" -gt 2000000 ]; then
             echo "::error::ACTION: Do not retry or create another Preview. Give this run URL to a coding assistant with: In Richmond Commons, verify exact Preview cleanup, then diagnose the missing, linked, or oversized generated types artifact."
             exit 1
@@ -416,7 +422,13 @@ jobs:
             echo "::error::ACTION: Do not retry or create another Preview. Give this run URL to a coding assistant with: In Richmond Commons, verify exact Preview cleanup, then diagnose why H1 database.types.ts exceeds the 2 MB gate."
             exit 1
           fi
-          supabase gen types typescript --project-id "$PREVIEW_BRANCH_REF" --schema public > "$generated"
+          if ! python src/supabase_preview.py generate-types \
+            --project-ref "$PREVIEW_BRANCH_REF" \
+            --output "$generated" \
+            --max-wait-seconds 120; then
+            echo "::error::ACTION: Do not retry or create another Preview. Give this run URL to a coding assistant with: In Richmond Commons, verify exact Preview cleanup, then diagnose the bounded retained-Preview type-generation failure."
+            exit 1
+          fi
           if [ -L "$generated" ] || [ ! -f "$generated" ] || [ "$(stat -c%s "$generated")" -gt 2000000 ]; then
             echo "::error::ACTION: Do not retry or create another Preview. Give this run URL to a coding assistant with: In Richmond Commons, verify exact Preview cleanup, then diagnose the missing, linked, or oversized generated H1 types artifact."
             exit 1
@@ -519,7 +531,7 @@ jobs:
           --git-owner "$GIT_OWNER"
           --git-repo "$GIT_REPO"
           --verified-type-only-rebind
-          --max-age-seconds 7200
+          --max-age-seconds 4200
 
       - name: Remove H1 Preview after trusted deployment request failure
         if: >-
