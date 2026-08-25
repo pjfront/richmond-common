@@ -4,19 +4,15 @@ import { NextRequest } from 'next/server'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 
-const operatorSession = vi.hoisted(() => ({ isOperator: false }))
-
 vi.mock('iron-session', () => ({
-  getIronSession: vi.fn(async () => ({ isOperator: operatorSession.isOperator })),
+  getIronSession: vi.fn(async () => ({ isOperator: false })),
 }))
 
 vi.mock('@/lib/operator-session', () => ({
   getOperatorSessionOptions: vi.fn(() => ({})),
 }))
 
-import OperatorRichmond101Page, {
-  metadata,
-} from '@/app/operator/richmond-101/page'
+import CityGovernmentGuidePage, { metadata } from '@/app/guide/page'
 import { middleware } from '@/middleware'
 import Richmond101Content from './Richmond101Content'
 
@@ -24,17 +20,35 @@ function source(relativePath: string): string {
   return readFileSync(fileURLToPath(new URL(relativePath, import.meta.url)), 'utf8')
 }
 
-describe('Richmond 101 operator draft', () => {
-  it('visibly identifies draft, AI, review, and source-check status', () => {
+describe('public city government guide', () => {
+  it('identifies the reviewed AI guide and exact checked sources', () => {
     const markup = renderToStaticMarkup(<Richmond101Content />)
 
-    expect(markup).toContain('Operator-only · AI-generated draft · voice review required')
-    expect(markup).toContain('Source links checked August 10, 2026.')
-    expect(markup).toContain('Source link checked August 10, 2026')
-    expect(markup).not.toContain('weeks ago')
+    expect(markup).toContain('AI-generated guide · reviewed by Richmond Commons')
+    expect(markup).not.toContain('Operator-only')
+    expect(markup).not.toContain('voice review required')
+    expect(markup).toContain('Source links checked August 24, 2026.')
+    expect(markup).toContain('Source link checked August 24, 2026')
+    expect(markup).toContain(
+      'https://www.ci.richmond.ca.us/DocumentCenter/View/75595/Getting-Started-Now-Guide---2026-elections?bidId=',
+    )
+    expect(markup).toContain('https://www.ci.richmond.ca.us/867/Charter')
+    expect(markup).not.toContain('https://www.ci.richmond.ca.us/29/City-Council')
+    expect(markup).not.toContain('https://www.ci.richmond.ca.us/4771/ELECTION-2026')
     expect(markup).toContain('T1 · Official Record')
     expect(markup).toContain('T2 · Independent Media')
     expect(markup).toContain('Richmondside: How Richmond works')
+  })
+
+  it('uses the approved title and minimum factual qualifications', () => {
+    const markup = renderToStaticMarkup(<Richmond101Content />)
+
+    expect(markup).toContain('How to Follow Richmond City Government')
+    expect(markup).toContain(
+      'Check the latest official agenda for the current time, location, and ways to',
+    )
+    expect(markup).toContain('When records are available, Richmond Commons brings')
+    expect(markup).toContain('meeting&#x27;s Open Forum period')
   })
 
   it('keeps a plain heading hierarchy and accessible source links', () => {
@@ -50,49 +64,29 @@ describe('Richmond 101 operator draft', () => {
     expect(markup).not.toContain('&amp;nearr;')
   })
 
-  it('inherits operator containment and adds strict route metadata', () => {
-    expect(renderToStaticMarkup(<OperatorRichmond101Page />)).toContain('Richmond 101')
-    expect(metadata.robots).toEqual({
-      index: false,
-      follow: false,
-      noarchive: true,
-      nosnippet: true,
-    })
-
-    const middleware = source('../middleware.ts')
-    const operatorLayout = source('../app/operator/layout.tsx')
+  it('graduates to indexable public metadata and footer-only discovery', () => {
+    const footer = source('./Footer.tsx')
     const navigation = source('./Nav.tsx')
     const sitemap = source('../app/sitemap.ts')
+    const nextConfig = source('../../next.config.ts')
 
-    expect(middleware).toContain("matcher: ['/operator/:path*']")
-    expect(operatorLayout).toContain('robots: { index: false, follow: false }')
-    expect(navigation).not.toContain('richmond-101')
-    expect(sitemap).not.toContain('richmond-101')
+    expect(renderToStaticMarkup(<CityGovernmentGuidePage />)).toContain(
+      'How to Follow Richmond City Government',
+    )
+    expect(metadata.title).toBe('How to Follow Richmond City Government')
+    expect(metadata.robots).toBeUndefined()
+    expect(metadata.alternates).toEqual({ canonical: '/guide' })
+    expect(footer).toContain('href="/guide"')
+    expect(footer).toContain('City Government Guide')
+    expect(navigation).not.toContain('href="/guide"')
+    expect(sitemap).toContain("'/guide'")
+    expect(nextConfig).toContain('source: "/operator/richmond-101"')
+    expect(nextConfig).toContain('destination: "/guide"')
   })
 
-  it('redirects an unauthenticated Richmond 101 request to the exact login destination', async () => {
-    operatorSession.isOperator = false
-
+  it('allows unauthenticated public guide requests through middleware', async () => {
     const response = await middleware(
-      new NextRequest('https://richmondcommons.org/operator/richmond-101'),
-    )
-    const locationHeader = response.headers.get('location')
-
-    expect(response.status).toBe(307)
-    expect(locationHeader).not.toBeNull()
-
-    const location = new URL(locationHeader as string)
-    expect(location.origin).toBe('https://richmondcommons.org')
-    expect(`${location.pathname}?next=${location.searchParams.get('next')}`).toBe(
-      '/operator/login?next=/operator/richmond-101',
-    )
-  })
-
-  it('passes an authenticated Richmond 101 request through middleware', async () => {
-    operatorSession.isOperator = true
-
-    const response = await middleware(
-      new NextRequest('https://richmondcommons.org/operator/richmond-101'),
+      new NextRequest('https://richmondcommons.org/guide'),
     )
 
     expect(response.status).toBe(200)

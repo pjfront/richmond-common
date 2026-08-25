@@ -47,6 +47,7 @@ export const PUBLIC_STATIC_PATHS = [
   '/donors',
   '/influence/methodology',
   '/subscribe',
+  '/guide',
   '/about',
 ] as const
 

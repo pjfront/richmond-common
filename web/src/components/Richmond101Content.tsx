@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import SourceBadge from './SourceBadge'
 
-const SOURCE_CHECKED_AT = 'August 10, 2026'
+const SOURCE_CHECKED_AT = 'August 24, 2026'
 
 interface SourceReference {
   name: string
@@ -46,9 +46,11 @@ export default function Richmond101Content() {
     <article className="mx-auto max-w-3xl px-4 py-10 sm:px-6 sm:py-12">
       <header className="border-b border-slate-200 pb-7">
         <p className="inline-flex rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-800">
-          Operator-only · AI-generated draft · voice review required
+          AI-generated guide · reviewed by Richmond Commons
         </p>
-        <h1 className="mt-4 text-3xl font-bold text-civic-navy sm:text-4xl">Richmond 101</h1>
+        <h1 className="mt-4 text-3xl font-bold text-civic-navy sm:text-4xl">
+          How to Follow Richmond City Government
+        </h1>
         <p className="mt-3 text-base leading-relaxed text-slate-600">
           A practical guide to finding a meeting, reading an agenda, following a vote,
           and taking part in Richmond city government.
@@ -92,13 +94,13 @@ export default function Richmond101Content() {
           <SourceReferences
             sources={[
               {
-                name: 'City of Richmond: City Council',
-                href: 'https://www.ci.richmond.ca.us/29/City-Council',
+                name: 'City of Richmond: 2026 Getting Started guide',
+                href: 'https://www.ci.richmond.ca.us/DocumentCenter/View/75595/Getting-Started-Now-Guide---2026-elections?bidId=',
                 tier: 1,
               },
               {
-                name: 'City of Richmond: Election 2026',
-                href: 'https://www.ci.richmond.ca.us/4771/ELECTION-2026',
+                name: 'City of Richmond: City Charter',
+                href: 'https://www.ci.richmond.ca.us/867/Charter',
                 tier: 1,
               },
             ]}
@@ -111,12 +113,12 @@ export default function Richmond101Content() {
           </h2>
           <div className="mt-3 space-y-3 text-base leading-relaxed text-slate-700">
             <p>
-              Meeting dates, start times, and participation details can change. The latest
-              official agenda is the final word on when and where a meeting happens.
+              Check the latest official agenda for the current time, location, and ways to
+              participate.
             </p>
             <p>
-              Richmond Commons brings agendas, plain-language summaries, votes, and links
-              to the underlying city records into one meeting page.
+              When records are available, Richmond Commons brings agendas, plain-language
+              summaries, votes, and links to the underlying city records into one meeting page.
             </p>
           </div>
           <Link
@@ -178,7 +180,7 @@ export default function Richmond101Content() {
           <div className="mt-3 space-y-3 text-base leading-relaxed text-slate-700">
             <p>
               If your comment is about an agenda item, use that item number. For a city
-              issue that is not on the agenda, use the meeting&apos;s open public-comment period.
+              issue that is not on the agenda, use the meeting&apos;s Open Forum period.
               The process and speaking time can vary, so check the current agenda before
               the meeting.
             </p>

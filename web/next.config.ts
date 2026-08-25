@@ -81,6 +81,11 @@ const nextConfig: NextConfig = {
         destination: "/council/analytics?tab=patterns",
         permanent: true,
       },
+      {
+        source: "/operator/richmond-101",
+        destination: "/guide",
+        permanent: true,
+      },
     ];
   },
 };
