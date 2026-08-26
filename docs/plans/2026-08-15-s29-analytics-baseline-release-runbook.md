@@ -16,9 +16,11 @@ deploy, billing action, preview bootstrap, migration, email send, or
 production-data change.
 
 **Measurement:** 14 complete UTC days with the existing public experience,
-followed by 14 complete UTC days with only the visible S29 treatment changed.
-Analytics, subscription capture, email delivery, privacy, search, operator
-session, and rate-limit behavior must be identical in both windows.
+followed by 14 complete UTC days with the visible S29 treatment and one fixed,
+separately logged unpaid release message. The treatment is a combined
+release-and-demand observation, not a causal UX experiment. Analytics,
+subscription capture, email delivery, privacy, search, operator session, and
+rate-limit behavior must be identical in both windows.
 
 ## Fixed starting state
 
@@ -175,6 +177,33 @@ behavior, preference filtering, search persistence, logging, rate limiting,
 operator-session suppression, analytics, privacy disclosure, or measurement
 definitions.
 
+### Bounded outreach cohort
+
+On 2026-08-26, the operator approved preparing one identical unpaid launch
+message for no more than three operator-controlled Richmond channels. The fixed
+copy, canonical landing URL, release slot, privacy boundary, private posting
+log, and closeout rules are in
+`docs/plans/2026-08-26-s29-bounded-outreach-packet.md`.
+
+This approval changes the interpretation of the treatment window, not its
+capture architecture. Treat the window as a combined release-and-demand
+observation. Do not attribute a change to the UX, the message, a channel, SEO,
+Richmond 101, or calendar effects. The baseline remains organic and the
+treatment includes the one fixed release. Report the outreach as a material
+release event in the joined packet.
+
+The exact channel names and calendar dates are still pending. Channel names and
+coarse source hostnames stay only in the gitignored operator log; source post
+permalinks and referring paths are not retained. The calendar remains
+gate-driven: after `B14` is frozen and `T0` is approved, the message is posted
+once per selected channel from `00:05Z` through `00:35Z` on treatment day 1.
+Use the same canonical URL without UTM parameters, query strings, fragments,
+shorteners, custom events, or person-level tracking. No post is authorized
+before those inputs and dates are frozen. Treatment day 1 must begin no later
+than `2026-10-20T00:00:00Z`, so the full window ends before Election Day. If the
+runtime gates cannot meet that cutoff, the outreach packet expires and no
+message is posted without a new operator decision.
+
 ## Privacy and reporting boundary
 
 Analytics records automatic pageviews only. It:
@@ -255,6 +284,9 @@ Use complete UTC days:
 4. Record completed visible-treatment deployment and commit as `T0`.
 5. Treatment day 1 starts at the first `00:00:00Z` after `T0`; observe 14
    complete UTC days.
+6. Post the fixed outreach message once in each approved channel from
+   `00:05:00Z` through `00:35:00Z` on treatment day 1, then make no repost,
+   bump, paid promotion, or additional outreach during the window.
 
 Do not start until a network check confirms one sanitized public pageview and
 none on operator/manage pages. Record analytics pauses, email-delivery outages,
@@ -265,9 +297,10 @@ the affected window after stabilization.
 This is sequential observation, not a randomized causal experiment. Election
 interest naturally changes between the two windows, SEO indexing may lag past
 the 14-day treatment window, and the treatment bundles the front door,
-navigation, placements, SEO, and any separately approved Richmond 101 release.
-Report raw counts and descriptive changes only; do not attribute lift to one
-component or causally separate the treatment from calendar effects.
+navigation, placements, SEO, any separately approved Richmond 101 release, and
+the fixed bounded outreach message. Report raw counts and descriptive changes
+only; do not attribute lift to one component or causally separate the treatment
+from the release or calendar effects.
 
 ## Results packet
 

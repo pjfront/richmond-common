@@ -765,3 +765,33 @@ view behavior without changing rows or the stored view definitions.
 that the project relies on, including later source-cancellation and
 agenda-retirement policies. Invoker semantics remove that bypass while
 preserving the existing public access intended by the underlying policies.
+
+## 2026-08-26: Make bounded outreach part of the S29 release cohort
+
+**Decision:** Prepare one identical unpaid launch message for one to three
+operator-controlled Richmond channels. Post it once per selected channel in a
+single 30-minute slot at the start of treatment day 1, using the canonical
+November election URL without channel-specific query parameters. Treat the
+result as a combined release-and-demand observation, not a causal UX
+experiment. The fixed packet is
+`docs/plans/2026-08-26-s29-bounded-outreach-packet.md`.
+
+**Boundary:** No channel is selected and no message is published until the
+operator supplies the exact channel names, `B14` is frozen, the exact treatment
+SHA is approved and live, and the gate-driven treatment dates are committed.
+Treatment day 1 must begin by `2026-10-20T00:00:00Z`, allowing all 14 complete
+UTC days to end before Election Day; otherwise this outreach approval expires.
+There is no paid promotion, repost, bump, automated outreach, UTM parameter,
+shortener, custom event, new identifier, person-level tracking, or expansion
+beyond three channels. Channel names, coarse source hostnames, posting times,
+and statuses stay in the gitignored private operator log. Source post
+permalinks and referring paths are not retained. A delayed, removed, or skipped
+post is logged and not replaced.
+
+**Rationale:** With two active subscribers and no current audience, an
+organic-only window is likely to produce insufficient exposure. One fixed,
+transparent release creates a bounded opportunity for Richmond residents to
+find the site without pretending to isolate the effect of the new front door.
+The same copy and URL, fixed release slot, no mid-window promotion, and manual
+source log make the intervention legible while preserving the existing
+privacy-preserving aggregate measurement contract.
