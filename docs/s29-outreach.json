@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "packet_id": "s29-outreach-v1",
+  "status": "approved_pending_channels_and_t0",
+  "copy": "Richmond Commons is ready for Richmond residents to try. It is a free, independent guide to city government in Richmond, California. See the November 3 mayor's race, follow City Council meetings and votes, find your council district, and sign up for meeting briefings. Plain-language explanations link to public records, and AI-generated explanations are clearly labeled.\n\nTake a look:\nhttps://richmondcommons.org/elections/2026-general\n\nIf something looks unclear or wrong, please use the Submit Feedback button.",
+  "landing_url": "https://richmondcommons.org/elections/2026-general",
+  "latest_treatment_day_1_utc": "2026-10-20T00:00:00Z",
+  "max_channels": 3,
+  "posts_per_channel": 1,
+  "paid_promotion": false,
+  "treatment_day_1_post_window_seconds": {
+    "start": 300,
+    "end": 2100
+  },
+  "tracking": {
+    "utm_parameters": false,
+    "query_parameters": false,
+    "fragments": false,
+    "url_shorteners": false,
+    "custom_events": false,
+    "person_level_identifiers": false
+  },
+  "private_log": {
+    "path": "src/data/analytics_checkpoints/s29-outreach-log.json",
+    "channel_fields": [
+      "platform",
+      "channel_name",
+      "source_hostname",
+      "scheduled_at_utc",
+      "actual_at_utc",
+      "status"
+    ],
+    "allowed_statuses": [
+      "posted",
+      "moderation_pending",
+      "removed",
+      "skipped"
+    ],
+    "prohibited_person_level_fields": true
+  }
+}
