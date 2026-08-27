@@ -765,3 +765,31 @@ view behavior without changing rows or the stored view definitions.
 that the project relies on, including later source-cancellation and
 agenda-retirement policies. Invoker semantics remove that bypass while
 preserving the existing public access intended by the underlying policies.
+
+## 2026-08-26: Retire the standalone Mayor funding artifact
+
+**Decision:** Permanently redirect
+`/elections/2026-primary/mayor/funding` to the canonical
+`/elections/2026-primary` election page. Preserve the reviewed candidate
+fundraising summary already shown on that page. Do not repair, publish, or
+expand the retired artifact's independent-expenditure-by-candidate analysis
+during November.
+
+**Chronology:** The bounded redirect implementation merged in PR #111 on
+2026-08-24 before this publication decision was explicitly recorded. The
+operator approved the intended retirement on 2026-08-26. The implementation
+remains absent from production until it is included in a separately approved
+exact-SHA production batch; this decision alone does not authorize a deploy.
+
+**Boundary:** Keep the dormant funding-breakdown and candidate-IE helpers
+unwired and operator-only. Do not backfill or correct production campaign data,
+change committee classifications, broaden surname matching, or expand S26/S28.
+Old bookmarks retain a permanent redirect, and the retired route remains out
+of navigation and the sitemap.
+
+**Rationale:** The standalone artifact duplicates the useful funding context
+already present on the election page while its category totals can drift from
+reviewed Form 460 cover totals and its permissive surname matching can combine
+independent expenditures for different candidates. Redirecting removes an
+unfinished, unreliable public surface without removing the trusted summary or
+underlying source data.
