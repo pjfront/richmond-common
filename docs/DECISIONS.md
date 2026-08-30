@@ -823,3 +823,21 @@ not yet satisfy the mandatory row-level provenance and confidence contract.
 Leaving public placeholders would create dead ends and retain avoidable
 aggregate reads. A fail-closed hold makes the November release smaller and
 more trustworthy while keeping every source record and export recoverable.
+
+## 2026-08-30: Keep the reviewed July recap cohort blank through T14
+
+**Decision:** Keep the exact July 7, July 21, and July 28, 2026 meeting rows'
+four transcript-recap fields null through the actual S29 T14 checkpoint. The
+reviewed V2 attempt did not produce three independently approved candidates,
+so its cohort-wide apply gate correctly left production unchanged. Before
+T14, **ACTION: None**. Do not generate, retry, salvage, apply, or publish this
+cohort, and do not renew or remove its expired alert suppression.
+
+At T14, the checkpoint must ask the operator to choose whether to keep this
+exact cohort blank or authorize a new, separately bounded, source-reviewed
+repair. The reminder is not itself authorization to repair or publish.
+
+**Rationale:** Leaving the three recaps blank is safer than publishing a
+partial or insufficiently supported cohort, and postpones a nonessential
+repair until the November treatment evidence can be reviewed without adding
+cost or operational work during the test.

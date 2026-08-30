@@ -30,6 +30,7 @@ import argparse
 import json
 import os
 import re
+from datetime import date as calendar_date, datetime
 from pathlib import Path
 from typing import Literal, TypedDict
 
@@ -45,6 +46,11 @@ MODEL = "deepseek-v4-pro"
 MAX_TOKENS_TRANSCRIPT_RECAP = 2000
 PROMPTS_DIR = Path(__file__).parent / "prompts"
 TRANSCRIPT_DIR = Path(__file__).parent.parent / "data" / "transcripts"
+JULY_RECAP_T14_HOLD_DATES = frozenset({
+    "2026-07-07",
+    "2026-07-21",
+    "2026-07-28",
+})
 
 TranscriptSource = Literal["youtube", "granicus"]
 
@@ -60,6 +66,49 @@ class TranscriptPipelineResult(TypedDict):
 
 class RecapUnavailableError(RuntimeError):
     """Raised when a completed pipeline run still has no transcript recap."""
+
+
+class RecapHeldError(RuntimeError):
+    """Raised before any work for an operator-held meeting recap."""
+
+
+def _canonical_hold_date(meeting_date: object) -> str:
+    """Normalize date-like inputs only for the exact hold comparison."""
+    if isinstance(meeting_date, datetime):
+        return meeting_date.date().isoformat()
+    if isinstance(meeting_date, calendar_date):
+        return meeting_date.isoformat()
+    if not isinstance(meeting_date, str):
+        raise RecapUnavailableError(
+            "ACTION: Stop. Use a meeting date in YYYY-MM-DD form. Do not "
+            "retry with a different spelling or let PostgreSQL guess the date."
+        )
+
+    candidate = meeting_date.strip()
+    try:
+        return calendar_date.fromisoformat(candidate).isoformat()
+    except ValueError:
+        try:
+            return datetime.fromisoformat(candidate).date().isoformat()
+        except ValueError:
+            raise RecapUnavailableError(
+                "ACTION: Stop. Use a meeting date in YYYY-MM-DD form. Do not "
+                "retry with a different spelling or let PostgreSQL guess the "
+                "date."
+            ) from None
+
+
+def _enforce_july_recap_t14_hold(meeting_date: object) -> None:
+    """Keep the three reviewed July recaps blank until the S29 T14 review."""
+    canonical_date = _canonical_hold_date(meeting_date)
+    if canonical_date in JULY_RECAP_T14_HOLD_DATES:
+        raise RecapHeldError(
+            "ACTION: None through T14. "
+            f"{canonical_date} is intentionally held blank. Leave this recap "
+            "blank through the S29 T14 review. Do not "
+            "rerun, force, replay, or cascade this meeting; revisit it only "
+            "after a new operator decision."
+        )
 
 
 def _load_prompt(filename: str) -> str:
@@ -261,6 +310,8 @@ def run_transcript_pipeline(
     ``--only-transcript-recap`` cannot silently relabel a Granicus artifact as
     YouTube (or vice versa).
     """
+    _enforce_july_recap_t14_hold(meeting_date)
+
     result: TranscriptPipelineResult = {
         "transcript_fetched": False,
         "transcript_path": None,
@@ -365,6 +416,8 @@ def run_agenda_recap(
 
     Returns True if recap was generated.
     """
+    _enforce_july_recap_t14_hold(meeting_date)
+
     from generate_meeting_recaps import generate_recaps
     from db import get_connection
 
@@ -421,6 +474,8 @@ def generate_transcript_recap(
 
     Returns the recap text, or None on failure.
     """
+    _enforce_july_recap_t14_hold(meeting_date)
+
     meeting_id = _get_meeting_id(meeting_date)
     if not meeting_id:
         print(f"  No meeting found in DB for {meeting_date}")
@@ -649,6 +704,9 @@ def main() -> None:
 
     try:
         _run_pipeline(args)
+    except RecapHeldError as exc:
+        print(f"::error title=July recap intentionally held::{exc}")
+        raise SystemExit(1) from exc
     except RecapUnavailableError as exc:
         print(f"::error title=Transcript recap unavailable::{exc}")
         raise SystemExit(1) from exc
@@ -657,6 +715,7 @@ def main() -> None:
 def _run_pipeline(args: argparse.Namespace) -> None:
     """Run the 4-step recap pipeline. Errors propagate to caller."""
     date = args.meeting_date
+    _enforce_july_recap_t14_hold(date)
 
     print(f"Post-meeting recap pipeline for {date}")
     print("=" * 50)

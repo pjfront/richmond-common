@@ -80,20 +80,28 @@ jobs:
               PRIMARY_ACTION="Open Codex or ChatGPT, paste the message below, and attach the JSON file. Ask it to join the required private Supabase/manual fields and prepare the complete baseline-freeze packet. Do not freeze the baseline from this attachment alone."
               ;;
             T14)
-              PRIMARY_ACTION="Open Codex or ChatGPT, paste the message below, and attach the JSON file. Ask it to join the required private Supabase/manual fields and prepare the final treatment and donation go/no-go packet. Do not launch a donation ask until you approve that packet."
+              PRIMARY_ACTION="Open Codex or ChatGPT, paste the message below, and attach the JSON file. Ask it to prepare the final treatment and donation go/no-go packet plus a separate July recap decision. Do not launch a donation ask or repair the July recaps until you approve that packet."
               ;;
             *)
               echo "::error::ACTION: Do not retry this checkpoint. Give this run URL to a coding assistant and ask it to restore the B7/B14/T7/T14 allowlist."
               exit 1
               ;;
           esac
+          if [ "$CHECKPOINT" = "T14" ]; then
+            JULY_RECAP_STATUS="Decision due in this checkpoint: choose whether to keep the exact July 7, July 21, and July 28 recap cohort blank or authorize a new, separately bounded, source-reviewed repair. This reminder does not authorize repair or publication."
+          else
+            JULY_RECAP_STATUS="No action before T14. Keep the exact July 7, July 21, and July 28 recap cohort blank."
+          fi
           NOTICE=$(cat <<EOF
           ACTION: $PRIMARY_ACTION
+
+          JULY RECAP STATUS
+          $JULY_RECAP_STATUS
 
           COPY/PASTE MESSAGE FOR YOUR CODING ASSISTANT
           ============================================
 
-          You are reviewing Richmond Commons (https://richmondcommons.org), a civic transparency website for Richmond, California. Its repository is https://github.com/pjfront/richmond-common. Review the attached S29 $CHECKPOINT aggregate-only analytics packet against docs/plans/2026-08-15-s29-analytics-baseline-release-runbook.md. The Vercel attachment alone is not a complete B14/T14 freeze packet: identify and safely join every required private Supabase/manual field before declaring it complete. At T14, return the evidence-based treatment result and a separate donation go/no-go recommendation; do not launch anything. Preserve Supabase Pro, DeepSeek-first with only the two benchmarked Luna exceptions, AGPL, D2=0.50, migration 136 live, and migration 134 as a HARD NO-GO. Do not change production data, start an unbounded sync, expand S26/S28, publish, or increase cost. Explain the result in plain language and end with exactly what the operator must do, if anything.
+          You are reviewing Richmond Commons (https://richmondcommons.org), a civic transparency website for Richmond, California. Its repository is https://github.com/pjfront/richmond-common. Review the attached S29 $CHECKPOINT aggregate-only analytics packet against docs/plans/2026-08-15-s29-analytics-baseline-release-runbook.md. The Vercel attachment alone is not a complete B14/T14 freeze packet: identify and safely join every required private Supabase/manual field before declaring it complete. At T14, return the evidence-based treatment result and a separate donation go/no-go recommendation; do not launch anything. Also ask the operator to decide whether the exact July 7, July 21, and July 28 recap cohort should remain blank or receive a new, separately bounded, source-reviewed repair; the checkpoint itself does not authorize repair or publication. Before T14, the July recap cohort requires no operator action and must remain blank. Preserve Supabase Pro, DeepSeek-first with only the two benchmarked Luna exceptions, AGPL, D2=0.50, migration 136 live, and migration 134 as a HARD NO-GO. Do not change production data, start an unbounded sync, expand S26/S28, publish, or increase cost. Explain the result in plain language and end with one clear ACTION: line stating exactly what the operator must do, or ACTION: None.
           EOF
           )
           jq -n \

@@ -244,6 +244,11 @@ def test_checkpoint_workflow_is_manual_main_only_and_has_no_public_state():
     assert "github.ref == 'refs/heads/main'" in text
     assert 'keys == ["checkpoint"]' in text
     assert all(f'.checkpoint == "{value}"' in text for value in ("B7", "B14", "T7", "T14"))
+    assert all(date in text for date in ("July 7", "July 21", "July 28"))
+    assert 'if [ "$CHECKPOINT" = "T14" ]' in text
+    assert "plus a separate July recap decision" in text
+    assert "No action before T14" in text
+    assert "JULY_RECAP_ACTION" not in text
     assert "contents: read" in text
     assert "RESEND_API_KEY" in text and "OPERATOR_EMAIL" in text
     for forbidden in ("schedule:", "upload-artifact", "heartbeat", "git push"):

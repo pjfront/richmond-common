@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import date, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -17,7 +18,22 @@ sys.path.insert(0, str(ROOT / "src"))
 import post_meeting_recap as recap  # noqa: E402
 
 
-MEETING_DATE = "2026-07-21"
+MEETING_DATE = "2026-06-16"
+HELD_MEETING_DATES = (
+    "2026-07-07",
+    "2026-07-21",
+    "2026-07-28",
+)
+HELD_DATE_INPUTS = (
+    *HELD_MEETING_DATES,
+    *(date.fromisoformat(value) for value in HELD_MEETING_DATES),
+    *(datetime.fromisoformat(f"{value}T12:00:00") for value in HELD_MEETING_DATES),
+    *(f" {value} " for value in HELD_MEETING_DATES),
+)
+UNSUPPORTED_DATE_INPUTS = (
+    "July 7, 2026",
+    "07/07/2026",
+)
 
 
 @pytest.fixture
@@ -264,6 +280,115 @@ def _pipeline_args() -> argparse.Namespace:
         video_id=None,
         transcript_source=None,
     )
+
+
+@pytest.mark.parametrize("meeting_date", HELD_MEETING_DATES)
+def test_t14_hold_stops_full_pipeline_before_any_stage(
+    meeting_date: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    transcript = MagicMock()
+    agenda = MagicMock()
+    generated = MagicMock()
+    state = MagicMock()
+    monkeypatch.setattr(recap, "run_transcript_pipeline", transcript)
+    monkeypatch.setattr(recap, "run_agenda_recap", agenda)
+    monkeypatch.setattr(recap, "generate_transcript_recap", generated)
+    monkeypatch.setattr(recap, "_get_recap_state", state)
+    args = _pipeline_args()
+    args.meeting_date = meeting_date
+    args.force = True
+
+    with pytest.raises(
+        recap.RecapHeldError,
+        match=r"ACTION: None through T14\..*Do not rerun, force, replay, or cascade",
+    ):
+        recap._run_pipeline(args)
+
+    transcript.assert_not_called()
+    agenda.assert_not_called()
+    generated.assert_not_called()
+    state.assert_not_called()
+
+
+@pytest.mark.parametrize("meeting_date", HELD_DATE_INPUTS)
+def test_t14_hold_cannot_be_bypassed_by_direct_stage_calls(
+    meeting_date: object,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    meeting_lookup = MagicMock()
+    youtube_fetch = MagicMock()
+    granicus_fetch = MagicMock()
+    llm_client = MagicMock()
+    monkeypatch.setattr(recap, "_get_meeting_id", meeting_lookup)
+    monkeypatch.setattr(recap, "_fetch_youtube_transcript", youtube_fetch)
+    monkeypatch.setattr(recap, "_fetch_granicus_transcript", granicus_fetch)
+    monkeypatch.setattr(recap, "LLMClient", llm_client)
+
+    with pytest.raises(recap.RecapHeldError, match="ACTION:"):
+        recap.run_transcript_pipeline(meeting_date, dry_run=True)
+    with pytest.raises(recap.RecapHeldError, match="ACTION:"):
+        recap.run_agenda_recap(meeting_date, dry_run=True, force=True)
+    with pytest.raises(recap.RecapHeldError, match="ACTION:"):
+        recap.generate_transcript_recap(meeting_date, dry_run=True, force=True)
+
+    meeting_lookup.assert_not_called()
+    youtube_fetch.assert_not_called()
+    granicus_fetch.assert_not_called()
+    llm_client.assert_not_called()
+
+
+@pytest.mark.parametrize("meeting_date", UNSUPPORTED_DATE_INPUTS)
+def test_unsupported_date_spelling_fails_before_direct_stage_calls(
+    meeting_date: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    meeting_lookup = MagicMock()
+    youtube_fetch = MagicMock()
+    granicus_fetch = MagicMock()
+    llm_client = MagicMock()
+    monkeypatch.setattr(recap, "_get_meeting_id", meeting_lookup)
+    monkeypatch.setattr(recap, "_fetch_youtube_transcript", youtube_fetch)
+    monkeypatch.setattr(recap, "_fetch_granicus_transcript", granicus_fetch)
+    monkeypatch.setattr(recap, "LLMClient", llm_client)
+
+    with pytest.raises(recap.RecapUnavailableError, match="ACTION: Stop.*YYYY-MM-DD"):
+        recap.run_transcript_pipeline(meeting_date, dry_run=True)
+    with pytest.raises(recap.RecapUnavailableError, match="ACTION: Stop.*YYYY-MM-DD"):
+        recap.run_agenda_recap(meeting_date, dry_run=True, force=True)
+    with pytest.raises(recap.RecapUnavailableError, match="ACTION: Stop.*YYYY-MM-DD"):
+        recap.generate_transcript_recap(meeting_date, dry_run=True, force=True)
+
+    meeting_lookup.assert_not_called()
+    youtube_fetch.assert_not_called()
+    granicus_fetch.assert_not_called()
+    llm_client.assert_not_called()
+
+
+def test_t14_hold_cli_exits_with_novice_safe_action(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "post_meeting_recap.py",
+            "--meeting-date",
+            HELD_MEETING_DATES[0],
+            "--force",
+        ],
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        recap.main()
+
+    assert exc_info.value.code == 1
+    output = capsys.readouterr().out
+    assert output.startswith(
+        "::error title=July recap intentionally held::ACTION: None through T14."
+    )
+    assert "Do not rerun, force, replay, or cascade" in output
 
 
 def test_pipeline_fails_actionably_when_neither_source_leaves_a_recap(
