@@ -22,8 +22,9 @@ email send, migration, production-data change, replay, or billing change.
   optional, deferred outreach reference.
 - The S29 public-treatment source switch remains off. The baseline therefore
   retains the existing public homepage, navigation, acquisition placements,
-  and treatment metadata while including approved reliability, privacy,
-  containment, and measurement mechanics.
+  and production-anchor metadata while treatment metadata and public JSON-LD
+  remain held. It includes approved reliability, privacy, containment, and
+  measurement mechanics.
 
 ## Database and model boundaries
 
@@ -85,6 +86,6 @@ documented rolling-CPU, recent-rate, ISR, and other capacity gates before A0.
 8. Do not record A0 until the final baseline is soaked and every capacity,
    analytics, canary, and operator-session gate passes.
 
-**ACTION:** None until this PR has a number, fresh green CI, and a verified exact
-head. The next requested operator reply will authorize only its bounded Preview,
-not production.
+**ACTION:** Reply exactly:
+`APPROVE PREVIEW COST: one ephemeral Supabase Micro branch for PR #154, maximum
+two hours, then auto-delete.` This authorizes Preview only, not production.
