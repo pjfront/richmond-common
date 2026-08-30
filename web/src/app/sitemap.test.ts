@@ -10,7 +10,6 @@ const queryMocks = vi.hoisted(() => ({
   getSitemapElections: vi.fn(),
   getSitemapCommissions: vi.fn(),
   getSitemapDonorSlugs: vi.fn(),
-  getSitemapOrganizationSlugs: vi.fn(),
   electionToSlug: vi.fn((election: { election_date: string; election_type: string }) => (
     `${election.election_date.slice(0, 4)}-${election.election_type}`
   )),
@@ -36,7 +35,6 @@ vi.mock('@/lib/queries/sitemap', () => ({
   getSitemapElections: queryMocks.getSitemapElections,
   getSitemapCommissions: queryMocks.getSitemapCommissions,
   getSitemapDonorSlugs: queryMocks.getSitemapDonorSlugs,
-  getSitemapOrganizationSlugs: queryMocks.getSitemapOrganizationSlugs,
 }))
 
 import {
@@ -60,7 +58,6 @@ describe('public sitemap', () => {
     queryMocks.getSitemapElections.mockResolvedValue([])
     queryMocks.getSitemapCommissions.mockResolvedValue([])
     queryMocks.getSitemapDonorSlugs.mockResolvedValue([])
-    queryMocks.getSitemapOrganizationSlugs.mockResolvedValue([])
   })
 
   afterEach(() => {
@@ -130,10 +127,6 @@ describe('public sitemap', () => {
       slug: 'example-donor',
       created_at: '2026-08-02T00:00:00Z',
     }])
-    queryMocks.getSitemapOrganizationSlugs.mockResolvedValue([{
-      slug: 'example-union',
-      created_at: '2026-08-02T00:00:00Z',
-    }])
 
     const sitemap = await buildTreatmentSitemap(new Date('2026-08-18T00:00:00Z'))
     const urls = sitemap.map((entry) => entry.url)
@@ -153,7 +146,6 @@ describe('public sitemap', () => {
     expect(urls).toContain('https://richmondcommons.org/elections/2026-general')
     expect(urls).toContain('https://richmondcommons.org/commissions/commission-1')
     expect(urls).toContain('https://richmondcommons.org/donors/example-donor')
-    expect(urls).toContain('https://richmondcommons.org/orgs/example-union')
     expect(urls.every((url) => new URL(url).origin === 'https://richmondcommons.org'))
       .toBe(true)
     expect(sitemap.find((entry) => entry.url.endsWith('/meetings/meeting-1')))
@@ -176,11 +168,15 @@ describe('public sitemap', () => {
     expect(paths).not.toContain('/influence')
     expect(paths).not.toContain('/influence/elections')
     expect(paths).not.toContain('/elections/2026-primary/mayor/funding')
+    expect(paths).not.toContain('/pac')
+    expect(paths).not.toContain('/unions')
+    expect(paths).not.toContain('/corporations')
     expect(paths.some((path) => path.includes('/candidates/'))).toBe(false)
     expect(paths.some((path) => path.startsWith('/operator'))).toBe(false)
     expect(paths.some((path) => path.startsWith('/api'))).toBe(false)
     expect(paths.some((path) => path.startsWith('/reports/'))).toBe(false)
     expect(paths.some((path) => path.startsWith('/pac/'))).toBe(false)
+    expect(paths.some((path) => path.startsWith('/orgs/'))).toBe(false)
     expect(paths.some((path) => path.startsWith('/meetings/category/'))).toBe(false)
     expect(paths.some((path) => path.startsWith('/topics/'))).toBe(false)
     expect(paths).not.toContain('/influence/methodology')
@@ -190,6 +186,7 @@ describe('public sitemap', () => {
     await buildTreatmentSitemap(new Date('2026-08-18T00:00:00Z'))
 
     expect(Object.keys(queryMocks)).not.toContain('getSitemapClassifications')
+    expect(Object.keys(queryMocks)).not.toContain('getSitemapOrganizationSlugs')
     expect(queryMocks.getRecentAgendaItemSlugs).toHaveBeenCalledOnce()
   })
 

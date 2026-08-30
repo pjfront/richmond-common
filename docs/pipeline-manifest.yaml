@@ -1506,8 +1506,8 @@ queries:
   getSitemapOrganizationSlugs:
     file: queries/sitemap.ts
     tables: [donors]
-    used_by: ["/sitemap.xml"]
-    note: "Only public union/corporation profiles with tracked giving."
+    used_by: []
+    note: "Dormant while union/corporation profiles are operator-only through the November T14 review; public sitemap generation must not call it."
 
   getItemInfluenceMapData:
     file: queries.ts
@@ -1878,11 +1878,10 @@ queries:
 
 pages:
   "/sitemap.xml":
-    description: "Daily, bounded inventory of canonical public routes; operator/noindex, candidate, retired mayor-funding, management, API, and heavy PAC detail routes are excluded"
+    description: "Daily, bounded inventory of canonical public routes; operator/noindex, candidate, retired mayor-funding, campaign-directory, management, API, and heavy detail routes are excluded"
     queries: [getSitemapMeetings, getRecentAgendaItemSlugs,
               getSitemapOfficials, getSitemapElections,
               getSitemapCommissions, getSitemapDonorSlugs,
-              getSitemapOrganizationSlugs,
               electionToSlug]
 
   "/":
@@ -1993,34 +1992,34 @@ pages:
     api_routes: ["/api/geocode"]
 
   "/pac":
-    description: "Political committees index — every Richmond PAC, ballot-measure committee, and IE committee (operator-only V1, S24 Phase 4)"
-    queries: [getPACList]
+    description: "Political committees index held operator-only and noindex through the November T14 review; underlying records and exports are preserved"
+    queries: [getPACListWithCycleBars]
     publication_tier: operator
 
   "/pac/[slug]":
-    description: "Public political-committee profile using the shared filing-summary and receipt-detail pattern: money received, money given, and reported independent expenditures."
+    description: "Political-committee profile held operator-only and noindex through the November T14 review; filing detail and CSV exports are preserved."
     queries: [getPACBySlug, getPACList, getPACContributions, getPACOutgoing, getPACIndependentExpenditures]
-    publication_tier: public
+    publication_tier: operator
 
   "/orgs":
-    description: "Redirect to /unions (I164: split into separate union/corporation routes, 2026-07-08)"
+    description: "Temporary redirect to /elections while campaign directories are held through the November T14 review"
     queries: []
     publication_tier: public
 
   "/unions":
-    description: "Union organization index — labor organizations that contribute to Richmond campaigns (I164, split from /orgs 2026-07-08)"
+    description: "Union organization index held operator-only and noindex through the November T14 review"
     queries: [getOrgList]
-    publication_tier: public
+    publication_tier: operator
 
   "/corporations":
-    description: "Corporation index — companies and business associations that contribute to Richmond campaigns (I164, split from /orgs 2026-07-08)"
+    description: "Corporation index held operator-only and noindex through the November T14 review"
     queries: [getOrgList]
-    publication_tier: public
+    publication_tier: operator
 
   "/orgs/[slug]":
-    description: "Public union/company profile using the shared filing-summary and receipt-detail pattern: money given and reported independent expenditures."
+    description: "Union/company profile held operator-only and noindex through the November T14 review; filing detail and CSV exports are preserved."
     queries: [getOrgBySlug, getOrgOutgoing, getOrgIndependentExpenditures]
-    publication_tier: public
+    publication_tier: operator
 
   "/donors":
     description: "Individual donor index — all donors above $5K aggregate (S28.6)"
@@ -2597,13 +2596,6 @@ field_map:
       sources: [netfile, calaccess]
       enrichment: contributor_classification
       note: "Only graduated person profiles at the public $5,000 threshold."
-
-    "union and corporation profile URLs":
-      query: getSitemapOrganizationSlugs
-      column: "donors.entity_slug + donors.created_at"
-      sources: [netfile, calaccess]
-      enrichment: contributor_classification
-      note: "Only public union/corporation profiles with tracked giving."
 
   # ── Home Page (/) ───────────────────────────────────────────
 
@@ -3657,7 +3649,7 @@ field_map:
       column: email_preferences.*
       note: "User-specific prefs accessed via signed token"
 
-  # ── PAC Index (/pac) — operator-only V1 ─────────────────────
+  # ── PAC Index (/pac) — operator-only through T14 ─────────────
 
   "/pac":
     "PAC list with cycle bars":
@@ -3666,7 +3658,7 @@ field_map:
       sources: [netfile, calaccess]
       note: "Bulk variant of getPACList that includes per-row sparkline data, replaces N+1 calls."
 
-  # ── PAC Profile (/pac/[slug]) — Public ──────────────────────
+  # ── PAC Profile (/pac/[slug]) — operator-only through T14 ───
 
   "/pac/[slug]":
     "PAC profile by slug":
@@ -3696,16 +3688,16 @@ field_map:
       sources: [calaccess]
       note: "Exact case-insensitive name match. Drops the earlier fuzzy-prefix pass (4f51f33) that double-counted IE rows across sister committees sharing a prefix."
 
-  # ── /orgs redirect — I164 (2026-07-08) ────────────────────────
+  # ── /orgs redirect — November hold ────────────────────────────
 
   "/orgs":
-    "Redirect to /unions":
+    "Redirect to /elections":
       query: null
       column: null
       sources: []
-      note: "I164: split into separate /unions and /corporations routes. Redirects to /unions."
+      note: "Temporary November hold redirect. Reconsider the directory family only after T14."
 
-  # ── Unions Index (/unions) — I164 ─────────────────────────────
+  # ── Unions Index (/unions) — operator-only through T14 ────────
 
   "/unions":
     "Union list":
@@ -3714,7 +3706,7 @@ field_map:
       sources: [netfile, calaccess]
       note: "I164: split from /orgs. Sorted by total contributed."
 
-  # ── Corporations Index (/corporations) — I164 ──────────────────
+  # ── Corporations Index — operator-only through T14 ─────────────
 
   "/corporations":
     "Corporation list":
@@ -3723,7 +3715,7 @@ field_map:
       sources: [netfile, calaccess]
       note: "I164: split from /orgs. Sorted by total contributed."
 
-  # ── Org Profile (/orgs/[slug]) — S28.3 Public ─────────────
+  # ── Org Profile (/orgs/[slug]) — operator-only through T14 ─────
 
   "/orgs/[slug]":
     "Org profile by slug":

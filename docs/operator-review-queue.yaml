@@ -315,6 +315,88 @@ gates:
 
   # ── Pending graduation: directory / index pages ──────────────
 
+  - id: pac-index-november-hold
+    file: web/src/app/pac/page.tsx
+    line: 49
+    category: pending_graduation
+    gated_at: '2026-08-29'
+    view_at: /pac
+    reason: |
+      The operator approved a reversible hold through the November treatment
+      T14 review. Public rows do not yet meet the required row-level provenance
+      and confidence contract. The server gate runs before the aggregate query;
+      underlying records and operator exports remain intact.
+    what_to_validate: |
+      After T14, review the combined release-and-demand evidence first. If a
+      public directory is still useful, require provenance-complete rows,
+      bounded reads, and the same page grammar across every directory family.
+      Do not auto-expire this gate or expand S26/S28.
+    graduates_to: public
+
+  - id: pac-detail-november-hold
+    file: web/src/app/pac/[slug]/page.tsx
+    line: 80
+    category: pending_graduation
+    gated_at: '2026-08-29'
+    view_at: /pac
+    reason: |
+      Political-committee detail remains available to the operator, including
+      filing-level CSV exports, but is held from public access and indexing
+      through the T14 review. The guard runs before metadata and page queries.
+    what_to_validate: |
+      After T14, verify direct row provenance, confidence, neutral framing,
+      bounded query cost, and CSV integrity across representative committees.
+      Reconsider with the entire directory family; do not auto-publish.
+    graduates_to: public
+
+  - id: union-index-november-hold
+    file: web/src/app/unions/page.tsx
+    line: 27
+    category: pending_graduation
+    gated_at: '2026-08-29'
+    view_at: /unions
+    reason: |
+      The union directory is held through T14 because its aggregate rows lack
+      the mandatory row-level provenance and confidence contract. The server
+      gate prevents the aggregate query for anonymous requests.
+    what_to_validate: |
+      After T14, require provenance-complete rows, bounded reads, and a unified
+      PAC/union/corporation information pattern before any public return.
+      Preserve the current data and do not expand entity resolution.
+    graduates_to: public
+
+  - id: corporation-index-november-hold
+    file: web/src/app/corporations/page.tsx
+    line: 27
+    category: pending_graduation
+    gated_at: '2026-08-29'
+    view_at: /corporations
+    reason: |
+      The corporation directory is held through T14 because its aggregate rows
+      lack the mandatory row-level provenance and confidence contract. The
+      server gate prevents the aggregate query for anonymous requests.
+    what_to_validate: |
+      After T14, require provenance-complete rows, bounded reads, and a unified
+      PAC/union/corporation information pattern before any public return.
+      Preserve the current data and do not expand entity resolution.
+    graduates_to: public
+
+  - id: organization-detail-november-hold
+    file: web/src/app/orgs/[slug]/page.tsx
+    line: 61
+    category: pending_graduation
+    gated_at: '2026-08-29'
+    view_at: /orgs/chevron-corp
+    reason: |
+      Union and company detail pages remain available to the operator with
+      filing-level CSV exports, but are held from public access and indexing
+      through the T14 review. The guard runs before metadata and page queries.
+    what_to_validate: |
+      After T14, verify row provenance, confidence, classification accuracy,
+      neutral framing, bounded query cost, and CSV integrity. Reconsider with
+      the whole directory family; do not backfill or auto-publish.
+    graduates_to: public
+
 
 
   - id: council-economic-interests-section

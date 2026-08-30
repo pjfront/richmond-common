@@ -7,19 +7,25 @@
 import type { Metadata } from 'next'
 import { getOrgList } from '@/lib/queries'
 import OrgList from '@/components/OrgList'
+import OperatorGate from '@/components/OperatorGate'
+import { requireOperatorPage } from '@/lib/operator-page'
 
 export const metadata: Metadata = {
   title: 'Unions | Richmond Commons',
   description:
     'Unions that contribute to Richmond political campaigns. See who gives, how much, and which candidates and committees receive the money.',
+  robots: { index: false, follow: false },
 }
 
 export default async function UnionsPage() {
+  await requireOperatorPage()
+
   const orgs = await getOrgList()
   const unions = orgs.filter((o) => o.entity_type === 'union')
 
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <OperatorGate>
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <OrgList
         orgs={unions}
         heading="Unions"
@@ -47,6 +53,7 @@ export default async function UnionsPage() {
           minutes of any new filing
         </p>
       </footer>
-    </div>
+      </div>
+    </OperatorGate>
   )
 }

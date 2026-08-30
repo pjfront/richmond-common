@@ -793,3 +793,33 @@ reviewed Form 460 cover totals and its permissive surname matching can combine
 independent expenditures for different candidates. Redirecting removes an
 unfinished, unreliable public surface without removing the trusted summary or
 underlying source data.
+
+## 2026-08-29: Hold unfinished campaign directories through November T14
+
+**Decision:** Through the end of the 14-complete-UTC-day November treatment
+window, remove the Contributions menu; make `/pac`, `/pac/[slug]`, `/unions`,
+`/corporations`, and `/orgs/[slug]` operator-only and non-indexable; exclude
+those routes from treatment sitemap discovery; and temporarily redirect the
+legacy `/orgs` index to `/elections`. Reconsider the directory family only
+after T14.
+
+**Enforcement:** Every held page calls the server-side operator guard before
+its first data or metadata query, retains the client `OperatorGate`, and sets
+`robots` to `index: false, follow: false`. The treatment sitemap contains none
+of the three indexes, PAC detail routes, or organization detail routes and no
+longer performs the organization-slug enumeration read. Tests pin the access,
+query-order, navigation, redirect, noindex, sitemap, and export-preservation
+boundaries.
+
+**Boundary:** This is a reversible publication hold, not data retirement.
+Preserve all underlying database rows, query helpers, filing-level detail, and
+CSV exports for operator use. Do not backfill provenance, reclassify entities,
+repair or broaden entity resolution, expand S26/S28, or automatically remove
+the gate at T14. Republication remains a fresh operator judgment after the
+measurement packet is frozen.
+
+**Rationale:** The PAC, union, corporation, and organization directory rows do
+not yet satisfy the mandatory row-level provenance and confidence contract.
+Leaving public placeholders would create dead ends and retain avoidable
+aggregate reads. A fail-closed hold makes the November release smaller and
+more trustworthy while keeping every source record and export recoverable.
