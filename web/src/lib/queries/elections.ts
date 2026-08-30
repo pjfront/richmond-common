@@ -934,13 +934,14 @@ export async function getMostCommentedVotes(
 }
 
 
-// ── Candidate funding artifact (operator-only, S24) ───────────────────
+// ── Dormant candidate-funding analysis (retired public artifact) ──────
 //
-// Powers /elections/[slug]/mayor/funding. Two queries: the candidate's
-// own controlled-committee breakdown by contributor_type, and the IE
-// supporters operating outside their committee. Both narrate where the
-// money actually comes from — answering the "no corporate donations" /
-// "special interests" claims that dominate election framing.
+// Retained for bounded operator analysis only after
+// /elections/[slug]/mayor/funding was retired. No public route consumes these
+// helpers. The category totals can drift from reviewed Form 460 cover totals,
+// and the permissive candidate-name matching below has known false positives.
+// Do not wire either helper into public UI without a new operator decision and
+// source/provenance repair outside the November scope.
 
 /** Aggregate a candidate's controlled-committee contributions by
  *  contributor_type (individual, union, corporate, pac_ie, other). Each
@@ -1056,9 +1057,9 @@ export async function getCandidateFundingBreakdown(
  *     contain "Jimenez", but their expenditures do).
  *
  *  Pass the candidate's last name (or distinctive name fragment); we
- *  use ILIKE so partial matches work. Filter is intentionally permissive
- *  — operator review before public graduation is the safeguard against
- *  name-collision false positives. */
+ *  use ILIKE so partial matches work. Filter is intentionally permissive and
+ *  has known name-collision false positives. It is dormant operator analysis,
+ *  not a public-ready candidate attribution path. */
 export async function getCandidateIESupport(
   candidateLastName: string,
   cityFips = RICHMOND_FIPS,

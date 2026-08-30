@@ -1343,13 +1343,12 @@ export interface CandidateDonorsByCycle {
   cycleLabel: string // e.g. "Jan 2025 – Jun 2026"
 }
 
-// ── Candidate funding breakdown (operator-only, S24 funding artifact) ──
+// ── Dormant candidate-funding analysis (retired public artifact) ───────
 //
-// Powers /elections/[slug]/mayor/funding. Aggregates a candidate-
-// controlled committee's incoming contributions by contributor_type
-// (set at load time by src/contributor_classifier.py) so the panel can
-// surface "from individual donors" vs "from union PACs" vs "from
-// for-profit corporations" without inferring types client-side.
+// Retained for bounded operator analysis only. The former public route now
+// permanently redirects to the canonical election page; no public route
+// consumes these DTOs. Their category and candidate-IE outputs remain
+// non-public-ready for the reasons recorded in docs/DECISIONS.md.
 
 export type ContributorTypeBucket = 'individual' | 'union' | 'corporate' | 'pac_ie' | 'other'
 

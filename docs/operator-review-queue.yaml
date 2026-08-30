@@ -120,11 +120,13 @@ gates:
   # the methodology page. Headlines + narratives use Form 460 cover
   # values directly via getLatestForm460Total (D56b Option 1).
 
-  # The standalone Mayor funding artifact was retired on 2026-08-23.
-  # Its old URL now permanently redirects to the main election page, which
-  # already carries the reviewed candidate-funding summary. The two artifact
-  # gates and their unresolved duplicate/last-name attribution risks therefore
-  # no longer belong in the publication queue.
+  # The standalone Mayor funding redirect merged in PR #111 on 2026-08-24;
+  # the operator explicitly approved that retirement on 2026-08-26. Its old
+  # URL permanently redirects to the main election page, which already carries
+  # the reviewed candidate-funding summary. The two artifact gates and their
+  # unresolved duplicate/last-name attribution risks therefore no longer
+  # belong in the publication queue. Production activation remains subject to
+  # the separate exact-SHA release gate.
 
   - id: candidate-detail-page
     file: web/src/app/elections/[slug]/candidates/[candidateSlug]/page.tsx
