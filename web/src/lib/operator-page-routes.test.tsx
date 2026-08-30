@@ -147,17 +147,24 @@ describe('operator page query containment', () => {
 })
 
 const containedRoutes = [
+  '../app/corporations/page.tsx',
   '../app/data-quality/page.tsx',
   '../app/elections/[slug]/candidates/[candidateSlug]/page.tsx',
   '../app/financial-connections/page.tsx',
   '../app/influence/page.tsx',
   '../app/influence/elections/page.tsx',
   '../app/influence/elections/[id]/page.tsx',
+  '../app/orgs/[slug]/page.tsx',
+  '../app/pac/page.tsx',
+  '../app/pac/[slug]/page.tsx',
+  '../app/unions/page.tsx',
 ]
 
 const metadataQueryRoutes = [
   '../app/elections/[slug]/candidates/[candidateSlug]/page.tsx',
   '../app/influence/elections/[id]/page.tsx',
+  '../app/orgs/[slug]/page.tsx',
+  '../app/pac/[slug]/page.tsx',
 ]
 
 function routeSource(relativePath: string): string {

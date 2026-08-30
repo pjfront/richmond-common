@@ -10,7 +10,6 @@ import {
   getSitemapElections,
   getSitemapMeetings,
   getSitemapOfficials,
-  getSitemapOrganizationSlugs,
 } from '@/lib/queries/sitemap'
 import { S29_PUBLIC_TREATMENT_ENABLED } from '@/lib/s29-release-phase'
 import { SITE_URL } from '@/lib/structured-data'
@@ -34,12 +33,10 @@ export const BASELINE_STATIC_PATHS = [
  * Canonical, indexable, non-redirecting public routes.
  *
  * Search, tokenized subscription management, operator/API trees, the retired
- * mayor-funding artifact, and PR109's noindex/operator routes stay out. PAC
- * detail slugs remain discoverable from /pac because deriving the truthful set
- * requires a heavy 10-year contribution aggregation. The force-dynamic council
- * analytics page remains discoverable from normal council navigation. Repeating
- * either expensive path in crawler-oriented discovery would recreate the
- * November cost problem.
+ * mayor-funding artifact, the campaign-directory family held through T14, and
+ * PR109's noindex/operator routes stay out. The force-dynamic council analytics
+ * page remains discoverable from normal council navigation. Repeating expensive
+ * paths in crawler-oriented discovery would recreate the November cost problem.
  */
 export const PUBLIC_STATIC_PATHS = [
   '/',
@@ -52,9 +49,6 @@ export const PUBLIC_STATIC_PATHS = [
   '/elections/methodology',
   '/commissions',
   '/public-records',
-  '/pac',
-  '/unions',
-  '/corporations',
   '/donors',
   '/subscribe',
   '/about',
@@ -130,7 +124,6 @@ export async function buildTreatmentSitemap(asOf: Date): Promise<MetadataRoute.S
     getSitemapElections(),
     getSitemapCommissions(),
     getSitemapDonorSlugs(),
-    getSitemapOrganizationSlugs(),
   ]).catch((error: unknown) => {
     // Pull-request builds deliberately use an inert database. Only that exact
     // boundary may emit stable routes alone. Production throws so ISR keeps
@@ -152,7 +145,6 @@ export async function buildTreatmentSitemap(asOf: Date): Promise<MetadataRoute.S
     elections,
     commissions,
     donorSlugs,
-    organizationSlugs,
   ] = dynamicData
 
   const meetingPages: MetadataRoute.Sitemap = meetings.map((meeting) => ({
@@ -196,13 +188,6 @@ export async function buildTreatmentSitemap(asOf: Date): Promise<MetadataRoute.S
     priority: 0.5,
   }))
 
-  const organizationPages: MetadataRoute.Sitemap = organizationSlugs.map((org) => ({
-    url: `${SITE_URL}/orgs/${encodeURIComponent(org.slug)}`,
-    lastModified: org.created_at,
-    changeFrequency: 'monthly' as const,
-    priority: 0.5,
-  }))
-
   const entries: MetadataRoute.Sitemap = [
     ...staticPages,
     ...meetingPages,
@@ -211,7 +196,6 @@ export async function buildTreatmentSitemap(asOf: Date): Promise<MetadataRoute.S
     ...electionPages,
     ...commissionPages,
     ...donorPages,
-    ...organizationPages,
   ]
   const uniqueEntries = Array.from(
     new Map(entries.map((entry) => [entry.url, entry])).values(),

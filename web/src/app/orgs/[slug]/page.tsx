@@ -1,5 +1,5 @@
 /**
- * Public union/company profile.
+ * Operator-only union/company profile through the November T14 review.
  *
  * Uses the same sentence-first profile grammar as political committees:
  * orientation, one filing-based summary, then sortable receipt detail.
@@ -15,23 +15,35 @@ import {
 } from '@/lib/queries'
 import CampaignEntityFinancialDetails from '@/components/CampaignEntityFinancialDetails'
 import CampaignEntityProfile from '@/components/CampaignEntityProfile'
+import OperatorGate from '@/components/OperatorGate'
+import { requireOperatorPage } from '@/lib/operator-page'
 
 interface PageProps {
   params: Promise<{ slug: string }>
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
+  await requireOperatorPage()
+
   const { slug } = await params
   const org = await getOrgBySlug(slug)
-  if (!org) return { title: 'Organization not found' }
+  if (!org) {
+    return {
+      title: 'Organization not found',
+      robots: { index: false, follow: false },
+    }
+  }
   const label = org.entity_type === 'union' ? 'Union' : 'Company'
   return {
     title: `${org.display_name}: ${label}`,
     description: `Public campaign records for ${org.display_name}, including available recipient and filing detail.`,
+    robots: { index: false, follow: false },
   }
 }
 
 export default async function OrgProfilePage({ params }: PageProps) {
+  await requireOperatorPage()
+
   const { slug } = await params
   const org = await getOrgBySlug(slug)
   if (!org) notFound()
@@ -46,29 +58,31 @@ export default async function OrgProfilePage({ params }: PageProps) {
   const typeLabel = isUnion ? 'Union' : 'Company'
 
   return (
-    <CampaignEntityProfile
-      backHref={isUnion ? '/unions' : '/corporations'}
-      backLabel={isUnion ? 'All unions' : 'All companies'}
-      name={display}
-      typeLabel={typeLabel}
-      sponsorDisclosure={org.sponsor_disclosure}
-      summary={renderLede(org, display, outgoing, independentExpenditures)}
-      sourceNote={
-        <>
-          Organization type is auto-generated from filing names and public
-          records. Treat the label as a filing-based classification, not a
-          statement about the organization&apos;s goals.
-        </>
-      }
-    >
-      <CampaignEntityFinancialDetails
-        outgoing={outgoing}
-        independentExpenditures={independentExpenditures}
-        entityDisplay={display}
-        entityNoun="organization"
-        entityUrlMap={null}
-      />
-    </CampaignEntityProfile>
+    <OperatorGate>
+      <CampaignEntityProfile
+        backHref={isUnion ? '/unions' : '/corporations'}
+        backLabel={isUnion ? 'All unions' : 'All companies'}
+        name={display}
+        typeLabel={typeLabel}
+        sponsorDisclosure={org.sponsor_disclosure}
+        summary={renderLede(org, display, outgoing, independentExpenditures)}
+        sourceNote={
+          <>
+            Organization type is auto-generated from filing names and public
+            records. Treat the label as a filing-based classification, not a
+            statement about the organization&apos;s goals.
+          </>
+        }
+      >
+        <CampaignEntityFinancialDetails
+          outgoing={outgoing}
+          independentExpenditures={independentExpenditures}
+          entityDisplay={display}
+          entityNoun="organization"
+          entityUrlMap={null}
+        />
+      </CampaignEntityProfile>
+    </OperatorGate>
   )
 }
 

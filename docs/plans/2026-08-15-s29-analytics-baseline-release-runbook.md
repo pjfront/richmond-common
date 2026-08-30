@@ -116,6 +116,12 @@ ask, its content, or its publication. Publishing before T14 would override the
 approved hold, contaminate the defined test, and require a new operator
 decision plus either a new window or an explicitly incomplete closeout.
 
+The operator approved the campaign-directory hold on 2026-08-29. Through T14,
+keep `/pac`, `/pac/[slug]`, `/unions`, `/corporations`, and `/orgs/[slug]`
+operator-only and noindex; omit them from navigation and the treatment sitemap;
+and redirect legacy `/orgs` to `/elections`. Preserve all underlying data and
+exports. T14 is a review boundary, not an automatic expiry or republication.
+
 ## Exact baseline/treatment split
 
 ### Baseline batch: live before `A0`, then frozen
@@ -423,7 +429,7 @@ Capture these bounded checkpoints:
 | `B7` | After 7 complete baseline days | Aggregate packet; collection status; account-wide plan usage and projections |
 | `B14` | After 14 complete baseline days, before treatment | Final baseline packet; collection status; account-wide plan usage and projections |
 | `T7` | After 7 complete treatment days | Aggregate packet; collection status; account-wide plan usage and projections |
-| `T14` | After 14 complete treatment days | Final treatment packet; collection status; account-wide plan usage and projections |
+| `T14` | After 14 complete treatment days | Final treatment packet; collection status; account-wide plan usage and projections; campaign-directory publication recommendation |
 
 Every aggregate packet records its capture timestamp, exact UTC start/end,
 production deployment SHA, and the allow-listed Vercel result fields above.
@@ -530,6 +536,12 @@ Treatment remains blocked on that complete baseline packet and explicit
 approval, not merely a successful workflow. After the joined `T14` packet is
 verified, preserve both phase dates/SHAs and change `measurement_status` from
 `active` to `complete`.
+
+At that same review, prepare one campaign-directory decision packet with three
+explicit choices: continue the hold, permanently retire the public directory
+routes, or propose a separately reviewed re-graduation after the mandatory
+provenance/confidence contract is satisfied. Do not auto-ungate, backfill
+provenance, reclassify entities, or broaden S26/S28 merely because T14 ended.
 
 Reviewing token expiry/scope and optionally rotating to a shorter-lived
 project-scoped token or sending-only Resend key after `T14` is a
@@ -665,6 +677,10 @@ Every mutation requires approval for the exact artifact.
 - [ ] Roll back to exact baseline deployment if needed, not PR83.
 - [ ] Run daily quota checks plus `T7`, then freeze `T14` and close with
       descriptive raw counts.
+- [ ] After the joined `T14` packet is frozen, prepare the bounded
+      campaign-directory decision packet. Keep the hold in place until the
+      operator explicitly chooses continued hold, retirement, or a separately
+      reviewed re-graduation.
 
 ## Stop conditions
 
