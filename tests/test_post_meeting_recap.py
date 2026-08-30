@@ -17,7 +17,7 @@ sys.path.insert(0, str(ROOT / "src"))
 import post_meeting_recap as recap  # noqa: E402
 
 
-MEETING_DATE = "2026-07-21"
+MEETING_DATE = "2026-06-16"
 
 
 @pytest.fixture

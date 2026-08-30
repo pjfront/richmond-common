@@ -62,6 +62,57 @@ class RecapUnavailableError(RuntimeError):
     """Raised when a completed pipeline run still has no transcript recap."""
 
 
+REVIEWED_JULY_RECAP_QUARANTINE = {
+    "2026-07-07": "c11d635f-b74f-4208-8fad-376a3791905b",
+    "2026-07-21": "a166af80-e456-4db2-9b74-215a378956a4",
+    "2026-07-28": "3de0bb26-8f30-4836-a5bd-a01b6640b676",
+}
+
+
+class RecapReviewGateError(RecapUnavailableError):
+    """Raised when the legacy immediate writer targets the V2 review cohort."""
+
+
+def _reviewed_july_recap_is_complete(meeting_date: str) -> bool:
+    """Return true only when the exact quarantined row has all four fields."""
+    expected_id = REVIEWED_JULY_RECAP_QUARANTINE[meeting_date]
+    from db import RICHMOND_FIPS, get_connection
+
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT id,
+                          transcript_recap,
+                          transcript_recap_source,
+                          transcript_recap_provenance,
+                          transcript_recap_generated_at
+                   FROM meetings
+                   WHERE id = %s
+                     AND city_fips = %s
+                     AND meeting_date = %s
+                     AND meeting_type = 'regular'""",
+                (expected_id, RICHMOND_FIPS, meeting_date),
+            )
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+    if len(rows) != 1 or str(rows[0][0]) != expected_id:
+        raise RecapReviewGateError(
+            f"ACTION: Give {meeting_date} and meeting ID {expected_id} to a "
+            "coding assistant. The exact reviewed July recap row could not be "
+            "verified; do not use a date-only fallback or force regeneration."
+        )
+    populated = [value is not None for value in rows[0][1:]]
+    if any(populated) and not all(populated):
+        raise RecapReviewGateError(
+            f"ACTION: Give {meeting_date} and meeting ID {expected_id} to a "
+            "coding assistant. The four reviewed recap fields are partially "
+            "populated; do not overwrite, replay, or compensate."
+        )
+    return all(populated)
+
+
 def _load_prompt(filename: str) -> str:
     path = PROMPTS_DIR / filename
     if not path.exists():
@@ -421,6 +472,21 @@ def generate_transcript_recap(
 
     Returns the recap text, or None on failure.
     """
+    if meeting_date in REVIEWED_JULY_RECAP_QUARANTINE and force:
+        raise RecapReviewGateError(
+            f"ACTION: Use reviewed_july_recap_repair.py for {meeting_date}. "
+            "This exact July row is quarantined from the legacy immediate "
+            "writer; --force is never allowed for this reviewed cohort."
+        )
+    if meeting_date in REVIEWED_JULY_RECAP_QUARANTINE:
+        if _reviewed_july_recap_is_complete(meeting_date):
+            print("  Reviewed July transcript recap already exists")
+            return None
+        raise RecapReviewGateError(
+            f"ACTION: Use reviewed_july_recap_repair.py for {meeting_date}. "
+            "This exact July row must remain null until the complete three-row "
+            "cohort passes hash-bound independent source review."
+        )
     meeting_id = _get_meeting_id(meeting_date)
     if not meeting_id:
         print(f"  No meeting found in DB for {meeting_date}")
