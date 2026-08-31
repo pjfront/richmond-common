@@ -30,6 +30,11 @@ email send, migration, production-data change, replay, or billing change.
   PostgREST value `14.5`, proven by Schema Drift run 33421053983. The trusted
   Preview controller now composes that one runtime value with exact Preview
   schema bytes instead of committing volatile Preview runtime metadata.
+- The fourth and final PR #154 Preview completed successfully at exact
+  application head `4e715017247e8cbe192780ef52c8818d66666b51`. The complete
+  route, privacy, responsive, health, sitemap, and scoped Amazonbot matrix
+  passed; the paid branch, deployment, and all temporary bindings were then
+  deleted and independently shown absent.
 
 ## Database and model boundaries
 
@@ -60,7 +65,7 @@ starting an unattended measurement window. After the final CPU-affecting
 baseline release, observe at least seven complete UTC days and require the
 documented rolling-CPU, recent-rate, ISR, and other capacity gates before A0.
 
-## Consumed Preview attempts — all three safely closed
+## Consumed Preview attempts — all four safely closed
 
 - The operator's first PR #154 Preview approval was consumed exactly once by
   bootstrap run [33415519449](https://github.com/pjfront/richmond-common/actions/runs/33415519449).
@@ -150,11 +155,10 @@ The second approval also cannot be reused.
   checks found zero matching bindings, no matching deployment, and no resolvable
   exact branch ref. The armed watchdog will safely no-op against absent state.
 
-The third approval cannot be reused. There is no current Preview approval, no
-active branch, no retained deployment, and no continuing branch cost. This PR
-now contains the narrow application fix: only a Vercel Preview with no session
-secret resolves as anonymous; Vercel Production and every non-Preview
-production runtime still enforce the required secret.
+The third approval cannot be reused. This PR now contains the narrow
+application fix: only a Vercel Preview with no session secret resolves as
+anonymous; Vercel Production and every non-Preview production runtime still
+enforce the required secret.
 
 Local validation of that fix passed all 305 web tests, TypeScript, focused
 ESLint, and an isolated production build. A secretless Preview-mode production
@@ -165,43 +169,79 @@ content leak. Independent security review confirmed that Production remains
 fail-closed and Preview analytics remain outside the exact production-host
 allowlist.
 
+- The operator's fourth PR #154 Preview approval was consumed exactly once by
+  bootstrap run
+  [33436490400](https://github.com/pjfront/richmond-common/actions/runs/33436490400)
+  against immutable H0 `4e715017247e8cbe192780ef52c8818d66666b51`.
+- Trusted controller `main@dff3099d8420da236248640eca3f6aee5ef35ac6`
+  created exactly one data-less Micro branch, `pr-154-preview`, with project ref
+  `reognpvarpzotcctxtmy`, and applied the 11 clean-room migrations. Baseline,
+  migration, security, exact-H0 type comparison, and Schema Type Gate checks
+  passed. Preview PostgREST metadata was `14.17`; composing the production
+  `14.5` runtime literal produced the exact committed type-file SHA-256
+  `07020d3ea8802b9d3574c5c6130b6fcb77d9e5a6cc1bcfe14a1df66c03d3ebd4`.
+  SHA-bound artifact `9774644012` retains the raw and composed evidence.
+- The controller requested exactly one attested Vercel Preview, deployment
+  `dpl_8bB7yxNS4eFXJgsSY4mLQds59Qn9`. It reached `READY` on PR #154,
+  the exact H0, and Vercel's canonical null Preview target. Only the nine
+  expected Preview bindings existed; Production operator credentials were not
+  present.
+- Authenticated read-only HTTP checks passed every required boundary. Public
+  routes rendered; the election and retirement redirects were exact; all held
+  campaign-directory routes returned quiet generic 404s without content
+  leakage; `/api/operator/session` returned exactly
+  `{"isOperator":false}`; `/api/health` reported all ten migration groups
+  applied; `robots.txt` and the four-URL baseline sitemap matched policy; and
+  only Amazonbot deep item URLs were denied while its meeting/API routes and
+  Amzn-SearchBot, Amzn-User, Googlebot, and bingbot controls were unaffected.
+- Desktop and 375-pixel mobile browser checks found meaningful empty-branch
+  states, no error overlay, no console errors, no horizontal overflow, no held
+  navigation or treatment metadata, no form submission, and no analytics
+  cookie, storage key, or intake request. Exact-deployment runtime review found
+  no 5xx response.
+- Standard cleanup run
+  [33437902066](https://github.com/pjfront/richmond-common/actions/runs/33437902066)
+  completed successfully with `supabase_deleted=true` and
+  `vercel_envs_deleted=9`. Independent checks then found the exact deployment
+  absent by ID, zero deployments in the test window, and no DNS record for the
+  exact Supabase ref. The armed watchdog will safely no-op against absent state.
+
+The fourth approval cannot be reused. No PR #154 Preview approval remains, and
+there is no active branch, retained deployment, temporary binding, or continuing
+Preview cost.
+
 ## Crawler and Preview gates
 
 - The Vercel Firewall currently has a live Preview-only Amazonbot Deny rule and
   a live Production Log rule, with no pending draft.
 - Production Deny is not live. The matching application `robots.txt` policy is
   committed but remains absent from the old production deployment.
-- Before a final baseline production packet, run one fresh exact-PR Preview to
-  verify the Preview deny behavior without production credentials, then finish
-  the required production-log review and prepare the separate operator-run WAF
-  publish step.
-- A Preview requires a fresh approval naming the next exact green H0. Earlier
-  approvals for PRs #97, #100, #136, and all three PR #154 attempts were
+- The exact-PR Preview verified the Preview deny behavior without Production
+  credentials. No additional PR #154 Preview is authorized or needed.
+- Before a final baseline production packet, finish the required Production Log
+  review and prepare the separate operator-run WAF publish step. Production
+  Deny remains unchanged until that evidence and exact command are ready.
+- Earlier approvals for PRs #97, #100, #136, and all four PR #154 attempts were
   consumed and cannot be reused.
 
 ## Ordered next steps
 
-1. Finish focused, full-web, CI, and independent security review of the
-   secretless-Preview anonymous-session fix.
-2. Establish and freeze the resulting exact green H0. Do not amend, squash, or
-   rebase it after a Preview bootstrap begins.
-3. Only then request one fresh exact two-hour Supabase Micro Preview approval
-   for this PR. No prior approval may be reused.
-4. Run and clean up the exact Preview; require quiet held-directory 404s, then
-   finish health, robots, sitemap, responsive, no-write, analytics, and scoped
-   Amazonbot runtime verification.
-5. Review at least seven complete UTC days of the Production Log rule and stage
+1. Preserve the completed exact-H0 Preview record and allow only documentation
+   evidence to move the draft PR head. Do not request or run another Preview.
+2. Review at least seven complete UTC days of the Production Log rule and stage
    exactly one production-deny change if the evidence remains clean. The
    operator executes the final firewall publish command when prompted.
-6. Re-verify production migrations and current Vercel usage read-only.
-7. Merge this PR and prepare the exact-current-main BASELINE decision packet,
+3. Re-verify production migrations and current Vercel usage read-only.
+4. Finish PR #154's documentation-only CI and independent evidence review, then
+   prepare the focused merge/readiness decision without deploying Production.
+5. Prepare the exact-current-main BASELINE decision packet,
    including every change since the pinned production deployment.
-8. Only after the operator replies
+6. Only after the operator replies
    `APPROVE PRODUCTION BATCH: <full 40-character BASELINE SHA>`, run the guarded
    exact-SHA deployment and smoke checks.
-9. Do not record A0 until the final baseline is soaked and every capacity,
+7. Do not record A0 until the final baseline is soaked and every capacity,
    analytics, canary, and operator-session gate passes.
 
-**ACTION:** None. Wait for the secretless-Preview fix to pass full validation,
-CI, and independent review. A fresh approval line will be surfaced only after
-the next exact H0 is ready.
+**ACTION:** None. Do not repeat any PR #154 Preview approval. The next operator
+input will be an exact firewall publish command or an exact 40-character
+Production batch approval, surfaced only after its evidence packet is ready.
