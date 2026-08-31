@@ -19,15 +19,24 @@ export default function Footer() {
               v{packageJson.version}
             </p>
           </div>
-          <div className="flex gap-6 text-sm">
-            <Link href="/about" className="hover:text-white transition-colors">
+          <div className="flex flex-wrap gap-x-6 text-sm">
+            <Link
+              href="/guide"
+              className="inline-flex min-h-11 items-center hover:text-white transition-colors"
+            >
+              City Government Guide
+            </Link>
+            <Link
+              href="/about"
+              className="inline-flex min-h-11 items-center hover:text-white transition-colors"
+            >
               About
             </Link>
             <a
               href="https://www.transparentrichmond.org"
               target="_blank"
               rel="noopener noreferrer"
-              className="hover:text-white transition-colors"
+              className="inline-flex min-h-11 items-center hover:text-white transition-colors"
             >
               Open Data Portal
             </a>

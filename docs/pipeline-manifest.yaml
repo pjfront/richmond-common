@@ -2100,9 +2100,9 @@ pages:
     queries: []
     api_routes: ["/api/operator/settings"]
 
-  "/operator/richmond-101":
-    description: "Operator-only, noindex Richmond 101 voice-review draft with inline Tier 1-2 source links"
-    publication_tier: operator
+  "/guide":
+    description: "Public plain-language guide to following and participating in Richmond city government, with inline Tier 1-2 source links"
+    publication_tier: public
     queries: []
 
 
@@ -3343,12 +3343,12 @@ field_map:
       column: "operator_config.publication + evidence + temporal + financial + quality"
       note: "Read/written by operator dashboard; consumed by conflict_scanner.py via contextvars"
 
-  # ── Richmond 101 Draft (/operator/richmond-101) ─────────────
+  # ── City Government Guide (/guide) ──────────────────────────
 
-  "/operator/richmond-101":
-    "guide draft":
-      column: "Static operator-only copy with inline City of Richmond and Richmondside source links"
-      note: "No database read. AI-generated draft remains noindex and requires operator voice/publication review before any public route or navigation entry is created."
+  "/guide":
+    "city government guide":
+      column: "Static public copy with inline City of Richmond and Richmondside source links"
+      note: "No database read. AI-generated guide approved for public graduation after operator voice and source review on 2026-08-24."
 
   # ── Operator Login (/operator/login) ────────────────────────
 
