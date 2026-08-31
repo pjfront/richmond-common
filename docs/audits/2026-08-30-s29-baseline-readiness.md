@@ -60,7 +60,7 @@ starting an unattended measurement window. After the final CPU-affecting
 baseline release, observe at least seven complete UTC days and require the
 documented rolling-CPU, recent-rate, ISR, and other capacity gates before A0.
 
-## Consumed Preview attempts — both safely closed
+## Consumed Preview attempts — all three safely closed
 
 - The operator's first PR #154 Preview approval was consumed exactly once by
   bootstrap run [33415519449](https://github.com/pjfront/richmond-common/actions/runs/33415519449).
@@ -115,9 +115,55 @@ The first approval cannot be reused.
   failures clean before diagnostic upload. Its focused suite passed 191 tests
   and three independent reviews found no remaining blocker.
 
-The second approval also cannot be reused. There is no current Preview approval
-and no active branch. A fresh approval will be requested only after this rebased,
-production-authoritative exact head is green and independently reviewed.
+The second approval also cannot be reused.
+
+- The operator's third PR #154 Preview approval was consumed exactly once by
+  bootstrap run
+  [33428436954](https://github.com/pjfront/richmond-common/actions/runs/33428436954)
+  against immutable H0 `4ae5924a14935c0c23f303c7ed71d4c6c98f3d32`.
+- It created one data-less Micro branch, `pr-154-preview`, with project ref
+  `txmpojluvxlgpmiabdlf`, and applied the 11 clean-room migrations. Baseline,
+  migration, and security checks passed.
+- Preview and production PostgREST metadata both resolved to `14.5`; the exact
+  composed type-file SHA-256 was
+  `07020d3ea8802b9d3574c5c6130b6fcb77d9e5a6cc1bcfe14a1df66c03d3ebd4`.
+  The matching SHA-bound artifact is `9771675667`.
+- The controller requested exactly one attested Vercel Preview. Deployment
+  `dpl_4WJkajpVniB6wjUuBsB31Ets66BU` reached `READY` with the exact approved
+  H0. Browser verification confirmed that the public shell, Meetings, Council,
+  Elections fallback, About, and subscription form rendered from the empty
+  branch without client-console errors or analytics script/intake activity.
+- The first held-directory probe exposed a genuine Preview boundary defect:
+  anonymous `/pac`, `/unions`, and `/corporations` requests returned a
+  production-mode server exception instead of their intended quiet 404. No
+  campaign-directory content or production data was exposed. Runtime logs
+  proved that the controller correctly withheld `IRON_SESSION_PASSWORD`, but
+  the application did not yet translate that exact secretless Vercel Preview
+  boundary into an anonymous session.
+- Verification stopped at that first broken boundary. The health, sitemap,
+  responsive, subscription no-write, and Amazonbot runtime matrix were not
+  claimed complete.
+- Cleanup run
+  [33429379461](https://github.com/pjfront/richmond-common/actions/runs/33429379461)
+  deleted the exact branch and all nine branch-scoped Vercel bindings
+  (`supabase_deleted=true`, `vercel_envs_deleted=9`). Independent read-only
+  checks found zero matching bindings, no matching deployment, and no resolvable
+  exact branch ref. The armed watchdog will safely no-op against absent state.
+
+The third approval cannot be reused. There is no current Preview approval, no
+active branch, no retained deployment, and no continuing branch cost. This PR
+now contains the narrow application fix: only a Vercel Preview with no session
+secret resolves as anonymous; Vercel Production and every non-Preview
+production runtime still enforce the required secret.
+
+Local validation of that fix passed all 305 web tests, TypeScript, focused
+ESLint, and an isolated production build. A secretless Preview-mode production
+server returned `{"isOperator":false}` from `/api/operator/session` and quiet
+404s from `/pac`, `/pac/[slug]`, `/unions`, `/corporations`, and `/orgs/[slug]`.
+Browser verification found no error overlay, horizontal overflow, or held-page
+content leak. Independent security review confirmed that Production remains
+fail-closed and Preview analytics remain outside the exact production-host
+allowlist.
 
 ## Crawler and Preview gates
 
@@ -129,20 +175,21 @@ production-authoritative exact head is green and independently reviewed.
   verify the Preview deny behavior without production credentials, then finish
   the required production-log review and prepare the separate operator-run WAF
   publish step.
-- A Preview requires a fresh approval naming this exact PR. Earlier approvals
-  for PRs #97, #100, #136, and both PR #154 attempts were consumed and cannot
-  be reused.
+- A Preview requires a fresh approval naming the next exact green H0. Earlier
+  approvals for PRs #97, #100, #136, and all three PR #154 attempts were
+  consumed and cannot be reused.
 
 ## Ordered next steps
 
-1. Finish this rebased PR's CI and independent review on the controller-fixed
-   canonical parent, with production-authoritative types restored.
+1. Finish focused, full-web, CI, and independent security review of the
+   secretless-Preview anonymous-session fix.
 2. Establish and freeze the resulting exact green H0. Do not amend, squash, or
    rebase it after a Preview bootstrap begins.
 3. Only then request one fresh exact two-hour Supabase Micro Preview approval
-   for this PR.
-4. Run and clean up the exact Preview; verify Amazonbot denial and the complete
-   baseline user journey.
+   for this PR. No prior approval may be reused.
+4. Run and clean up the exact Preview; require quiet held-directory 404s, then
+   finish health, robots, sitemap, responsive, no-write, analytics, and scoped
+   Amazonbot runtime verification.
 5. Review at least seven complete UTC days of the Production Log rule and stage
    exactly one production-deny change if the evidence remains clean. The
    operator executes the final firewall publish command when prompted.
@@ -155,6 +202,6 @@ production-authoritative exact head is green and independently reviewed.
 9. Do not record A0 until the final baseline is soaked and every capacity,
    analytics, canary, and operator-session gate passes.
 
-**ACTION:** None. Wait for the controller-fixed, production-authoritative exact
-H0 to pass CI and independent review. A fresh approval line will be surfaced
-only after that head is ready.
+**ACTION:** None. Wait for the secretless-Preview fix to pass full validation,
+CI, and independent review. A fresh approval line will be surfaced only after
+the next exact H0 is ready.
