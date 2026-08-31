@@ -969,7 +969,7 @@ class RecordingVercelApi:
             "url": "rtp-exact.vercel.app",
             "readyState": "READY",
             "projectId": "prj_test",
-            "target": "preview",
+            "target": None,
             "meta": {
                 "githubCommitOrg": "pjfront",
                 "githubCommitRepo": "richmond-common",
@@ -1046,6 +1046,53 @@ def test_vercel_controller_requests_exact_sha_rest_api_preview():
     assert deployment.ready_state == "READY"
 
 
+def test_vercel_controller_accepts_v13_null_target_as_builtin_preview():
+    api = RecordingVercelApi(_safe_vercel_project_payload())
+    client = preview.VercelClient(
+        "token", project_id="prj_test", team_id="team_test", api=api
+    )
+    persisted: list[str] = []
+
+    deployment = client.create_preview_deployment(
+        git_owner="pjfront",
+        git_repo="richmond-common",
+        git_branch=GIT_BRANCH,
+        source_head_sha=SOURCE_HEAD_SHA,
+        on_created=persisted.append,
+    )
+
+    assert deployment.id == "dpl_exact"
+    assert deployment.ready_state == "READY"
+    assert persisted == ["dpl_exact"]
+
+
+def test_vercel_controller_retires_v13_null_target_preview():
+    api = RecordingVercelApi(_safe_vercel_project_payload())
+    client = preview.VercelClient(
+        "token", project_id="prj_test", team_id="team_test", api=api
+    )
+
+    client.retire_preview_deployment(
+        "dpl_exact",
+        git_owner="pjfront",
+        git_repo="richmond-common",
+        git_branch=GIT_BRANCH,
+        source_head_sha=SOURCE_HEAD_SHA,
+    )
+
+    assert any(
+        request["method"] == "GET"
+        and request["path"] == "/v13/deployments/dpl_exact"
+        for request in api.requests
+    )
+    assert any(
+        request["method"] == "DELETE"
+        and request["path"] == "/v13/deployments/dpl_exact"
+        for request in api.requests
+    )
+    assert not any(request["method"] == "PATCH" for request in api.requests)
+
+
 def test_vercel_controller_rejects_terminal_deployment_response():
     api = RecordingVercelApi(
         _safe_vercel_project_payload(),
@@ -1054,7 +1101,7 @@ def test_vercel_controller_rejects_terminal_deployment_response():
             "url": "rtp-blocked.vercel.app",
             "readyState": "BLOCKED",
             "projectId": "prj_test",
-            "target": "preview",
+            "target": None,
             "meta": {
                 "githubCommitOrg": "pjfront",
                 "githubCommitRepo": "richmond-common",
@@ -1094,7 +1141,11 @@ def test_vercel_controller_rejects_terminal_deployment_response():
     ("updates", "message"),
     [
         ({"projectId": "prj_wrong"}, "project attestation"),
+        ({"target": "preview"}, "target is not Preview"),
         ({"target": "production"}, "target is not Preview"),
+        ({"target": "staging"}, "target is not Preview"),
+        ({"target": ""}, "target is not Preview"),
+        ({"target": False}, "target is not Preview"),
         ({"meta": {}}, "metadata attestation"),
         ({"gitSource": {}}, "source attestation"),
     ],
@@ -1133,6 +1184,22 @@ def test_vercel_controller_never_persists_or_retires_unattested_returned_id(
         request["method"] in {"PATCH", "DELETE"}
         for request in api.requests
     )
+
+
+def test_vercel_deployment_rejects_missing_target_attestation():
+    payload = dict(RecordingVercelApi(_safe_vercel_project_payload()).deployment)
+    payload.pop("target")
+
+    with pytest.raises(preview.PreviewError, match="target is not Preview"):
+        preview.VercelDeployment.from_payload(
+            payload,
+            expected_id="dpl_exact",
+            expected_project_id="prj_test",
+            git_owner="pjfront",
+            git_repo="richmond-common",
+            git_branch=GIT_BRANCH,
+            source_head_sha=SOURCE_HEAD_SHA,
+        )
 
 
 def test_vercel_controller_timeout_cancels_then_deletes_exact_deployment():
