@@ -7,8 +7,8 @@ email send, migration, production-data change, replay, or billing change.
 ## Proven release state
 
 - Canonical parent `main` is
-  `ac2f44dd7277b6ae0ff5d2ec94baedc5c85c47cd`, with its exact main-push Build
-  Check green.
+  `80724135bce150934df88b10b798c2a402656652`, including the green, independently
+  reviewed Vercel Preview target-attestation fix from PR #157.
 - Public production remains Vercel deployment
   `dpl_3Fit9sx7D97BgAbA3iqsRfbjSfUp`, sourced from
   `0ff9fd50443d8d13e15a4d83845b2997cfc1054a`.
@@ -25,6 +25,9 @@ email send, migration, production-data change, replay, or billing change.
   and production-anchor metadata while treatment metadata and public JSON-LD
   remain held. It includes approved reliability, privacy, containment, and
   measurement mechanics.
+- `web/src/lib/database.types.ts` is aligned to the exact data-less Preview
+  schema generated during the consumed PR #154 attempt; its only semantic
+  change is the PostgREST version reported by that branch.
 
 ## Database and model boundaries
 
@@ -55,6 +58,31 @@ starting an unattended measurement window. After the final CPU-affecting
 baseline release, observe at least seven complete UTC days and require the
 documented rolling-CPU, recent-rate, ISR, and other capacity gates before A0.
 
+## Consumed Preview attempt — safely closed
+
+- The operator's first PR #154 Preview approval was consumed exactly once by
+  bootstrap run [33415519449](https://github.com/pjfront/richmond-common/actions/runs/33415519449).
+- The data-less Micro branch passed baseline and migration integrity. Its only
+  H0 schema-type difference was the generated PostgREST version, so the allowed
+  one-file H1 type update was committed and verified.
+- H1 run [33415905003](https://github.com/pjfront/richmond-common/actions/runs/33415905003)
+  passed the retained-branch, direct-child, exact type-generation, and Schema
+  Type Gate checks. It did not complete browser verification: the controller
+  rejected Vercel's canonical built-in Preview response, `target: null`, while
+  it incorrectly expected the string `preview`.
+- Failure cleanup deleted the Supabase branch and all eight exact branch-scoped
+  Vercel variables. The one late exact deployment was separately attested and
+  deleted; cleanup verification run
+  [33416516431](https://github.com/pjfront/richmond-common/actions/runs/33416516431)
+  found no remaining Preview state. There is no continuing branch cost.
+- PR #157 fixed the fail-closed attestation to require an explicitly present
+  null Preview target while rejecting missing, Production, staging, and custom
+  targets. It did not change POST count, retries, timing, identity checks, or
+  cleanup ordering, and its controller suite passed 164 tests.
+
+The first approval cannot be reused. One additional bounded branch approval is
+required for a fresh exact-head Preview after this rebased PR is green.
+
 ## Crawler and Preview gates
 
 - The Vercel Firewall currently has a live Preview-only Amazonbot Deny rule and
@@ -65,13 +93,16 @@ documented rolling-CPU, recent-rate, ISR, and other capacity gates before A0.
   verify the Preview deny behavior without production credentials, then finish
   the required production-log review and prepare the separate operator-run WAF
   publish step.
-- A Preview requires a new approval naming this exact PR. Earlier approvals for
-  PRs #97, #100, and #136 were consumed and cannot be reused.
+- A Preview requires one additional approval naming this exact PR. Earlier
+  approvals for PRs #97, #100, #136, and the first PR #154 attempt were consumed
+  and cannot be reused.
 
 ## Ordered next steps
 
-1. Finish this PR's CI and independent review.
-2. Ask for one exact two-hour Supabase Micro Preview approval for this PR.
+1. Finish this rebased PR's CI and independent review on the controller-fixed
+   canonical parent.
+2. Ask for one additional exact two-hour Supabase Micro Preview approval for
+   this PR.
 3. Run and clean up the exact Preview; verify Amazonbot denial and the complete
    baseline user journey.
 4. Review at least seven complete UTC days of the Production Log rule and stage
@@ -87,5 +118,6 @@ documented rolling-CPU, recent-rate, ISR, and other capacity gates before A0.
    analytics, canary, and operator-session gate passes.
 
 **ACTION:** Reply exactly:
-`APPROVE PREVIEW COST: one ephemeral Supabase Micro branch for PR #154, maximum
-two hours, then auto-delete.` This authorizes Preview only, not production.
+`APPROVE PREVIEW COST: one additional ephemeral Supabase Micro branch for PR
+#154, maximum two hours, then auto-delete.` This authorizes Preview only, not
+production.
