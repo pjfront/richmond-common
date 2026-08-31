@@ -126,6 +126,30 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Install pinned Supabase CLI for trusted type generation
+        if: env.PREVIEW_OPERATION == 'bootstrap' || env.PREVIEW_OPERATION == 'verify-types'
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.112.0
+
+      - name: Generate production-authoritative type metadata before branch mutation
+        id: production_types
+        if: env.PREVIEW_OPERATION == 'bootstrap' || env.PREVIEW_OPERATION == 'verify-types'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        shell: bash
+        run: |
+          if ! python src/supabase_preview.py generate-production-types \
+            --output "$RUNNER_TEMP/database.types.production.raw.ts" \
+            --timeout-seconds 120; then
+            if [ "$PREVIEW_OPERATION" = "bootstrap" ]; then
+              echo "::error::ACTION: No Preview branch was created. Do not retry or create one. Give this run URL to a coding assistant with: In Richmond Commons, diagnose the read-only production metadata type-generation failure before requesting any new Preview approval."
+            else
+              echo "::error::ACTION: Do not retry or create another Preview. This run will clean the retained branch automatically; give this run URL to a coding assistant with: In Richmond Commons, verify exact Preview cleanup, then diagnose the read-only production metadata type-generation failure."
+            fi
+            exit 1
+          fi
+
       - name: Validate trusted baseline and migration integrity
         id: validate
         if: env.PREVIEW_OPERATION == 'bootstrap'
@@ -219,22 +243,19 @@ jobs:
           --source-head-sha "$SOURCE_HEAD_SHA"
           --max-age-seconds 4200
 
-      - name: Install pinned Supabase CLI for exact-head typegen
-        if: >-
-          (env.PREVIEW_OPERATION == 'bootstrap' && steps.bootstrap.outcome == 'success') ||
-          (env.PREVIEW_OPERATION == 'verify-types' && steps.retained.outcome == 'success')
-        uses: supabase/setup-cli@v1
-        with:
-          version: 2.112.0
-
       - name: Compare Preview-generated public types with bootstrap H0
         id: preview_types
-        if: env.PREVIEW_OPERATION == 'bootstrap' && steps.bootstrap.outcome == 'success'
+        if: >-
+          env.PREVIEW_OPERATION == 'bootstrap' &&
+          steps.production_types.outcome == 'success' &&
+          steps.bootstrap.outcome == 'success'
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           PREVIEW_BRANCH_REF: ${{ steps.bootstrap.outputs.supabase_branch_ref }}
         shell: bash
         run: |
+          preview_raw="$RUNNER_TEMP/database.types.preview.raw.ts"
+          production_raw="$RUNNER_TEMP/database.types.production.raw.ts"
           generated="$RUNNER_TEMP/database.types.preview.ts"
           pr_root="$(realpath preview-head)"
           pr_types="preview-head/web/src/lib/database.types.ts"
@@ -253,9 +274,16 @@ jobs:
           fi
           if ! python src/supabase_preview.py generate-types \
             --project-ref "$PREVIEW_BRANCH_REF" \
-            --output "$generated" \
+            --output "$preview_raw" \
             --max-wait-seconds 120; then
             echo "::error::ACTION: Do not retry or create another Preview. Give this run URL to a coding assistant with: In Richmond Commons, verify exact Preview cleanup, then diagnose the bounded Preview type-generation failure."
+            exit 1
+          fi
+          if ! python src/supabase_preview.py compose-types \
+            --preview "$preview_raw" \
+            --production "$production_raw" \
+            --output "$generated"; then
+            echo "::error::ACTION: Do not retry or create another Preview. Give this run URL to a coding assistant with: In Richmond Commons, verify exact Preview cleanup, then diagnose the fail-closed PostgREST metadata composition failure."
             exit 1
           fi
           if [ -L "$generated" ] || [ ! -f "$generated" ] || [ "$(stat -c%s "$generated")" -gt 2000000 ]; then
@@ -263,8 +291,8 @@ jobs:
             exit 1
           fi
           if ! cmp -s "$generated" "$pr_types"; then
-            echo "type_mismatch=true" >> "$GITHUB_OUTPUT"
-            echo "::error::ACTION: Do not deploy or create another Preview. Give this run URL to a coding assistant with: In Richmond Commons, reconcile database.types.ts with the exact bootstrap H0 Preview schema after verifying exact Preview cleanup."
+            echo "schema_mismatch=true" >> "$GITHUB_OUTPUT"
+            echo "::error::ACTION: Do not deploy or create another Preview. Give this run URL to a coding assistant with: In Richmond Commons, reconcile database.types.ts with the exact bootstrap H0 Preview schema and production PostgREST metadata after verifying exact Preview cleanup."
             diff -u "$pr_types" "$generated" | head -80 || true
             exit 1
           fi
@@ -275,7 +303,7 @@ jobs:
           always() && env.PREVIEW_OPERATION == 'bootstrap' &&
           steps.bootstrap.outcome == 'success' &&
           (steps.preview_types.outcome == 'success' ||
-           steps.preview_types.outputs.type_mismatch == 'true')
+           steps.preview_types.outputs.schema_mismatch == 'true')
         uses: actions/upload-artifact@v4
         with:
           name: database-types-pr-${{ steps.pr.outputs.number }}-${{ steps.pr.outputs.source_head_sha }}
@@ -283,13 +311,13 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      - name: Remove failed bootstrap except retained type mismatch
+      - name: Remove failed bootstrap except retained schema mismatch
         if: >-
           always() && env.PREVIEW_OPERATION == 'bootstrap' &&
           steps.bootstrap.outputs.supabase_branch_ref != '' &&
           (steps.preview_types_artifact.outcome != 'success' ||
            (steps.preview_types.outcome != 'success' &&
-            steps.preview_types.outputs.type_mismatch != 'true'))
+            steps.preview_types.outputs.schema_mismatch != 'true'))
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
@@ -324,7 +352,7 @@ jobs:
               state: passed ? 'success' : 'failure',
               context: process.env.STATUS_CONTEXT,
               description: passed
-                ? 'Exact H0 types match its clean-room Preview schema'
+                ? 'H0 types match Preview schema and production runtime metadata'
                 : 'Clean-room H0 Preview schema/type comparison failed',
               target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
             })
@@ -335,7 +363,7 @@ jobs:
           steps.bootstrap.outputs.supabase_branch_ref != '' &&
           steps.preview_types_artifact.outcome == 'success' &&
           (steps.preview_types.outcome == 'success' ||
-           steps.preview_types.outputs.type_mismatch == 'true') &&
+           steps.preview_types.outputs.schema_mismatch == 'true') &&
           steps.bootstrap_status.outcome != 'success'
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
@@ -400,12 +428,17 @@ jobs:
 
       - name: Compare retained Preview-generated public types with exact H1
         id: verify_types
-        if: env.PREVIEW_OPERATION == 'verify-types' && steps.retained.outcome == 'success'
+        if: >-
+          env.PREVIEW_OPERATION == 'verify-types' &&
+          steps.production_types.outcome == 'success' &&
+          steps.retained.outcome == 'success'
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           PREVIEW_BRANCH_REF: ${{ steps.retained.outputs.supabase_branch_ref }}
         shell: bash
         run: |
+          preview_raw="$RUNNER_TEMP/database.types.verify.raw.ts"
+          production_raw="$RUNNER_TEMP/database.types.production.raw.ts"
           generated="$RUNNER_TEMP/database.types.verify.ts"
           h1_root="$(realpath preview-head)"
           h1_types="preview-head/web/src/lib/database.types.ts"
@@ -424,9 +457,16 @@ jobs:
           fi
           if ! python src/supabase_preview.py generate-types \
             --project-ref "$PREVIEW_BRANCH_REF" \
-            --output "$generated" \
+            --output "$preview_raw" \
             --max-wait-seconds 120; then
             echo "::error::ACTION: Do not retry or create another Preview. Give this run URL to a coding assistant with: In Richmond Commons, verify exact Preview cleanup, then diagnose the bounded retained-Preview type-generation failure."
+            exit 1
+          fi
+          if ! python src/supabase_preview.py compose-types \
+            --preview "$preview_raw" \
+            --production "$production_raw" \
+            --output "$generated"; then
+            echo "::error::ACTION: Do not retry or create another Preview. Give this run URL to a coding assistant with: In Richmond Commons, verify exact Preview cleanup, then diagnose the retained check's fail-closed PostgREST metadata composition failure."
             exit 1
           fi
           if [ -L "$generated" ] || [ ! -f "$generated" ] || [ "$(stat -c%s "$generated")" -gt 2000000 ]; then
@@ -434,7 +474,8 @@ jobs:
             exit 1
           fi
           cmp -s "$generated" "$h1_types" || {
-            echo "::error::ACTION: Do not deploy or create another Preview. Give this run URL to a coding assistant with: In Richmond Commons, reconcile H1 database.types.ts with retained Preview typegen after verifying exact Preview cleanup."
+            echo "::error::ACTION: Do not deploy or create another Preview. Give this run URL to a coding assistant with: In Richmond Commons, reconcile H1 database.types.ts with retained Preview schema and production PostgREST metadata after verifying exact Preview cleanup."
+            diff -u "$h1_types" "$generated" | head -80 || true
             exit 1
           }
 
@@ -455,6 +496,18 @@ jobs:
           --parent-ref "$SUPABASE_PARENT_PROJECT_REF"
           --pr-number "$PREVIEW_PR_NUMBER"
           --git-branch "$PREVIEW_GIT_BRANCH"
+
+      - name: Upload failed H1 canonical types after cleanup
+        if: >-
+          always() && env.PREVIEW_OPERATION == 'verify-types' &&
+          steps.verify_types.outcome != 'success' &&
+          steps.verify_cleanup.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: database-types-h1-pr-${{ steps.pr.outputs.number }}-${{ steps.pr.outputs.head_sha }}
+          path: ${{ runner.temp }}/database.types.verify.ts
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Bind verify-types result to exact H1
         id: verify_status
@@ -478,7 +531,7 @@ jobs:
               state: passed ? 'success' : 'failure',
               context: process.env.STATUS_CONTEXT,
               description: passed
-                ? 'Exact H1 type-only update matches retained H0 Preview schema'
+                ? 'H1 types match retained Preview schema and production metadata'
                 : (process.env.CLEANUP_OUTCOME === 'success'
                     ? 'Retained Preview type verification failed and was cleaned'
                     : 'Retained Preview type verification failed; cleanup needs attention'),
