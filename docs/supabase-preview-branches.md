@@ -311,8 +311,12 @@ never uses name-only upsert: Production and Preview legitimately have duplicate
 key names, so name-only mutation is ambiguous. The Vercel build guard checks
 the branch marker, exact Git SHA marker, project-ref marker, URL hostname, and
 public-key shape in addition to rejecting every server credential. The trusted
-controller sends explicit `target=preview` plus that exact branch and SHA in the
-REST API `gitSource`. It polls the immutable deployment to terminal `READY` and
+controller omits the deployment `target` in the REST request so Vercel creates
+its built-in Preview environment, while sending the exact branch and SHA in
+`gitSource`. Vercel's returned deployment must contain explicit `target: null`,
+the canonical built-in Preview value; missing and non-null targets fail closed.
+Branch-scoped environment variables separately retain their `target=preview`
+scope. The controller polls the immutable deployment to terminal `READY` and
 requires the returned project ID, Preview target, GitHub owner/repository/ref/
 full SHA metadata, Git source, and a creation time inside the current request
 window to match before persisting its ID. Missing, stale, future, or mismatched

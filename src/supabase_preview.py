@@ -2794,7 +2794,11 @@ class VercelDeployment:
             raise PreviewError("Vercel deployment immutable ID mismatch.")
         if str(payload.get("projectId") or "") != expected_project_id:
             raise PreviewError("Vercel deployment project attestation failed.")
-        if str(payload.get("target") or "").lower() != "preview":
+        # Vercel's v13 response represents the built-in Preview environment as
+        # explicit JSON null when create-deployment omits ``target``. Require
+        # that canonical value so missing data, Production, and named/custom
+        # environment targets all fail closed.
+        if "target" not in payload or payload.get("target") is not None:
             raise PreviewError("Vercel deployment target is not Preview.")
         if not url or any(character.isspace() for character in url):
             raise PreviewError("Vercel deployment response lacks a valid URL.")
