@@ -71,10 +71,12 @@ documented rolling-CPU, recent-rate, ISR, and other capacity gates before A0.
   rejected Vercel's canonical built-in Preview response, `target: null`, while
   it incorrectly expected the string `preview`.
 - Failure cleanup deleted the Supabase branch and all eight exact branch-scoped
-  Vercel variables. The one late exact deployment was separately attested and
-  deleted; cleanup verification run
+  Vercel variables. The one late exact deployment was separately attested,
+  deleted, and confirmed absent by exact-ID Vercel lookups. Follow-up cleanup
+  run
   [33416516431](https://github.com/pjfront/richmond-common/actions/runs/33416516431)
-  found no remaining Preview state. There is no continuing branch cost.
+  found no remaining Supabase branch or branch-scoped Vercel variables. There
+  is no continuing branch cost.
 - PR #157 fixed the fail-closed attestation to require an explicitly present
   null Preview target while rejecting missing, Production, staging, and custom
   targets. It did not change POST count, retries, timing, identity checks, or
