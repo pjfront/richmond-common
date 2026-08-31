@@ -180,7 +180,8 @@ allowlist.
   passed. Preview PostgREST metadata was `14.17`; composing the production
   `14.5` runtime literal produced the exact committed type-file SHA-256
   `07020d3ea8802b9d3574c5c6130b6fcb77d9e5a6cc1bcfe14a1df66c03d3ebd4`.
-  SHA-bound artifact `9774644012` retains the raw and composed evidence.
+  SHA-bound artifact `9774644012` retains the composed type file; the run log
+  records the raw Preview and production/composed versions and SHA-256 values.
 - The controller requested exactly one attested Vercel Preview, deployment
   `dpl_8bB7yxNS4eFXJgsSY4mLQds59Qn9`. It reached `READY` on PR #154,
   the exact H0, and Vercel's canonical null Preview target. Only the nine
