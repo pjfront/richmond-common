@@ -223,19 +223,33 @@ committed `web/src/lib/database.types.ts`. When migrations are pending, the
 gate requires the `Schema Type Gate` commit status on that exact head SHA.
 
 A successful manual `Supabase Preview` bootstrap generates `public` database
-types from the verified clean-room branch and compares them byte-for-byte with
-exact head H0. A matching H0 receives success and the trusted controller
-requests its exact-SHA REST API Preview. A type mismatch uploads the generated
-file as a seven-day H0-SHA-named artifact, leaves failure on H0, does not request
-a Vercel deployment, and retains that same immutable branch only for the bounded
-type-only follow-up. Every validation, bootstrap, type-generation, size/path,
-artifact, or deployment-request failure instead cleans immediately.
+types from both the verified clean-room branch and production. Preview is
+authoritative for every schema/type byte; production is authoritative only for
+the hosted `__InternalSupabase.PostgrestVersion` value used by the eventual
+public runtime. The trusted controller requires one exact, canonical metadata
+header in each generated file, requires matching PostgREST major versions, and
+composes the Preview schema with only production's version literal. It then
+compares that canonical file byte-for-byte with exact head H0. A matching H0
+receives success and the trusted controller requests its exact-SHA REST API
+Preview. A real schema mismatch uploads the canonical file as a seven-day
+H0-SHA-named artifact, leaves failure on H0, does not request a Vercel
+deployment, and retains that same immutable branch only for the bounded
+type-only follow-up. Missing, duplicate, malformed, differently formatted, or
+major-incompatible metadata is not retainable and cleans immediately, as does
+every validation, bootstrap, type-generation, size/path, artifact, or
+deployment-request failure.
 
-Both H0 and H1 type-generation steps use the same trusted wrapper. It retries
-for at most 120 seconds only when the CLI's complete error is exactly
-`Project must be active and healthy`. HTTP 401/403, credential failures, CLI
-failures, and every unrelated response fail immediately and retain the existing
-cleanup/type-mismatch artifact behavior.
+Both H0 and H1 use the same trusted generators and compositor. Preview typegen
+retries for at most 120 seconds only when the CLI's complete error is exactly
+`Project must be active and healthy`. The production metadata generation is one
+read-only, hard-coded call with no mutation path and no retry. For bootstrap it
+runs before the bootstrap can create a billable branch, so a production read failure
+cannot consume an approved Preview. HTTP 401/403,
+credential failures, CLI failures, malformed metadata, and every unrelated
+response fail immediately. Composition asserts mechanically that no Preview
+byte outside the single quoted version span changed. An H1 mismatch is diffed
+with bounded output; after cleanup completes, its canonical diagnostic artifact
+is retained for seven days when available.
 
 Download the H0-bound artifact, replace only
 `web/src/lib/database.types.ts`, and create H1 as one normal, one-parent commit
