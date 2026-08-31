@@ -4,6 +4,7 @@ from __future__ import annotations
 import base64
 from dataclasses import replace
 from datetime import timedelta, timezone
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -34,6 +35,33 @@ WATCHDOG_REAL_RUN_FIXTURE = (
     / "supabase_preview_workflow_run_32793118575.json"
 )
 SCHEMA_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "schema-drift.yml"
+
+
+def _database_types_bytes(
+    version: str,
+    *,
+    field: bytes = b"value: string",
+) -> bytes:
+    return (
+        b"export type Database = {\n"
+        b"  // Allows to automatically instantiate createClient with right options\n"
+        b"  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)\n"
+        b"  __InternalSupabase: {\n"
+        + f'    PostgrestVersion: "{version}"\n'.encode("ascii")
+        + b"  }\n"
+        b"  public: {\n"
+        b"    Tables: {\n"
+        b"      example: {\n"
+        b"        Row: { "
+        + field
+        + b" }\n"
+        b"      }\n"
+        b"    }\n"
+        b"  }\n"
+        b"}\n"
+        b"\n"
+        b'type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">\n'
+    )
 
 
 def _branch_payload(**updates: Any) -> dict[str, Any]:
@@ -969,7 +997,7 @@ class RecordingVercelApi:
             "url": "rtp-exact.vercel.app",
             "readyState": "READY",
             "projectId": "prj_test",
-            "target": "preview",
+            "target": None,
             "meta": {
                 "githubCommitOrg": "pjfront",
                 "githubCommitRepo": "richmond-common",
@@ -1046,6 +1074,53 @@ def test_vercel_controller_requests_exact_sha_rest_api_preview():
     assert deployment.ready_state == "READY"
 
 
+def test_vercel_controller_accepts_v13_null_target_as_builtin_preview():
+    api = RecordingVercelApi(_safe_vercel_project_payload())
+    client = preview.VercelClient(
+        "token", project_id="prj_test", team_id="team_test", api=api
+    )
+    persisted: list[str] = []
+
+    deployment = client.create_preview_deployment(
+        git_owner="pjfront",
+        git_repo="richmond-common",
+        git_branch=GIT_BRANCH,
+        source_head_sha=SOURCE_HEAD_SHA,
+        on_created=persisted.append,
+    )
+
+    assert deployment.id == "dpl_exact"
+    assert deployment.ready_state == "READY"
+    assert persisted == ["dpl_exact"]
+
+
+def test_vercel_controller_retires_v13_null_target_preview():
+    api = RecordingVercelApi(_safe_vercel_project_payload())
+    client = preview.VercelClient(
+        "token", project_id="prj_test", team_id="team_test", api=api
+    )
+
+    client.retire_preview_deployment(
+        "dpl_exact",
+        git_owner="pjfront",
+        git_repo="richmond-common",
+        git_branch=GIT_BRANCH,
+        source_head_sha=SOURCE_HEAD_SHA,
+    )
+
+    assert any(
+        request["method"] == "GET"
+        and request["path"] == "/v13/deployments/dpl_exact"
+        for request in api.requests
+    )
+    assert any(
+        request["method"] == "DELETE"
+        and request["path"] == "/v13/deployments/dpl_exact"
+        for request in api.requests
+    )
+    assert not any(request["method"] == "PATCH" for request in api.requests)
+
+
 def test_vercel_controller_rejects_terminal_deployment_response():
     api = RecordingVercelApi(
         _safe_vercel_project_payload(),
@@ -1054,7 +1129,7 @@ def test_vercel_controller_rejects_terminal_deployment_response():
             "url": "rtp-blocked.vercel.app",
             "readyState": "BLOCKED",
             "projectId": "prj_test",
-            "target": "preview",
+            "target": None,
             "meta": {
                 "githubCommitOrg": "pjfront",
                 "githubCommitRepo": "richmond-common",
@@ -1094,7 +1169,11 @@ def test_vercel_controller_rejects_terminal_deployment_response():
     ("updates", "message"),
     [
         ({"projectId": "prj_wrong"}, "project attestation"),
+        ({"target": "preview"}, "target is not Preview"),
         ({"target": "production"}, "target is not Preview"),
+        ({"target": "staging"}, "target is not Preview"),
+        ({"target": ""}, "target is not Preview"),
+        ({"target": False}, "target is not Preview"),
         ({"meta": {}}, "metadata attestation"),
         ({"gitSource": {}}, "source attestation"),
     ],
@@ -1133,6 +1212,22 @@ def test_vercel_controller_never_persists_or_retires_unattested_returned_id(
         request["method"] in {"PATCH", "DELETE"}
         for request in api.requests
     )
+
+
+def test_vercel_deployment_rejects_missing_target_attestation():
+    payload = dict(RecordingVercelApi(_safe_vercel_project_payload()).deployment)
+    payload.pop("target")
+
+    with pytest.raises(preview.PreviewError, match="target is not Preview"):
+        preview.VercelDeployment.from_payload(
+            payload,
+            expected_id="dpl_exact",
+            expected_project_id="prj_test",
+            git_owner="pjfront",
+            git_repo="richmond-common",
+            git_branch=GIT_BRANCH,
+            source_head_sha=SOURCE_HEAD_SHA,
+        )
 
 
 def test_vercel_controller_timeout_cancels_then_deletes_exact_deployment():
@@ -4115,6 +4210,301 @@ def test_typegen_exact_transient_stops_at_bounded_deadline(tmp_path: Path):
     assert calls == 3
 
 
+def test_production_typegen_is_hard_coded_read_only_and_single_attempt(
+    tmp_path: Path,
+):
+    expected = _database_types_bytes("14.5")
+    calls: list[dict[str, Any]] = []
+
+    def runner(command: list[str], **kwargs: Any) -> Any:
+        calls.append({"command": command, **kwargs})
+        return preview.subprocess.CompletedProcess(command, 0, expected, b"")
+
+    output = tmp_path / "database.types.production.ts"
+    preview.generate_production_types(output, timeout_seconds=30, runner=runner)
+
+    assert output.read_bytes() == expected
+    assert len(calls) == 1
+    assert calls[0]["command"] == [
+        "supabase",
+        "gen",
+        "types",
+        "typescript",
+        "--project-id",
+        preview.PRODUCTION_PROJECT_REF,
+        "--schema",
+        "public",
+    ]
+    assert calls[0]["timeout"] == 30
+    assert calls[0]["env"]["NO_COLOR"] == "1"
+
+
+def test_production_typegen_failure_is_not_retried(tmp_path: Path):
+    calls = 0
+
+    def runner(command: list[str], **kwargs: Any) -> Any:
+        nonlocal calls
+        calls += 1
+        return preview.subprocess.CompletedProcess(
+            command, 1, b"", b"request returned 503 Service Unavailable"
+        )
+
+    with pytest.raises(preview.PreviewError, match="Production typegen failed"):
+        preview.generate_production_types(
+            tmp_path / "database.types.production.ts",
+            runner=runner,
+        )
+    assert calls == 1
+
+
+@pytest.mark.parametrize(
+    "stdout",
+    [
+        b"",
+        b"not generated database types\n",
+        _database_types_bytes("14.5").replace(b"\n", b"\r\n"),
+        _database_types_bytes("14.5").replace(b'"14.5"', b'"v14.5"'),
+    ],
+)
+def test_production_typegen_rejects_malformed_success_before_writing(
+    tmp_path: Path,
+    stdout: bytes,
+):
+    def runner(command: list[str], **kwargs: Any) -> Any:
+        return preview.subprocess.CompletedProcess(command, 0, stdout, b"")
+
+    output = tmp_path / "database.types.production.ts"
+    with pytest.raises(preview.PreviewError):
+        preview.generate_production_types(output, runner=runner)
+    assert not output.exists()
+
+
+def test_compose_types_replaces_only_preview_postgrest_version(tmp_path: Path):
+    preview_path = tmp_path / "preview.ts"
+    production_path = tmp_path / "production.ts"
+    output_path = tmp_path / "composed.ts"
+    preview_raw = _database_types_bytes("14.17", field=b"preview_only: number")
+    production_raw = _database_types_bytes("14.5", field=b"production_only: string")
+    preview_path.write_bytes(preview_raw)
+    production_path.write_bytes(production_raw)
+
+    result = preview.compose_authoritative_database_types(
+        preview_path,
+        production_path,
+        output_path,
+    )
+
+    expected = _database_types_bytes("14.5", field=b"preview_only: number")
+    assert output_path.read_bytes() == expected
+    assert result.content == expected
+    assert result.preview_version == "14.17"
+    assert result.production_version == "14.5"
+    assert preview_path.read_bytes() == preview_raw
+    assert production_path.read_bytes() == production_raw
+    assert b"production_only" not in result.content
+    assert result.preview_sha256 == hashlib.sha256(preview_raw).hexdigest()
+    assert result.production_sha256 == hashlib.sha256(production_raw).hexdigest()
+    assert result.content_sha256 == hashlib.sha256(expected).hexdigest()
+
+
+def test_compose_types_accepts_official_full_version_hash_form(tmp_path: Path):
+    preview_path = tmp_path / "preview.ts"
+    production_path = tmp_path / "production.ts"
+    output_path = tmp_path / "composed.ts"
+    preview_path.write_bytes(_database_types_bytes("14.17.0 (abcdef0)"))
+    production_path.write_bytes(_database_types_bytes("14.5.1 (519615d)"))
+
+    result = preview.compose_authoritative_database_types(
+        preview_path,
+        production_path,
+        output_path,
+    )
+
+    assert result.production_version == "14.5.1 (519615d)"
+    assert output_path.read_bytes() == _database_types_bytes("14.5.1 (519615d)")
+
+
+def test_compose_types_cli_runs_without_management_client_credentials(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    preview_path = tmp_path / "preview.ts"
+    production_path = tmp_path / "production.ts"
+    output_path = tmp_path / "composed.ts"
+    github_output = tmp_path / "github-output.txt"
+    preview_path.write_bytes(_database_types_bytes("14.17"))
+    production_path.write_bytes(_database_types_bytes("14.5"))
+    monkeypatch.delenv("SUPABASE_ACCESS_TOKEN", raising=False)
+    monkeypatch.setenv("GITHUB_OUTPUT", str(github_output))
+
+    result = preview._main(
+        [
+            "compose-types",
+            "--preview", str(preview_path),
+            "--production", str(production_path),
+            "--output", str(output_path),
+        ]
+    )
+
+    assert result == 0
+    assert output_path.read_bytes() == _database_types_bytes("14.5")
+    assert github_output.read_text(encoding="utf-8").splitlines() == [
+        "preview_postgrest_version=14.17",
+        "production_postgrest_version=14.5",
+    ]
+
+
+def test_compose_types_preserves_substantive_preview_mismatch_for_exact_gate(
+    tmp_path: Path,
+):
+    preview_path = tmp_path / "preview.ts"
+    production_path = tmp_path / "production.ts"
+    output_path = tmp_path / "composed.ts"
+    preview_path.write_bytes(_database_types_bytes("14.17", field=b"value: number"))
+    production_path.write_bytes(_database_types_bytes("14.5"))
+
+    preview.compose_authoritative_database_types(
+        preview_path,
+        production_path,
+        output_path,
+    )
+
+    committed_reference = _database_types_bytes("14.5")
+    assert output_path.read_bytes() != committed_reference
+    assert b"value: number" in output_path.read_bytes()
+
+
+def test_compose_types_rejects_different_postgrest_major_versions(tmp_path: Path):
+    preview_path = tmp_path / "preview.ts"
+    production_path = tmp_path / "production.ts"
+    output_path = tmp_path / "composed.ts"
+    preview_path.write_bytes(_database_types_bytes("14.17"))
+    production_path.write_bytes(_database_types_bytes("15.0"))
+
+    with pytest.raises(preview.PreviewError, match="major versions differ"):
+        preview.compose_authoritative_database_types(
+            preview_path,
+            production_path,
+            output_path,
+        )
+    assert not output_path.exists()
+
+
+def test_compose_types_requires_distinct_preview_and_production_files(tmp_path: Path):
+    shared_path = tmp_path / "shared.ts"
+    output_path = tmp_path / "composed.ts"
+    shared_path.write_bytes(_database_types_bytes("14.5"))
+
+    with pytest.raises(preview.PreviewError, match="must be distinct files"):
+        preview.compose_authoritative_database_types(
+            shared_path,
+            shared_path,
+            output_path,
+        )
+    assert not output_path.exists()
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda raw: raw.replace(b"PostgrestVersion", b"PostgrestVer"),
+        lambda raw: raw.replace(
+            b'    PostgrestVersion: "14.17"\n',
+            b'    PostgrestVersion: "14.17"\n'
+            b'    PostgrestVersion: "14.17"\n',
+        ),
+        lambda raw: raw.replace(b'"14.17"', b'"014.17"'),
+        lambda raw: raw.replace(b'"14.17"', b'"14.017"'),
+        lambda raw: raw.replace(b'"14.17"', b'"14.17.1.2"'),
+        lambda raw: raw.replace(b'"14.17"', b'"v14.17"'),
+        lambda raw: raw.replace(b'"14.17"', b'"14.x"'),
+        lambda raw: raw.replace(b'"14.17"', b"'14.17'"),
+        lambda raw: raw.replace(b"    PostgrestVersion", b"   PostgrestVersion"),
+        lambda raw: b"\xef\xbb\xbf" + raw,
+        lambda raw: raw.replace(b"\n", b"\r\n"),
+        lambda raw: raw + b"\x00",
+        lambda raw: raw + b"\xff",
+    ],
+)
+def test_compose_types_rejects_malformed_or_noncanonical_input(
+    tmp_path: Path,
+    mutate: Any,
+):
+    preview_path = tmp_path / "preview.ts"
+    production_path = tmp_path / "production.ts"
+    output_path = tmp_path / "composed.ts"
+    preview_path.write_bytes(mutate(_database_types_bytes("14.17")))
+    production_path.write_bytes(_database_types_bytes("14.5"))
+
+    with pytest.raises(preview.PreviewError):
+        preview.compose_authoritative_database_types(
+            preview_path,
+            production_path,
+            output_path,
+        )
+    assert not output_path.exists()
+
+
+def test_compose_types_rejects_duplicate_exact_metadata_blocks_and_bad_production(
+    tmp_path: Path,
+):
+    preview_path = tmp_path / "preview.ts"
+    production_path = tmp_path / "production.ts"
+    output_path = tmp_path / "composed.ts"
+    block = (
+        b"  __InternalSupabase: {\n"
+        b'    PostgrestVersion: "14.17"\n'
+        b"  }\n"
+        b"  public: {\n"
+    )
+    duplicate = _database_types_bytes("14.17").replace(block, block + block)
+    preview_path.write_bytes(duplicate)
+    production_path.write_bytes(_database_types_bytes("14.5"))
+    with pytest.raises(preview.PreviewError, match="exactly one"):
+        preview.compose_authoritative_database_types(
+            preview_path,
+            production_path,
+            output_path,
+        )
+
+    preview_path.write_bytes(_database_types_bytes("14.17"))
+    production_path.write_bytes(
+        _database_types_bytes("14.5").replace(b'"14.5"', b'"v14.5"')
+    )
+    with pytest.raises(preview.PreviewError, match="Production-generated"):
+        preview.compose_authoritative_database_types(
+            preview_path,
+            production_path,
+            output_path,
+        )
+    assert not output_path.exists()
+
+
+def test_compose_types_rejects_oversized_and_existing_output(tmp_path: Path):
+    preview_path = tmp_path / "preview.ts"
+    production_path = tmp_path / "production.ts"
+    output_path = tmp_path / "composed.ts"
+    production_path.write_bytes(_database_types_bytes("14.5"))
+    preview_path.write_bytes(b"x" * (preview.MAX_DATABASE_TYPES_BYTES + 1))
+
+    with pytest.raises(preview.PreviewError, match="exceeds the 2 MB gate"):
+        preview.compose_authoritative_database_types(
+            preview_path,
+            production_path,
+            output_path,
+        )
+
+    preview_path.write_bytes(_database_types_bytes("14.17"))
+    output_path.write_bytes(b"do not overwrite")
+    with pytest.raises(preview.PreviewError, match="must not already exist"):
+        preview.compose_authoritative_database_types(
+            preview_path,
+            production_path,
+            output_path,
+        )
+    assert output_path.read_bytes() == b"do not overwrite"
+
+
 def test_watchdog_snapshots_and_cleans_only_exact_run_branch(tmp_path: Path):
     baseline = _migration(tmp_path, "20260807013300", "baseline")
     supabase = FakeSupabase(_baseline(tmp_path, [baseline]))
@@ -4296,7 +4686,10 @@ def test_workflow_keeps_executable_code_trusted_and_secret_surface_narrow():
     assert "statuses: write" in text
     assert "steps.pr.outputs.head_sha" in text
     assert text.count("python src/supabase_preview.py generate-types") == 2
+    assert text.count("python src/supabase_preview.py generate-production-types") == 1
+    assert text.count("python src/supabase_preview.py compose-types") == 2
     assert text.count("--max-wait-seconds 120") == 2
+    assert text.count("--timeout-seconds 120") == 1
     assert "preview-head/web/src/lib/database.types.ts" in text
     assert "must be a regular non-symlink file" in text
     assert "actions/upload-artifact@v4" in text
@@ -4319,7 +4712,8 @@ def test_workflow_keeps_executable_code_trusted_and_secret_surface_narrow():
     assert "GIT_REPO: ${{ github.event.repository.name }}" in text
     assert "commit.parents.map(parent => parent.sha)" in text
     assert "comparison.files" in text
-    assert "steps.preview_types.outputs.type_mismatch != 'true'" in text
+    assert "steps.preview_types.outputs.schema_mismatch != 'true'" in text
+    assert "type_mismatch" not in text
     assert "steps.preview_types_artifact.outcome != 'success'" in text
     assert "steps.verify_types.outcome != 'success'" in text
     assert "sha: process.env.HEAD_SHA" in text
@@ -4332,6 +4726,39 @@ def test_workflow_keeps_executable_code_trusted_and_secret_surface_narrow():
     assert "types: [supabase-preview-lifecycle]" in text
     assert "github.ref == 'refs/heads/main'" in text
     assert "  workflow_dispatch:" not in text
+
+    production_preflight = text.index(
+        "name: Generate production-authoritative type metadata before branch mutation"
+    )
+    bootstrap = text.index("name: Bootstrap one clean-room Preview branch")
+    assert production_preflight < bootstrap
+    production_guard = text[production_preflight:bootstrap]
+    assert 'if ! python src/supabase_preview.py generate-production-types' in production_guard
+    assert 'if [ "$PREVIEW_OPERATION" = "bootstrap" ]' in production_guard
+    assert "ACTION: No Preview branch was created." in production_guard
+    assert "This run will clean the retained branch automatically" in production_guard
+
+    h0_compare = text[
+        text.index("name: Compare Preview-generated public types with bootstrap H0"):
+        text.index("name: Upload SHA-bound generated types")
+    ]
+    assert 'preview_raw="$RUNNER_TEMP/database.types.preview.raw.ts"' in h0_compare
+    assert 'production_raw="$RUNNER_TEMP/database.types.production.raw.ts"' in h0_compare
+    assert '--preview "$preview_raw"' in h0_compare
+    assert '--production "$production_raw"' in h0_compare
+    assert '--output "$generated"' in h0_compare
+    assert 'cmp -s "$generated" "$pr_types"' in h0_compare
+
+    h1_compare = text[
+        text.index("name: Compare retained Preview-generated public types with exact H1"):
+        text.index("name: Remove retained Preview after any verify failure")
+    ]
+    assert 'preview_raw="$RUNNER_TEMP/database.types.verify.raw.ts"' in h1_compare
+    assert 'production_raw="$RUNNER_TEMP/database.types.production.raw.ts"' in h1_compare
+    assert '--preview "$preview_raw"' in h1_compare
+    assert '--production "$production_raw"' in h1_compare
+    assert '--output "$generated"' in h1_compare
+    assert 'cmp -s "$generated" "$h1_types"' in h1_compare
 
     with pytest.raises(SystemExit):
         preview._parser().parse_args(
@@ -4351,7 +4778,7 @@ def test_workflow_keeps_executable_code_trusted_and_secret_surface_narrow():
 
 def test_workflow_retention_cleanup_and_status_conditions_fail_closed():
     text = WORKFLOW.read_text(encoding="utf-8")
-    first_cleanup = text.index("name: Remove failed bootstrap except retained type mismatch")
+    first_cleanup = text.index("name: Remove failed bootstrap except retained schema mismatch")
     h0_status = text.index("name: Bind bootstrap type result to exact H0")
     h0_status_cleanup = text.index(
         "name: Remove otherwise-retainable bootstrap if H0 status binding fails"
@@ -4363,6 +4790,7 @@ def test_workflow_retention_cleanup_and_status_conditions_fail_closed():
         "name: Remove H0 Preview after trusted deployment request failure"
     )
     verify_cleanup = text.index("name: Remove retained Preview after any verify failure")
+    h1_artifact = text.index("name: Upload failed H1 canonical types after cleanup")
     h1_status = text.index("name: Bind verify-types result to exact H1")
     h1_status_cleanup = text.index(
         "name: Remove retained Preview if successful H1 status binding fails"
@@ -4382,6 +4810,7 @@ def test_workflow_retention_cleanup_and_status_conditions_fail_closed():
     )
     assert (
         verify_cleanup
+        < h1_artifact
         < h1_status
         < h1_status_cleanup
         < h1_deployment
@@ -4389,7 +4818,7 @@ def test_workflow_retention_cleanup_and_status_conditions_fail_closed():
     )
 
     bootstrap_guard = text[first_cleanup:h0_status]
-    assert "steps.preview_types.outputs.type_mismatch != 'true'" in bootstrap_guard
+    assert "steps.preview_types.outputs.schema_mismatch != 'true'" in bootstrap_guard
     assert "steps.preview_types_artifact.outcome != 'success'" in bootstrap_guard
     assert "steps.preview_types.outcome != 'success'" in bootstrap_guard
     assert "python src/supabase_preview.py cleanup" in bootstrap_guard
@@ -4398,11 +4827,11 @@ def test_workflow_retention_cleanup_and_status_conditions_fail_closed():
         text.index("name: Upload SHA-bound generated types"):first_cleanup
     ]
     assert "steps.preview_types.outcome == 'success'" in artifact_guard
-    assert "steps.preview_types.outputs.type_mismatch == 'true'" in artifact_guard
+    assert "steps.preview_types.outputs.schema_mismatch == 'true'" in artifact_guard
 
     h0_status_failure_guard = text[h0_status_cleanup:h0_deployment]
     assert "steps.preview_types_artifact.outcome == 'success'" in h0_status_failure_guard
-    assert "steps.preview_types.outputs.type_mismatch == 'true'" in h0_status_failure_guard
+    assert "steps.preview_types.outputs.schema_mismatch == 'true'" in h0_status_failure_guard
     assert "steps.bootstrap_status.outcome != 'success'" in h0_status_failure_guard
     assert "python src/supabase_preview.py cleanup" in h0_status_failure_guard
 
@@ -4421,6 +4850,10 @@ def test_workflow_retention_cleanup_and_status_conditions_fail_closed():
     verify_failure_guard = text[verify_cleanup:h1_status]
     assert "steps.verify_types.outcome != 'success'" in verify_failure_guard
     assert "python src/supabase_preview.py cleanup" in verify_failure_guard
+    assert verify_failure_guard.index("python src/supabase_preview.py cleanup") < verify_failure_guard.index(
+        "name: Upload failed H1 canonical types after cleanup"
+    )
+    assert "if-no-files-found: ignore" in verify_failure_guard
 
     h1_status_failure_guard = text[h1_status_cleanup:h1_deployment]
     assert "steps.verify_types.outcome == 'success'" in h1_status_failure_guard

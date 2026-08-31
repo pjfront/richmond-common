@@ -1,5 +1,5 @@
 /**
- * Public political-committee profile.
+ * Operator-only political-committee profile through the November T14 review.
  *
  * Uses the same sentence-first profile grammar as union and company pages:
  * orientation, one filing-based summary, then sortable receipt detail.
@@ -17,26 +17,38 @@ import {
 } from '@/lib/queries'
 import CampaignEntityFinancialDetails from '@/components/CampaignEntityFinancialDetails'
 import CampaignEntityProfile from '@/components/CampaignEntityProfile'
+import OperatorGate from '@/components/OperatorGate'
 import type { EntityUrlMap } from '@/components/EntityLink'
+import { requireOperatorPage } from '@/lib/operator-page'
 
 interface PageProps {
   params: Promise<{ slug: string }>
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
+  await requireOperatorPage()
+
   const { slug } = await params
   const pac = await getPACBySlug(slug)
-  if (!pac) return { title: 'Committee not found' }
+  if (!pac) {
+    return {
+      title: 'Committee not found',
+      robots: { index: false, follow: false },
+    }
+  }
   const display = displayName(pac.name)
   return {
     title: `${display}: Political committee`,
     description: pac.sponsor_disclosure
       ? `${display} (${pac.sponsor_disclosure}). Public campaign-finance filings.`
       : `${display}: Richmond political committee filings.`,
+    robots: { index: false, follow: false },
   }
 }
 
 export default async function PACProfilePage({ params }: PageProps) {
+  await requireOperatorPage()
+
   const { slug } = await params
   const pac = await getPACBySlug(slug)
   if (!pac) notFound()
@@ -65,37 +77,39 @@ export default async function PACProfilePage({ params }: PageProps) {
   const display = displayName(pac.name)
 
   return (
-    <CampaignEntityProfile
-      backHref="/pac"
-      backLabel="All political committees"
-      name={display}
-      filedName={pac.name}
-      typeLabel="Political committee"
-      filingId={pac.filer_id}
-      sponsorDisclosure={pac.sponsor_disclosure}
-      summary={renderLede(
-        pac,
-        display,
-        outgoing.length,
-        independentExpenditures,
-      )}
-      sourceNote={
-        <>
-          Sponsor descriptions come from the committee name as filed. The
-          Chevron disclosure for Coalition for Richmond&apos;s Future follows
-          the project&apos;s source-disclosure rule.
-        </>
-      }
-    >
-      <CampaignEntityFinancialDetails
-        incoming={contributions}
-        outgoing={outgoing}
-        independentExpenditures={independentExpenditures}
-        entityDisplay={display}
-        entityNoun="committee"
-        entityUrlMap={pacUrlMap}
-      />
-    </CampaignEntityProfile>
+    <OperatorGate>
+      <CampaignEntityProfile
+        backHref="/pac"
+        backLabel="All political committees"
+        name={display}
+        filedName={pac.name}
+        typeLabel="Political committee"
+        filingId={pac.filer_id}
+        sponsorDisclosure={pac.sponsor_disclosure}
+        summary={renderLede(
+          pac,
+          display,
+          outgoing.length,
+          independentExpenditures,
+        )}
+        sourceNote={
+          <>
+            Sponsor descriptions come from the committee name as filed. The
+            Chevron disclosure for Coalition for Richmond&apos;s Future follows
+            the project&apos;s source-disclosure rule.
+          </>
+        }
+      >
+        <CampaignEntityFinancialDetails
+          incoming={contributions}
+          outgoing={outgoing}
+          independentExpenditures={independentExpenditures}
+          entityDisplay={display}
+          entityNoun="committee"
+          entityUrlMap={pacUrlMap}
+        />
+      </CampaignEntityProfile>
+    </OperatorGate>
   )
 }
 

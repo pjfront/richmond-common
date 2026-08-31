@@ -19,8 +19,9 @@ ISO-8601 ``+00:00`` offset during the PR #82 audit. A blind CLI retry after a
 create/delete timeout also makes it unclear whether the first mutation took
 effect. This controller uses the Management API directly, never retries a
 mutation blindly, and reconciles ambiguous responses with a read before it
-continues. The ``generate-types`` command is a narrow exception: it wraps the
-pinned CLI's read-only type generator with an exact-error, bounded retry.
+continues. The ``generate-types`` and ``generate-production-types`` commands
+are narrow exceptions: they wrap the pinned CLI's read-only hosted type
+generator; only Preview generation has an exact-error, bounded retry.
 """
 from __future__ import annotations
 
@@ -130,6 +131,15 @@ _MIGRATION_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 _LEDGER_NAME_RE = re.compile(r"^[a-z0-9_]+$")
 _SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
 _GIT_SHA_RE = re.compile(r"^[a-f0-9]{40}$")
+_POSTGREST_VERSION_BLOCK_RE = re.compile(
+    rb"(?m)^  __InternalSupabase: \{\n"
+    rb"    PostgrestVersion: \"(?P<version>"
+    rb"[1-9][0-9]*(?:\.(?:0|[1-9][0-9]*)){0,2}"
+    rb"(?: \([0-9a-f]{7,40}\))?"
+    rb")\"\n"
+    rb"  \}\n"
+    rb"  public: \{\n"
+)
 _SECRET_PATTERNS = (
     re.compile(r"\bsb_secret_[A-Za-z0-9._-]+"),
     re.compile(r"\bsbp_[A-Za-z0-9._-]+"),
@@ -2794,7 +2804,11 @@ class VercelDeployment:
             raise PreviewError("Vercel deployment immutable ID mismatch.")
         if str(payload.get("projectId") or "") != expected_project_id:
             raise PreviewError("Vercel deployment project attestation failed.")
-        if str(payload.get("target") or "").lower() != "preview":
+        # Vercel's v13 response represents the built-in Preview environment as
+        # explicit JSON null when create-deployment omits ``target``. Require
+        # that canonical value so missing data, Production, and named/custom
+        # environment targets all fail closed.
+        if "target" not in payload or payload.get("target") is not None:
             raise PreviewError("Vercel deployment target is not Preview.")
         if not url or any(character.isspace() for character in url):
             raise PreviewError("Vercel deployment response lacks a valid URL.")
@@ -4073,6 +4087,204 @@ def generate_supabase_types_with_retry(
         sleeper(min(retry_interval_seconds, remaining))
 
 
+def generate_production_types(
+    output_path: Path,
+    *,
+    timeout_seconds: float = MAX_TYPEGEN_RETRY_SECONDS,
+    runner: Callable[..., Any] = subprocess.run,
+) -> None:
+    """Generate production types once through the pinned, read-only CLI path.
+
+    The project ref is intentionally not caller-controlled. Production typegen
+    supplies only the authoritative hosted PostgREST version for a composed
+    Preview artifact; no production database mutation is possible here.
+    """
+    if timeout_seconds <= 0 or timeout_seconds > MAX_TYPEGEN_RETRY_SECONDS:
+        raise PreviewError("Production typegen timeout must be within 120 seconds.")
+    if output_path.exists() or output_path.is_symlink():
+        raise PreviewError("Production typegen output path must not already exist.")
+    if not output_path.parent.is_dir():
+        raise PreviewError("Production typegen output directory does not exist.")
+
+    command = [
+        "supabase",
+        "gen",
+        "types",
+        "typescript",
+        "--project-id",
+        PRODUCTION_PROJECT_REF,
+        "--schema",
+        "public",
+    ]
+    environment = os.environ.copy()
+    environment["NO_COLOR"] = "1"
+    try:
+        completed = runner(
+            command,
+            capture_output=True,
+            check=False,
+            timeout=timeout_seconds,
+            env=environment,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise PreviewError("Production typegen exceeded its bounded timeout.") from exc
+    except OSError as exc:
+        raise PreviewError(f"Unable to execute production typegen: {exc}") from exc
+
+    stdout = completed.stdout or b""
+    stderr = completed.stderr or b""
+    if isinstance(stdout, str):
+        stdout = stdout.encode("utf-8")
+    if isinstance(stderr, bytes):
+        stderr_text = stderr.decode("utf-8", errors="replace").strip()
+    else:
+        stderr_text = str(stderr).strip()
+    if int(completed.returncode) != 0:
+        raise PreviewError(
+            "Production typegen failed: " + _redact(stderr_text or "no error text")
+        )
+    _validate_hosted_database_types_bytes(
+        stdout,
+        label="Generated production database types",
+    )
+    with output_path.open("xb") as handle:
+        handle.write(stdout)
+
+
+@dataclass(frozen=True)
+class AuthoritativeDatabaseTypes:
+    preview_version: str
+    production_version: str
+    content: bytes
+    preview_sha256: str
+    production_sha256: str
+    content_sha256: str
+
+
+def _validate_hosted_database_types_bytes(raw: bytes, *, label: str) -> None:
+    if len(raw) > MAX_DATABASE_TYPES_BYTES:
+        raise PreviewError(f"{label} exceeds the 2 MB gate.")
+    if raw.startswith(b"\xef\xbb\xbf"):
+        raise PreviewError(f"{label} must not contain a UTF-8 byte-order mark.")
+    if b"\r" in raw:
+        raise PreviewError(f"{label} must use exact LF line endings.")
+    if b"\x00" in raw:
+        raise PreviewError(f"{label} must not contain NUL bytes.")
+    try:
+        raw.decode("utf-8", errors="strict")
+    except UnicodeDecodeError as exc:
+        raise PreviewError(f"{label} is not strict UTF-8.") from exc
+    _postgrest_version_span(raw, label=label)
+
+
+def _strict_database_types_bytes(path: Path, *, label: str) -> bytes:
+    """Read one exact hosted typegen artifact without normalizing any byte."""
+    try:
+        metadata = path.lstat()
+    except OSError as exc:
+        raise PreviewError(f"Unable to inspect {label}: {path}") from exc
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+        raise PreviewError(f"{label} must be a regular non-symlink file.")
+    if metadata.st_size > MAX_DATABASE_TYPES_BYTES:
+        raise PreviewError(f"{label} exceeds the 2 MB gate.")
+    try:
+        raw = path.read_bytes()
+    except OSError as exc:
+        raise PreviewError(f"Unable to read {label}: {path}") from exc
+    _validate_hosted_database_types_bytes(raw, label=label)
+    return raw
+
+
+def _postgrest_version_span(raw: bytes, *, label: str) -> tuple[int, int, str]:
+    matches = list(_POSTGREST_VERSION_BLOCK_RE.finditer(raw))
+    if len(matches) != 1:
+        raise PreviewError(
+            f"{label} must contain exactly one PostgREST metadata header in "
+            "the pinned generator format."
+        )
+    match = matches[0]
+    start, end = match.span("version")
+    return start, end, match.group("version").decode("ascii")
+
+
+def compose_authoritative_database_types(
+    preview_path: Path,
+    production_path: Path,
+    output_path: Path,
+) -> AuthoritativeDatabaseTypes:
+    """Compose Preview schema bytes with production PostgREST metadata only.
+
+    Preview remains authoritative for every schema/type byte. The only replaced
+    span is the strictly parsed ``PostgrestVersion`` literal, whose authority is
+    production because that is the runtime the checked-in client types target.
+    """
+    if output_path.exists() or output_path.is_symlink():
+        raise PreviewError("Composed database types output path must not already exist.")
+    if not output_path.parent.is_dir():
+        raise PreviewError("Composed database types output directory does not exist.")
+
+    preview_raw = _strict_database_types_bytes(
+        preview_path, label="Preview-generated database types"
+    )
+    production_raw = _strict_database_types_bytes(
+        production_path, label="Production-generated database types"
+    )
+    try:
+        if os.path.samefile(preview_path, production_path):
+            raise PreviewError(
+                "Preview and production database types must be distinct files."
+            )
+    except OSError as exc:
+        raise PreviewError(
+            "Unable to prove Preview and production database types are distinct."
+        ) from exc
+    preview_start, preview_end, preview_version = _postgrest_version_span(
+        preview_raw, label="Preview-generated database types"
+    )
+    _, _, production_version = _postgrest_version_span(
+        production_raw, label="Production-generated database types"
+    )
+    preview_major = preview_version.split(".", 1)[0].split(" ", 1)[0]
+    production_major = production_version.split(".", 1)[0].split(" ", 1)[0]
+    if preview_major != production_major:
+        raise PreviewError(
+            "Preview and production PostgREST major versions differ; "
+            "refusing to compose potentially incompatible generated types."
+        )
+    authoritative_version = production_version.encode("ascii")
+    content = (
+        preview_raw[:preview_start]
+        + authoritative_version
+        + preview_raw[preview_end:]
+    )
+    if len(content) > MAX_DATABASE_TYPES_BYTES:
+        raise PreviewError("Composed database types exceed the 2 MB gate.")
+
+    output_start, output_end, output_version = _postgrest_version_span(
+        content, label="Composed database types"
+    )
+    sentinel = b"__RICHMOND_POSTGREST_VERSION__"
+    preview_without_version = (
+        preview_raw[:preview_start] + sentinel + preview_raw[preview_end:]
+    )
+    output_without_version = content[:output_start] + sentinel + content[output_end:]
+    if output_version != production_version or preview_without_version != output_without_version:
+        raise PreviewError(
+            "Composed database types changed bytes outside PostgrestVersion."
+        )
+
+    with output_path.open("xb") as handle:
+        handle.write(content)
+    return AuthoritativeDatabaseTypes(
+        preview_version=preview_version,
+        production_version=production_version,
+        content=content,
+        preview_sha256=hashlib.sha256(preview_raw).hexdigest(),
+        production_sha256=hashlib.sha256(production_raw).hexdigest(),
+        content_sha256=hashlib.sha256(content).hexdigest(),
+    )
+
+
 def _require_env(name: str) -> str:
     value = (os.getenv(name) or "").strip()
     if not value:
@@ -4213,6 +4425,28 @@ def _parser() -> argparse.ArgumentParser:
         default=5.0,
     )
 
+    generate_production = subparsers.add_parser(
+        "generate-production-types",
+        help="Generate production-authoritative hosted types once, read-only.",
+    )
+    generate_production.add_argument("--output", type=Path, required=True)
+    generate_production.add_argument(
+        "--timeout-seconds",
+        type=float,
+        default=MAX_TYPEGEN_RETRY_SECONDS,
+    )
+
+    compose_types = subparsers.add_parser(
+        "compose-types",
+        help=(
+            "Combine Preview schema bytes with the production-authoritative "
+            "PostgREST version."
+        ),
+    )
+    compose_types.add_argument("--preview", type=Path, required=True)
+    compose_types.add_argument("--production", type=Path, required=True)
+    compose_types.add_argument("--output", type=Path, required=True)
+
     verify_type_update = subparsers.add_parser(
         "verify-type-update",
         help="Validate the bounded H0-to-H1 database type-only update offline.",
@@ -4295,6 +4529,34 @@ def _main(argv: Sequence[str] | None = None) -> int:
             retry_interval_seconds=args.retry_interval_seconds,
         )
         print(f"Preview type generation complete: attempts={attempts}")
+        return 0
+
+    if args.command == "generate-production-types":
+        generate_production_types(
+            args.output,
+            timeout_seconds=args.timeout_seconds,
+        )
+        print("Production type generation complete: attempts=1")
+        return 0
+
+    if args.command == "compose-types":
+        result = compose_authoritative_database_types(
+            args.preview,
+            args.production,
+            args.output,
+        )
+        _write_github_output("preview_postgrest_version", result.preview_version)
+        _write_github_output(
+            "production_postgrest_version", result.production_version
+        )
+        print(
+            "Composed authoritative database types: "
+            f"preview_postgrest={result.preview_version} "
+            f"production_postgrest={result.production_version} "
+            f"preview_sha256={result.preview_sha256} "
+            f"production_sha256={result.production_sha256} "
+            f"composed_sha256={result.content_sha256}"
+        )
         return 0
 
     supabase_token = _require_env("SUPABASE_ACCESS_TOKEN")

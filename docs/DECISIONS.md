@@ -765,3 +765,79 @@ view behavior without changing rows or the stored view definitions.
 that the project relies on, including later source-cancellation and
 agenda-retirement policies. Invoker semantics remove that bypass while
 preserving the existing public access intended by the underlying policies.
+
+## 2026-08-26: Retire the standalone Mayor funding artifact
+
+**Decision:** Permanently redirect
+`/elections/2026-primary/mayor/funding` to the canonical
+`/elections/2026-primary` election page. Preserve the reviewed candidate
+fundraising summary already shown on that page. Do not repair, publish, or
+expand the retired artifact's independent-expenditure-by-candidate analysis
+during November.
+
+**Chronology:** The bounded redirect implementation merged in PR #111 on
+2026-08-24 before this publication decision was explicitly recorded. The
+operator approved the intended retirement on 2026-08-26. The implementation
+remains absent from production until it is included in a separately approved
+exact-SHA production batch; this decision alone does not authorize a deploy.
+
+**Boundary:** Keep the dormant funding-breakdown and candidate-IE helpers
+unwired and operator-only. Do not backfill or correct production campaign data,
+change committee classifications, broaden surname matching, or expand S26/S28.
+Old bookmarks retain a permanent redirect, and the retired route remains out
+of navigation and the sitemap.
+
+**Rationale:** The standalone artifact duplicates the useful funding context
+already present on the election page while its category totals can drift from
+reviewed Form 460 cover totals and its permissive surname matching can combine
+independent expenditures for different candidates. Redirecting removes an
+unfinished, unreliable public surface without removing the trusted summary or
+underlying source data.
+
+## 2026-08-29: Hold unfinished campaign directories through November T14
+
+**Decision:** Through the end of the 14-complete-UTC-day November treatment
+window, remove the Contributions menu; make `/pac`, `/pac/[slug]`, `/unions`,
+`/corporations`, and `/orgs/[slug]` operator-only and non-indexable; exclude
+those routes from treatment sitemap discovery; and temporarily redirect the
+legacy `/orgs` index to `/elections`. Reconsider the directory family only
+after T14.
+
+**Enforcement:** Every held page calls the server-side operator guard before
+its first data or metadata query, retains the client `OperatorGate`, and sets
+`robots` to `index: false, follow: false`. The treatment sitemap contains none
+of the three indexes, PAC detail routes, or organization detail routes and no
+longer performs the organization-slug enumeration read. Tests pin the access,
+query-order, navigation, redirect, noindex, sitemap, and export-preservation
+boundaries.
+
+**Boundary:** This is a reversible publication hold, not data retirement.
+Preserve all underlying database rows, query helpers, filing-level detail, and
+CSV exports for operator use. Do not backfill provenance, reclassify entities,
+repair or broaden entity resolution, expand S26/S28, or automatically remove
+the gate at T14. Republication remains a fresh operator judgment after the
+measurement packet is frozen.
+
+**Rationale:** The PAC, union, corporation, and organization directory rows do
+not yet satisfy the mandatory row-level provenance and confidence contract.
+Leaving public placeholders would create dead ends and retain avoidable
+aggregate reads. A fail-closed hold makes the November release smaller and
+more trustworthy while keeping every source record and export recoverable.
+
+## 2026-08-30: Keep the reviewed July recap cohort blank through T14
+
+**Decision:** Keep the exact July 7, July 21, and July 28, 2026 meeting rows'
+four transcript-recap fields null through the actual S29 T14 checkpoint. The
+reviewed V2 attempt did not produce three independently approved candidates,
+so its cohort-wide apply gate correctly left production unchanged. Before
+T14, **ACTION: None**. Do not generate, retry, salvage, apply, or publish this
+cohort, and do not renew or remove its expired alert suppression.
+
+At T14, the checkpoint must ask the operator to choose whether to keep this
+exact cohort blank or authorize a new, separately bounded, source-reviewed
+repair. The reminder is not itself authorization to repair or publish.
+
+**Rationale:** Leaving the three recaps blank is safer than publishing a
+partial or insufficiently supported cohort, and postpones a nonessential
+repair until the November treatment evidence can be reviewed without adding
+cost or operational work during the test.

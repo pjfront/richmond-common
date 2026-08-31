@@ -14,20 +14,25 @@
  * absorbs the temporal layer at low density; the full matrix lives one
  * click in on the profile page.
  *
- * Publication tier: Public. Graduated from operator-only 2026-07-06 (S28.4).
+ * Publication tier: Operator-only through the November treatment T14 review.
  */
 
 import type { Metadata } from 'next'
 import { getPACListWithCycleBars } from '@/lib/queries'
+import OperatorGate from '@/components/OperatorGate'
+import { requireOperatorPage } from '@/lib/operator-page'
 import PACIndexClient from './PACIndexClient'
 
 export const metadata: Metadata = {
   title: 'Political Action Committees | Richmond Commons',
   description:
     'Every Richmond political action committee that influences elections without being controlled by a candidate. Includes general-purpose PACs, independent-expenditure committees, and ballot-measure committees.',
+  robots: { index: false, follow: false },
 }
 
 export default async function PACIndexPage() {
+  await requireOperatorPage()
+
   const pacs = await getPACListWithCycleBars()
 
   // currentCycle is computed from the data so a future test fixture
@@ -41,7 +46,8 @@ export default async function PACIndexPage() {
   )
 
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <OperatorGate>
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <header className="mb-6">
         <h1 className="text-3xl font-bold text-civic-navy">
           Political action committees
@@ -102,6 +108,7 @@ export default async function PACIndexPage() {
           sources. Updated within ~15 minutes of any new filing.
         </p>
       </footer>
-    </div>
+      </div>
+    </OperatorGate>
   )
 }
