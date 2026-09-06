@@ -66,6 +66,12 @@ PREVIEW_WATCHDOG_AGE_SECONDS = 110 * 60
 PREVIEW_VERIFY_MAX_AGE_SECONDS = 70 * 60
 MAX_SWEEP_BRANCHES = 10
 MAX_TYPEGEN_RETRY_SECONDS = 120.0
+# A fresh branch can restart after SELECT 1 succeeds. Retry only recognized
+# database startup failures on the API's enforced read-only endpoint. At most
+# four requests start within 30 seconds; an in-flight request retains the
+# existing 120-second HTTP timeout. Writes remain single-attempt.
+DATABASE_READ_RETRY_DELAYS_SECONDS = (2.0, 4.0, 8.0)
+MAX_DATABASE_READ_RETRY_SECONDS = 30.0
 TYPEGEN_ACTIVE_TRANSIENT = (
     'failed to retrieve generated types: '
     '{"message":"Project must be active and healthy."}'
@@ -1353,6 +1359,28 @@ def _rows(payload: Any, *, context: str) -> list[Mapping[str, Any]]:
     return list(candidate)
 
 
+def _is_database_startup_error(error: ApiError) -> bool:
+    """Recognize the Management API's database restart errors, not SQL errors."""
+    if error.status not in {400, 500, 502, 503, 504}:
+        return False
+    try:
+        payload = json.loads(error.response_body)
+    except (ValueError, TypeError):
+        return False
+    message = payload.get("message") if isinstance(payload, Mapping) else None
+    if not isinstance(message, str):
+        return False
+    # PR #165 failed twice immediately after readiness: one connection
+    # termination, then FATAL 57P03 while the new database was shutting down.
+    # Require the API envelope and leading FATAL code so a quoted SQL error,
+    # permission failure, or unrelated network error never triggers a retry.
+    return re.fullmatch(
+        r"Failed to run sql query:\s*(?:Connection terminated unexpectedly|"
+        r"FATAL:\s+(?:57P01|57P03):[^\x00]+)\s*",
+        message,
+    ) is not None
+
+
 class SupabaseManagementClient:
     def __init__(self, token: str, *, api: JsonApiClient | None = None) -> None:
         # A 340 KB schema restore with hundreds of indexes can legitimately run
@@ -1399,12 +1427,27 @@ class SupabaseManagementClient:
 
     def query(self, project_ref: str, sql: str, *, read_only: bool) -> Any:
         suffix = "/read-only" if read_only else ""
-        return self.api.request(
-            "POST",
-            f"/v1/projects/{project_ref}/database/query{suffix}",
-            body={"query": sql, "parameters": []},
-            expected=(200, 201),
-        )
+        deadline = time.monotonic() + MAX_DATABASE_READ_RETRY_SECONDS
+        retries = 0
+        while True:
+            try:
+                return self.api.request(
+                    "POST",
+                    f"/v1/projects/{project_ref}/database/query{suffix}",
+                    body={"query": sql, "parameters": []},
+                    expected=(200, 201),
+                )
+            except ApiError as error:
+                if (not read_only or not _is_database_startup_error(error)
+                        or retries >= len(DATABASE_READ_RETRY_DELAYS_SECONDS)):
+                    raise
+                delay = DATABASE_READ_RETRY_DELAYS_SECONDS[retries]
+                if time.monotonic() + delay >= deadline:
+                    raise
+                retries += 1
+                time.sleep(delay)
+                if time.monotonic() >= deadline:
+                    raise
 
     def api_keys(self, project_ref: str) -> Any:
         return self.api.request(
