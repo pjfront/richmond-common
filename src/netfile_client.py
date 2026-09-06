@@ -287,30 +287,66 @@ def normalize_transaction(tx: dict, city_fips: str | None = None) -> dict:
     The conflict scanner expects contributions with these fields:
         contributor_name, contributor_employer, amount, date, committee
     (also accepts donor_name, donor_employer, committee_name)
+
+    Form 497 Part 2 reports contributions MADE by the filer: NetFile's
+    ``name`` and ``transactionFppcId`` identify the recipient. Normalize
+    those rows into the same donor -> recipient direction as receipts,
+    while preserving the actual reporting filer separately for provenance
+    and paper-filing discovery. Existing ``filer_*`` keys are the recipient
+    committee identity consumed by the contribution loader.
     """
     resolved_fips = city_fips if city_fips is not None else CITY_FIPS
-    return {
+    contribution_made = tx.get("transactionType") == 21
+    filer_name = (tx.get("filerName") or "").strip()
+    filer_fppc_id = (tx.get("filerFppcId") or "").strip()
+    filer_local_id = (tx.get("filerLocalId") or "").strip()
+    counterparty_name = (tx.get("name") or "").strip()
+    counterparty_fppc_id = (tx.get("transactionFppcId") or "").strip()
+    normalized = {
         # Conflict scanner fields
-        "contributor_name": (tx.get("name") or "").strip(),
+        "contributor_name": counterparty_name,
         "contributor_employer": (tx.get("employer") or "").strip(),
         "amount": tx.get("amount", 0),
         "date": (tx.get("date") or "")[:10],  # ISO date only
-        "committee": (tx.get("filerName") or "").strip(),
+        "committee": filer_name,
         # Extra fields for analysis
         "occupation": (tx.get("occupation") or "").strip(),
         "city": (tx.get("city") or "").strip(),
         "state": (tx.get("state") or "").strip(),
         "zip": (tx.get("zip") or "").strip(),
         "transaction_type": ALL_TYPES.get(tx.get("transactionType"), "unknown"),
-        "filer_fppc_id": (tx.get("filerFppcId") or "").strip(),
-        "filer_local_id": (tx.get("filerLocalId") or "").strip(),
+        "filer_fppc_id": filer_fppc_id,
+        "filer_local_id": filer_local_id,
         "filing_id": (tx.get("filingId") or "").strip(),
         "transaction_id": (tx.get("id") or "").strip(),
         "entity_code": (tx.get("code") or "").strip() or None,
         # Source tracking
+        "reporting_filer_name": filer_name,
+        "reporting_filer_fppc_id": filer_fppc_id,
+        "reporting_filer_local_id": filer_local_id,
+        "contributor_fppc_id": counterparty_fppc_id,
         "source": "netfile",
         "city_fips": resolved_fips,
     }
+    if contribution_made:
+        normalized.update({
+            "contributor_name": filer_name,
+            "contributor_fppc_id": filer_fppc_id,
+            "committee": counterparty_name,
+            "filer_fppc_id": counterparty_fppc_id,
+            # The source exposes the reporting filer's local ID, not the
+            # recipient's. Never attach that ID to a different committee.
+            "filer_local_id": "",
+            # These source fields describe the counterparty (recipient),
+            # not the contributing filer. Do not attribute them to donor.
+            "contributor_employer": "",
+            "occupation": "",
+            "city": "",
+            "state": "",
+            "zip": "",
+            "entity_code": None,
+        })
+    return normalized
 
 
 def deduplicate_contributions(contributions: list[dict]) -> list[dict]:
@@ -340,16 +376,21 @@ def deduplicate_contributions(contributions: list[dict]) -> list[dict]:
 
 
 def extract_filers(transactions: list[dict], city_fips: str | None = None) -> list[dict]:
-    """Extract unique filer (committee) info from transactions."""
+    """Extract reporting filers, not inferred recipients of Part 2 gifts.
+
+    Paper-filing discovery uses this list as evidence of who e-files.
+    Receiving a gift reported by another committee does not establish
+    that the recipient e-files its own reports.
+    """
     resolved_fips = city_fips if city_fips is not None else CITY_FIPS
     filers = {}
     for tx in transactions:
-        fppc_id = tx.get("filer_fppc_id", "")
+        fppc_id = tx.get("reporting_filer_fppc_id", tx.get("filer_fppc_id", ""))
         if fppc_id and fppc_id not in filers:
             filers[fppc_id] = {
                 "fppc_id": fppc_id,
-                "local_id": tx.get("filer_local_id", ""),
-                "name": tx.get("committee", ""),
+                "local_id": tx.get("reporting_filer_local_id", tx.get("filer_local_id", "")),
+                "name": tx.get("reporting_filer_name", tx.get("committee", "")),
                 "source": "netfile",
                 "city_fips": resolved_fips,
             }

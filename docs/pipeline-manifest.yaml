@@ -26,7 +26,7 @@ sources:
     sync_key: netfile
     module: netfile_client.py
     external_api: "https://netfile.com/Connect2/api"
-    description: "Local campaign finance — e-filed (Connect2 API) + paper-filed (PDF extraction via public portal)"
+    description: "Local campaign finance — e-filed (Connect2 API; Form 497 Part 2 normalized as filer-to-recipient, reporting filer preserved) + paper-filed (PDF extraction via public portal)"
     tables_written:
       - contributions
       - donors
