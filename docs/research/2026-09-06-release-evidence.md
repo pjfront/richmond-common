@@ -1,5 +1,13 @@
 # September 6 release evidence
 
+## Anderson finance update — deployed; weekly activation held
+
+PR186 deployed source `fa39bc21240fa9be07d05397efe769ed39cabcc4` as `dpl_E6mF7NiopUPcTpowuQkrKfvQUX2X`, with immutable host `rtp-mxslfxs4x-phillips-projects-1f180556.vercel.app`. The deployment wrapper passed its source/project/main/READY/production-alias checks. [Main Build Check 34061251404](https://github.com/pjfront/richmond-common/actions/runs/34061251404) and [main Python tests 34061251443](https://github.com/pjfront/richmond-common/actions/runs/34061251443) passed. All four PR checks passed on reviewed head `d5698033f0b0c90fed81ae147115de6f9346d4a3` before merge.
+
+Authenticated postflight at 21:34:21 UTC independently confirmed the exact source and deployment, homepage HTTP200, health HTTP200/healthy, anonymous digest GET401, and authenticated capability GET200 with `canary_ready=true` and `broadcast_ready=false`. Digest responses remained private/no-store; the malformed provider-ID check returned503. The read-only canary preflight confirmed that the representative week was not yet selectable and no local attempt receipt existed. These checks made zero email POSTs or provider-message lookups. Absence of a local receipt is not proof that no remote attempt occurred; inspect the workflow history again before the authorized send.
+
+The held activation branch was synchronized with this main release. Its original eleven behavior/test patches remained byte-identical; both release histories were preserved. Local integration passed516 frontend tests, TypeScript checking and107 focused Python tests, including the actual Bash/jq workflow harness. Fresh required CI must pass on the final PR185 head before the canary-verified activation can merge. The [launch runbook](../weekly-digest-launch.md) retains the one-attempt hold and the unchanged 5:10p.m. Richmond follow-up.
+
 ## Provider verification update — deployed; weekly activation held
 
 PR184 deployed source `59615f9ced439f4094e870fa6c57cbf9222451f8` as `dpl_rfdoTHUgSiMFAT3dXefTG38AGoSH`, with immutable host `rtp-mjj556l13-phillips-projects-1f180556.vercel.app`. The deployment wrapper passed its source/project/ref/READY/alias proofs. Independent authenticated control-plane checks at 20:33 and 20:34 UTC agreed on that exact source and deployment for the production domain. [Main Build Check 34057910960](https://github.com/pjfront/richmond-common/actions/runs/34057910960) and [main Python tests 34057910921](https://github.com/pjfront/richmond-common/actions/runs/34057910921) passed; all four PR checks passed before merge.
