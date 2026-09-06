@@ -48,13 +48,15 @@ def sync_netfile(
     )
 
     # ── Electronic filings (Connect2 API) ──
-    # F460A=0 monetary, F460C=1 non-monetary, F497P1=20 / F497P2=21 late
+    # Legacy receipts: F460A=0 monetary, F460C=1 non-monetary, F497P1=20.
+    # F497P2=21 is outgoing money, acquired by finance_sync's assertion ledger.
+    # Loading it here would duplicate recipient reports after direction repair.
     # (24-hour reports — required visibility during the final 90 days before
     # an election). Types 20/21 are intermittently 500 from NetFile, so wrap
     # the whole-type fetch in exponential backoff (2/4/8/16s) and on terminal
     # failure log + continue so a flaky late-contribution type never blocks
     # the rest of the sync.
-    CONTRIBUTION_TYPES = [0, 1, 20, 21]
+    CONTRIBUTION_TYPES = [0, 1, 20]
 
     print("  Fetching e-filed contributions from NetFile API...")
     all_transactions = []

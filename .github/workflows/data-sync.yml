@@ -302,6 +302,36 @@ jobs:
       # detection lives in T0.4's check_anomalies hold gate inside run_sync,
       # which doesn't call any API.
 
+  # Independent no-model finance evidence refresh. A legacy sync failure must
+  # not block this source ledger; failed acquisition preserves its last snapshot.
+  daily-finance-ledger:
+    if: github.ref == 'refs/heads/main' && github.event_name == 'schedule' && github.event.schedule == '30 7 * * *'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install finance dependencies
+        run: pip install -r requirements.txt
+      - name: Refresh current-year finance source ledger
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python src/finance_sync.py --apply --report tmp/finance/daily-summary.json
+      - name: Record finance acquisition counts
+        if: always()
+        run: |
+          if [ -f tmp/finance/daily-summary.json ]; then
+            echo '### Finance source acquisition (no model calls)' >> "$GITHUB_STEP_SUMMARY"
+            echo '```json' >> "$GITHUB_STEP_SUMMARY"
+            cat tmp/finance/daily-summary.json >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'Finance acquisition failed; previous source snapshot was preserved. See the failing step.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
   # ── Daily: time-sensitive sources ────────────────────────────
   # NextRequest: 10-day CPRA response deadline.
   # eSCRIBE: agendas posted 1-3 days before meetings — daily scan

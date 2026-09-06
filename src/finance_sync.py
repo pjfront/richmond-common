@@ -74,7 +74,9 @@ def acquire_snapshot(year: int, through: str, *, fetch=fetch_all_transactions, f
                              filing_count=len({a["filing_id"] for a in rows}), assertion_count=len(rows), pending_count=pending,
                              limitations=limitations, source_url="https://public.netfile.com/pub2/?AID=RICH",
                              extracted_at=now, source_tier=1, confidence_score=1, snapshot_complete=True))
-    return dict(assertions=assertions, events=events, coverage=coverage, documents=documents)
+    return dict(assertions=assertions, events=events, coverage=coverage, documents=documents,
+                acquisition_metrics={"filing_metadata_requests": len(metadata), "pdf_downloads": len(documents),
+                                     "pdf_bytes": sum(len(pdf) for pdf in documents.values()), "model_calls": 0})
 
 
 def save_snapshot(conn, snapshot: dict) -> dict:
@@ -98,6 +100,7 @@ def public_summary(snapshot: dict) -> dict:
     """Aggregate diagnostics; never print personal donor names or addresses."""
     return {"assertions": len(snapshot["assertions"]), "events": len(snapshot["events"]),
             "pdfs": len(snapshot["documents"]),
+            "acquisition_metrics": snapshot.get("acquisition_metrics", {}),
             "pending": dict(Counter(a["review_reason"] for a in snapshot["assertions"] if a["review_reason"])),
             "forms": {c["form_type"]: {k: c[k] for k in ("assertion_count", "filing_count", "pending_count", "status")} for c in snapshot["coverage"]}}
 

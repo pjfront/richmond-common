@@ -176,6 +176,11 @@ def load_contributions_to_db(
 
     with conn.cursor() as cur:
         for record in records:
+            if record.get("transaction_type") == "F497P2":
+                # The finance ledger retains outgoing assertions and reconciles
+                # them against receipts. They are not additional cash receipts.
+                stats["skipped"] += 1
+                continue
             # ── Extract fields (handle both formats) ──
             raw_donor_name = sanitize_text((record.get("contributor_name") or record.get("name") or "").strip())
             donor_name = canonicalize_donor_name(raw_donor_name)
