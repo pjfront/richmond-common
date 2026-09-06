@@ -30,6 +30,7 @@ import base64
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import hashlib
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -1374,11 +1375,27 @@ def _is_database_startup_error(error: ApiError) -> bool:
     # termination, then FATAL 57P03 while the new database was shutting down.
     # Require the API envelope and leading FATAL code so a quoted SQL error,
     # permission failure, or unrelated network error never triggers a retry.
-    return re.fullmatch(
+    if re.fullmatch(
         r"Failed to run sql query:\s*(?:Connection terminated unexpectedly|"
         r"FATAL:\s+(?:57P01|57P03):[^\x00]+)\s*",
         message,
-    ) is not None
+    ) is not None:
+        return True
+    # The API can also report its own PostgreSQL socket not listening yet.
+    # Accept only a literal IP on PostgreSQL's port, never hostnames, arbitrary
+    # ports, or the client's unrelated network/transport exceptions.
+    refused = re.fullmatch(
+        r"Failed to run sql query: connect ECONNREFUSED "
+        r"(?:\[(?P<bracketed>[0-9a-fA-F:.]+)\]|(?P<plain>[0-9a-fA-F:.]+)):5432\s*",
+        message,
+    )
+    if refused is None:
+        return False
+    try:
+        address = ipaddress.ip_address(refused["bracketed"] or refused["plain"])
+    except ValueError:
+        return False
+    return refused["bracketed"] is None or address.version == 6
 
 
 class SupabaseManagementClient:
@@ -3571,6 +3588,19 @@ def bootstrap_preview(
             )
         created = exact_created[0]
         created.assert_preview_adoption_boundaries()
+        # A transient successful SELECT 1 does not prove branch startup is
+        # complete. Require the authoritative service state on this immutable
+        # identity before catalog inspection or any baseline write. Keep the
+        # independent empty-catalog/clone guards and post-restore health gate.
+        created = wait_for_active_preview(
+            supabase,
+            parent_ref=parent_ref,
+            pr_number=pr_number,
+            git_branch=git_branch,
+            branch=created,
+            timeout_seconds=timeout_seconds,
+            interval_seconds=interval_seconds,
+        )
         wait_for_database(
             supabase,
             created,

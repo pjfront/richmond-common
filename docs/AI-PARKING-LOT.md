@@ -52,6 +52,13 @@ their single-attempt/reconciliation contract. Both failed branches were confirme
 absent by the trusted watchdog. Local regression checks pass; the next trusted
 bootstrap is the live verification of the repair.
 
+Follow-up run34041869373 returned the API's PostgreSQL `ECONNREFUSED` response
+with a literal IPv6 address on port5432. Bootstrap now waits for authoritative
+branch health before catalog access, while the same bounded read retry accepts
+only that exact IP/port error envelope. It still rejects hostnames, other ports,
+client transport errors, and all writes. Local lifecycle regression checks pass;
+live verification remains with the trusted controller rollout.
+
 ### R1. Entity Extraction for Civic Text ➜ Promoted to S9.5
 Gazetteer-based matching replaced noisy `extract_entity_names()`. Uses `city_expenditures.normalized_vendor` directly.
 
