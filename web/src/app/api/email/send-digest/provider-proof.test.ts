@@ -62,10 +62,10 @@ describe('authenticated, canary-only provider evidence', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it('keeps the original capability handshake read-only and the broadcast gate off', async () => {
+  it('reports activated capability without contacting the provider', async () => {
     const response = await GET(request(''))
     expect(response.status).toBe(200)
-    expect(await response.json()).toEqual({ capability: 'subscriber-weekly-digest-v1', canary_ready: true, broadcast_ready: false })
+    expect(await response.json()).toEqual({ capability: 'subscriber-weekly-digest-v1', canary_ready: true, broadcast_ready: true })
     expect(response.headers.get('Cache-Control')).toBe('private, no-store')
     expect(fetchMock).not.toHaveBeenCalled()
   })

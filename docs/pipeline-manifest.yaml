@@ -2320,10 +2320,13 @@ schedules:
     enrichments_triggered: []
 
   subscriber-weekly-digest.yml:
-    description: "Canary gate for the completed-week subscriber digest"
+    description: "Completed-week subscriber digest with a separate operator canary"
     triggers:
       - type: repository_dispatch
-        description: "Typed trusted-main operator canary; cannot broadcast and has no schedule before canary approval"
+        description: "Empty owner-only trusted-main canary event; cannot broadcast"
+      - type: cron
+        schedule: "30 16 * * 1"
+        description: "Monday 09:30 PDT / 08:30 PST; one tracked delivery attempt after deployed broadcast-capability validation, only for opted-in recipients with matching completed-week content"
     sources_triggered: []
     enrichments_triggered: []
 
