@@ -613,6 +613,7 @@ def _extract_query_functions_from_code() -> set[str]:
         "filterGovernmentEntityFlags", "applyMeetingCounts",
         "fetchMeetingCounts",
         "RICHMOND_FIPS", "COLS_MEETING_LIST", "COLS_MEETING_BANNER",
+        "PUBLIC_FINANCE_SCOPE",
         "COLS_UPCOMING_ELECTION",
         "COLS_OFFICIAL_FULL", "COLS_FLAG_SUMMARY", "COLS_PUBLIC_RECORD_LIST",
         "COLS_CONTRIBUTION_PUBLIC", "COLS_FORM700_FILING",

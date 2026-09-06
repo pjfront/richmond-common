@@ -62,12 +62,6 @@ export default function MeetingAgendaList({
 }: MeetingAgendaListProps) {
   const monthGroups = useMemo(() => groupByMonth(meetings), [meetings])
 
-  if (monthGroups.length === 0) {
-    return (
-      <p className="text-slate-500 py-8">No meetings found.</p>
-    )
-  }
-
   // Default: open the current + previous month (first two in sorted order)
   // If a specific month is selected via URL, open only that one
   const openMonths = useMemo(() => {
@@ -77,6 +71,10 @@ export default function MeetingAgendaList({
     if (monthGroups[1]) keys.add(monthGroups[1].key)
     return keys
   }, [activeMonth, monthGroups])
+
+  if (monthGroups.length === 0) {
+    return <p className="text-slate-500 py-8">No meetings found.</p>
+  }
 
   if (compact) {
     return (

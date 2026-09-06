@@ -1497,11 +1497,6 @@ queries:
     tables: [conflict_flags, meetings, agenda_items]
     used_by: ["/reports"]
 
-  getMeetingFlagCounts:
-    file: queries.ts
-    tables: [conflict_flags]
-    used_by: ["/meetings"]
-
   getAgendaItemsByCategory:
     file: queries.ts
     tables: [agenda_items, meetings]
@@ -1990,8 +1985,8 @@ pages:
     queries: [getMeetingsWithCounts]
 
   "/meetings":
-    description: "Meeting discovery — month-grouped list, mini-calendar, calendar grid toggle"
-    queries: [getMeetingsWithCounts, getMeetingFlagCounts]
+    description: "Meeting discovery — month-grouped list and mini-calendar; no scanner aggregation on the public path"
+    queries: [getMeetingsWithCounts]
 
   "/meetings/[id]":
     description: "Meeting detail — agenda items, votes, attendance"
@@ -2426,8 +2421,8 @@ rpcs:
     migration: "053"
     reads_from: [conflict_flags, agenda_items, meetings]
     returns: "{meeting_id, flags_total, flags_published, items_scanned}"
-    used_by_queries: [getMeetingFlagCounts]
-    notes: "Server-side aggregation to avoid 17K+ JSONB rows hitting anon's 3s timeout. Filters government-entity vendor/employer matches. See src/migrations/053_flag_count_rpc.sql."
+    used_by_queries: []
+    notes: "Retained database RPC; removed from the public meetings page on September 6 after a production build timeout. Scanner review belongs in operator workflows, not public calendar rendering."
 
 
 # ══════════════════════════════════════════════════════════════
@@ -2833,12 +2828,6 @@ field_map:
       rpc: get_meeting_counts
       column: "COUNT(agenda_items.meeting_id)"
       sources: [escribemeetings, minutes_extraction]
-
-    "per-meeting flag counts":
-      query: getMeetingFlagCounts
-      column: "COUNT(conflict_flags) GROUP BY meeting_id"
-      sources: []
-      enrichment: conflict_scanning
 
   # ── Meeting Detail (/meetings/[id]) ─────────────────────────
 
