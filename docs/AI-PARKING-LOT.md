@@ -11,6 +11,7 @@ _Convention: Every session adds observations here. Items stay until promoted to 
 - Generic engineering decisions record a judgment; they do not claim to run a fix. Future automatic repair executors need their own small allowlist and validation contract.
 - Publication producers create draft civic briefs and editorial decisions pinned to a content version. Re-extraction must refresh the packet before approval.
 - `civic_review_packets.py` now prepares bounded finance comparisons and source-backed agenda/receipt drafts without model calls. Fingerprints suppress unchanged and rejected inputs, and draft refresh invalidates stale browser review versions. The real Python writer passes disposable PostgreSQL integration checks.
+- Source rechecks now convert open story publication proposals into versioned engineering closure notes when cancelled/retired/removed agenda evidence no longer qualifies. The old private draft and evidence remain, public content is untouched, and failed/truncated reads cannot trigger withdrawal. Upstream source fetchers must retain last successful state on fetch failure.
 - Story/election follows need delivery integration, not just stored checkboxes: current digest/retry paths filter only topic preferences and orientation ignores preferences. `docs/civic-review-packets.md` identifies the exact small extension; migration150 remains unused.
 - Move the standalone PostgreSQL publication/role verifier into the standard integration gate after this release.
 

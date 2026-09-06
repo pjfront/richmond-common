@@ -1112,7 +1112,7 @@ enrichments:
     writes_to: [pending_decisions, civic_brief_candidates]
     depends_on: []
     cascade_enabled: false  # Run the bounded CLI after the daily ledger ingest.
-    notes: "Migration148+149 prerequisite. CLI defaults read-only; --apply creates or refreshes at most6 private packets per run. All-status fingerprint dedup suppresses unchanged/rejected evidence. Workflow integration follows the daily finance ledger ingest; source updates use a14-day lookback and21-day forward agenda window."
+    notes: "Migration148+149 prerequisite. CLI defaults read-only; --apply creates or refreshes at most6 private packets per run. All-status fingerprint dedup suppresses unchanged/rejected evidence. Complete source rechecks first withdraw unsupported open story publication proposals (max100), preserving private drafts and published content. Failed or truncated source reads abort before writes. Workflow integration follows the daily finance ledger ingest; new source updates use a14-day lookback and21-day forward agenda window."
 
   minutes_extraction:
     module: batch_extract.py
