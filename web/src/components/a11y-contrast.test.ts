@@ -22,7 +22,7 @@ describe('shared muted-text contrast', () => {
     const source = readComponent('../app/subscribe/page.tsx')
 
     expect(source).toMatch(
-      /<p className="text-xs text-slate-500">\s*All data sourced from official public records\./,
+      /<p className="text-xs text-slate-500">\s*Explanations link to public records and identified reporting\./,
     )
   })
 

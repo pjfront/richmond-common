@@ -3,7 +3,9 @@ import Link from 'next/link'
 import { getSupabaseAdmin } from '@/lib/supabase-admin'
 import { getOfficials, getUpcomingElection, getElectionWithCandidates } from '@/lib/queries'
 import PreferencesPanel from '@/components/PreferencesPanel'
-import type { EmailSubscriber, EmailPreference, SubscriptionPreferences } from '@/lib/types'
+import type { EmailSubscriber, EmailPreference } from '@/lib/types'
+import { groupSubscriptionPreferences } from '@/lib/subscription-preferences'
+import { SUBJECT_FOLLOW_ROLLOUT } from '@/lib/subscription-subjects'
 
 export const metadata: Metadata = {
   title: 'Your Richmond Briefing',
@@ -26,9 +28,9 @@ export default async function ManagePreferencesPage(
   const supabase = getSupabaseAdmin()
   const { data: subscriber } = await supabase
     .from('email_subscribers')
-    .select('id, name, email, status, unsubscribe_token')
+    .select('id, name, status, unsubscribe_token, receive_council_updates')
     .eq('unsubscribe_token', token)
-    .single() as { data: Pick<EmailSubscriber, 'id' | 'name' | 'email' | 'status' | 'unsubscribe_token'> | null; error: unknown }
+    .single() as { data: (Pick<EmailSubscriber, 'id' | 'name' | 'status' | 'unsubscribe_token'> & { receive_council_updates: boolean }) | null; error: unknown }
 
   if (!subscriber) {
     return <ErrorCard title="Link not found" message="This link is invalid or has expired." />
@@ -54,7 +56,7 @@ export default async function ManagePreferencesPage(
   // Load preferences, council members, and candidates in parallel
   const prefsQuery = supabase
     .from('email_preferences')
-    .select('*')
+    .select('preference_type,preference_value')
     .eq('subscriber_id', subscriber.id)
 
   const [prefsResult, officials, election] = await Promise.all([
@@ -63,13 +65,8 @@ export default async function ManagePreferencesPage(
     getUpcomingElection(),
   ])
 
-  // Group existing preferences
-  const prefs: SubscriptionPreferences = { topics: [], districts: [], candidates: [] }
-  for (const row of prefsResult.data ?? []) {
-    if (row.preference_type === 'topic') prefs.topics.push(row.preference_value)
-    else if (row.preference_type === 'district') prefs.districts.push(row.preference_value)
-    else if (row.preference_type === 'candidate') prefs.candidates.push(row.preference_value)
-  }
+  if (prefsResult.error) return <ErrorCard title="Preferences unavailable" message="Your saved choices could not be loaded. Please try again before changing them." />
+  const prefs = groupSubscriptionPreferences(prefsResult.data ?? [], subscriber.receive_council_updates)
 
   // Map officials to district → name for DistrictSelector
   const councilMembers = officials
@@ -101,7 +98,7 @@ export default async function ManagePreferencesPage(
       <header className="mb-8">
         <h1 className="text-2xl font-bold text-civic-navy">Your Richmond briefing</h1>
         <p className="text-sm text-slate-600 mt-2">
-          Choose the topics and districts you want to hear about.
+          Choose story and election follows, and whether to receive general council emails.
           {subscriber.name && (
             <span className="text-slate-400"> Signed in as {subscriber.name}.</span>
           )}
@@ -119,7 +116,7 @@ export default async function ManagePreferencesPage(
 
       <footer className="mt-8 pt-6 border-t border-slate-200 text-center">
         <p className="text-xs text-slate-400">
-          No preferences selected? You&apos;ll get updates on everything.
+          {SUBJECT_FOLLOW_ROLLOUT}
         </p>
         <p className="text-xs text-slate-400 mt-2">
           <a href={unsubscribeUrl} className="hover:text-slate-600 underline">

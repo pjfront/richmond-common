@@ -24,9 +24,9 @@ export default function TopicPreferences({ selectedTopics, onChange }: TopicPref
 
   return (
     <div>
-      <h4 className="text-sm font-semibold text-civic-navy mb-3">Topics</h4>
+      <h3 className="text-sm font-semibold text-civic-navy mb-3">Weekly recap topics</h3>
       <p className="text-xs text-slate-500 mb-3">
-        Choose the Richmond issues you want to hear about.
+        Filter meeting recaps in the planned weekly digest. Leave blank to include all available recaps.
       </p>
 
       {/* Big Three — prominent */}
@@ -80,7 +80,7 @@ function TopicRow({
       aria-checked={checked}
       aria-label={`Follow ${label}`}
       onClick={() => onToggle(id)}
-      className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-left transition-colors text-sm ${
+      className={`w-full min-h-11 flex items-center gap-3 px-3 py-2 rounded-md text-left transition-colors text-sm ${
         checked
           ? 'bg-civic-navy/10 text-civic-navy'
           : 'bg-white text-slate-600 hover:bg-slate-50'

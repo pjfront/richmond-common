@@ -1,7 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import type { SubscribeResponse } from '@/lib/types'
+import type { SubscriptionSubject } from '@/lib/subscription-subjects'
 
 export type SubscriptionSurface =
   | 'homepage'
@@ -16,9 +17,11 @@ interface SubscribeFormProps {
   compact?: boolean
   /** Allowlisted, coarse acquisition surface. Never includes a raw URL. */
   surface?: SubscriptionSurface
+  follow?: SubscriptionSubject
 }
 
-export default function SubscribeForm({ compact = false, surface = 'subscribe_page' }: SubscribeFormProps) {
+export default function SubscribeForm({ compact = false, surface = 'subscribe_page', follow }: SubscribeFormProps) {
+  const formId = useId()
   const [email, setEmail] = useState('')
   const [name, setName] = useState('')
   const [status, setStatus] = useState<'idle' | 'submitting' | 'success' | 'error'>('idle')
@@ -38,6 +41,7 @@ export default function SubscribeForm({ compact = false, surface = 'subscribe_pa
           email: email.trim(),
           ...(name.trim() ? { name: name.trim() } : {}),
           surface,
+          ...(follow ? { follow } : {}),
         }),
       })
 
@@ -59,7 +63,7 @@ export default function SubscribeForm({ compact = false, surface = 'subscribe_pa
   if (status === 'success') {
     return (
       <div className={compact ? 'py-2' : 'py-4'}>
-        <p className={`font-medium text-green-700 ${compact ? 'text-sm' : 'text-base'}`}>
+        <p role="status" className={`font-medium text-green-700 ${compact ? 'text-sm' : 'text-base'}`}>
           {message}
         </p>
       </div>
@@ -70,44 +74,42 @@ export default function SubscribeForm({ compact = false, surface = 'subscribe_pa
     <form onSubmit={handleSubmit} className={compact ? 'space-y-2' : 'space-y-3'}>
       {!compact && (
         <div>
-          <label htmlFor="subscribe-name" className="block text-sm font-medium text-civic-slate mb-1">
+          <label htmlFor={`${formId}-name`} className="block text-sm font-medium text-civic-slate mb-1">
             Name <span className="text-slate-500 font-normal">(optional)</span>
           </label>
           <input
-            id="subscribe-name"
+            id={`${formId}-name`}
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="First name"
             maxLength={200}
-            className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-civic-navy/30 focus:border-civic-navy"
+            className="min-h-11 w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-civic-navy/30 focus:border-civic-navy"
           />
         </div>
       )}
 
       <div className={compact ? 'flex gap-2' : ''}>
         <div className={compact ? 'flex-1' : ''}>
-          {!compact && (
-            <label htmlFor="subscribe-email" className="block text-sm font-medium text-civic-slate mb-1">
+          <label htmlFor={`${formId}-email`} className={compact ? 'sr-only' : 'block text-sm font-medium text-civic-slate mb-1'}>
               Email
-            </label>
-          )}
+          </label>
           <input
-            id={compact ? 'subscribe-email-compact' : 'subscribe-email'}
+            id={`${formId}-email`}
             type="email"
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="you@example.com"
             maxLength={255}
-            className={`w-full px-3 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-civic-navy/30 focus:border-civic-navy ${compact ? 'py-1.5' : 'py-2'}`}
+            className={`min-h-11 w-full px-3 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-civic-navy/30 focus:border-civic-navy ${compact ? 'py-1.5' : 'py-2'}`}
           />
         </div>
         {compact && (
           <button
             type="submit"
             disabled={status === 'submitting'}
-            className="px-4 py-1.5 bg-civic-navy text-white text-sm font-medium rounded-md hover:bg-civic-navy-light transition-colors disabled:opacity-50 cursor-pointer disabled:cursor-wait whitespace-nowrap"
+            className="min-h-11 px-4 py-1.5 bg-civic-navy text-white text-sm font-medium rounded-md hover:bg-civic-navy-light transition-colors disabled:opacity-50 cursor-pointer disabled:cursor-wait whitespace-nowrap"
           >
             {status === 'submitting' ? 'Signing up...' : 'Stay informed'}
           </button>
@@ -118,14 +120,14 @@ export default function SubscribeForm({ compact = false, surface = 'subscribe_pa
         <button
           type="submit"
           disabled={status === 'submitting'}
-          className="w-full px-4 py-2.5 bg-civic-navy text-white font-medium rounded-md hover:bg-civic-navy-light transition-colors disabled:opacity-50 cursor-pointer disabled:cursor-wait"
+          className="min-h-11 w-full px-4 py-2.5 bg-civic-navy text-white font-medium rounded-md hover:bg-civic-navy-light transition-colors disabled:opacity-50 cursor-pointer disabled:cursor-wait"
         >
-          {status === 'submitting' ? 'Signing up...' : 'Subscribe'}
+          {status === 'submitting' ? 'Saving...' : follow ? 'Save this follow' : 'Subscribe'}
         </button>
       )}
 
       {status === 'error' && (
-        <p className="text-sm text-red-600">{message}</p>
+        <p role="alert" className="text-sm text-red-600">{message}</p>
       )}
 
       <p className="text-xs text-slate-500">
