@@ -133,7 +133,7 @@ export default function ElectionsMethodologyPage() {
           Campaign record CSV field guide
         </h2>
         <p className="text-sm text-slate-600 mb-6 leading-relaxed">
-          Downloads from political committee, union, and company profiles use
+          Downloads from council, political committee, union, and company profiles use
           one row per tracked filing record. Blank cells mean the source record
           did not provide a value; Richmond Commons does not fill them in.
         </p>
@@ -149,6 +149,14 @@ export default function ElectionsMethodologyPage() {
           <CsvField
             name="recipient_committee_id"
             meaning="The Richmond Commons identifier for a matched receiving committee. It is not a committee registration number and may be blank."
+          />
+          <CsvField
+            name="committee_name, committee_fppc_id"
+            meaning="The receiving campaign committee and its state registration number for council-profile donation records. These identify the committee, not the election."
+          />
+          <CsvField
+            name="source, source_url"
+            meaning="The source service and original report link retained with the donation record. A missing link stays blank."
           />
           <CsvField
             name="candidate_name"

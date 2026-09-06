@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useMemo } from 'react'
+import { useState, useMemo, useId } from 'react'
 import {
   useReactTable,
   getCoreRowModel,
@@ -8,9 +8,14 @@ import {
   flexRender,
   createColumnHelper,
   type SortingState,
+  type Column,
 } from '@tanstack/react-table'
-import SortableHeader from './SortableHeader'
+import {
+  aggregateDonorRecords, availableContributionYears, contributionDateRange,
+  contributionsInYear, donorRecordSources, searchDonorRecords, sumRecordedAmounts,
+} from '@/lib/historical-donor-records'
 import type { DonorAggregate, DonorContribution } from '@/lib/types'
+import CsvDownloadButton from '@/components/CsvDownloadButton'
 
 // ── Helpers ──────────────────────────────────────────────────
 
@@ -18,291 +23,37 @@ function formatCurrency(amount: number): string {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: 'USD',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
+    minimumFractionDigits: Number.isInteger(amount) ? 0 : 2,
+    maximumFractionDigits: 2,
   }).format(amount)
 }
 
-function electionYear(dateStr: string): string {
-  return new Date(dateStr + 'T00:00:00').getFullYear().toString()
-}
-
-// ── Election Cycles ──────────────────────────────────────────
-
-interface ElectionCycle {
-  id: string          // 'all' | '2022' | '2024' | 'current'
-  label: string       // 'All time' | '2022 Election' | 'Current'
-  startAfter: string | null   // contributions > this date (null = from beginning)
-  endBy: string | null        // contributions <= this date (null = through today)
-}
-
-function buildCycles(electionDates: string[]): ElectionCycle[] {
-  if (electionDates.length === 0) return []
-
-  const cycles: ElectionCycle[] = [
-    { id: 'all', label: 'All time', startAfter: null, endBy: null },
-  ]
-
-  for (let i = 0; i < electionDates.length; i++) {
-    const prevDate = i > 0 ? electionDates[i - 1] : null
-    cycles.push({
-      id: electionYear(electionDates[i]),
-      label: `${electionYear(electionDates[i])} Election`,
-      startAfter: prevDate,
-      endBy: electionDates[i],
-    })
-  }
-
-  // Since last election: after the most recent election through today
-  cycles.push({
-    id: 'current',
-    label: 'Since last election',
-    startAfter: electionDates[electionDates.length - 1],
-    endBy: null,
+function formatRecordDate(date: string): string {
+  return new Date(`${date}T00:00:00Z`).toLocaleDateString('en-US', {
+    month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC',
   })
-
-  return cycles
-}
-
-function filterByCycle(contributions: DonorContribution[], cycle: ElectionCycle): DonorContribution[] {
-  return contributions.filter((c) => {
-    if (cycle.startAfter && c.contribution_date <= cycle.startAfter) return false
-    if (cycle.endBy && c.contribution_date > cycle.endBy) return false
-    return true
-  })
-}
-
-// ── Sparkline ────────────────────────────────────────────────
-
-/** Aggregate contributions into monthly buckets for the sparkline */
-function monthlyBuckets(contributions: DonorContribution[]): { month: string; total: number }[] {
-  if (contributions.length === 0) return []
-  const map = new Map<string, number>()
-  for (const c of contributions) {
-    const month = c.contribution_date.slice(0, 7) // YYYY-MM
-    map.set(month, (map.get(month) ?? 0) + c.amount)
-  }
-
-  // Fill gaps so the sparkline is continuous
-  const sorted = Array.from(map.keys()).sort()
-  const first = sorted[0]
-  const last = sorted[sorted.length - 1]
-  const result: { month: string; total: number }[] = []
-
-  let cursor = first
-  while (cursor <= last) {
-    result.push({ month: cursor, total: map.get(cursor) ?? 0 })
-    // Advance one month
-    const [y, m] = cursor.split('-').map(Number)
-    const next = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`
-    cursor = next
-  }
-
-  return result
-}
-
-interface SparklineProps {
-  contributions: DonorContribution[]
-  electionDates: string[]
-  activeCycle: ElectionCycle
-}
-
-function ContributionSparkline({ contributions, electionDates, activeCycle }: SparklineProps) {
-  const buckets = useMemo(() => monthlyBuckets(contributions), [contributions])
-  if (buckets.length < 2) return null
-
-  const width = 600
-  const height = 60
-  const maxVal = Math.max(...buckets.map((b) => b.total))
-  if (maxVal === 0) return null
-
-  const xStep = width / (buckets.length - 1)
-
-  // Build area path
-  const points = buckets.map((b, i) => ({
-    x: i * xStep,
-    y: height - (b.total / maxVal) * (height - 4),
-  }))
-  const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ')
-  const areaPath = `${linePath} L${width},${height} L0,${height} Z`
-
-  // Compute active cycle highlight region
-  let highlightX0 = 0
-  let highlightX1 = width
-  if (activeCycle.id !== 'all') {
-    for (let i = 0; i < buckets.length; i++) {
-      if (activeCycle.startAfter && buckets[i].month <= activeCycle.startAfter.slice(0, 7)) {
-        highlightX0 = (i + 1) * xStep
-      }
-      if (activeCycle.endBy && buckets[i].month <= activeCycle.endBy.slice(0, 7)) {
-        highlightX1 = i * xStep
-      }
-    }
-    // Clamp
-    highlightX0 = Math.max(0, Math.min(highlightX0, width))
-    highlightX1 = Math.max(highlightX0, Math.min(highlightX1, width))
-  }
-
-  // Election date markers (vertical lines)
-  const electionMarkers = electionDates.map((d) => {
-    const month = d.slice(0, 7)
-    const idx = buckets.findIndex((b) => b.month >= month)
-    if (idx < 0) return null
-    return { x: idx * xStep, year: electionYear(d) }
-  }).filter(Boolean) as { x: number; year: string }[]
-
-  return (
-    <div className="mb-4 relative">
-      <svg
-        viewBox={`0 0 ${width} ${height}`}
-        className="w-full h-[60px]"
-        preserveAspectRatio="none"
-        aria-label="Contribution activity over time"
-        role="img"
-      >
-        {/* Dimmed area for full timeline */}
-        <path d={areaPath} fill="#e2e8f0" opacity={activeCycle.id === 'all' ? 0 : 0.4} />
-
-        {/* Active cycle highlight */}
-        {activeCycle.id !== 'all' && (
-          <clipPath id="cycle-clip">
-            <rect x={highlightX0} y={0} width={highlightX1 - highlightX0} height={height} />
-          </clipPath>
-        )}
-        <path
-          d={areaPath}
-          fill={activeCycle.id === 'all' ? '#cbd5e1' : '#1e3a5f'}
-          opacity={activeCycle.id === 'all' ? 0.5 : 0.3}
-          clipPath={activeCycle.id !== 'all' ? 'url(#cycle-clip)' : undefined}
-        />
-        <path
-          d={linePath}
-          fill="none"
-          stroke="#1e3a5f"
-          strokeWidth={1.5}
-          opacity={0.6}
-        />
-
-        {/* Election date marker lines only */}
-        {electionMarkers.map((m) => (
-          <line
-            key={m.year}
-            x1={m.x} y1={0} x2={m.x} y2={height}
-            stroke="#94a3b8" strokeWidth={1} strokeDasharray="3,3"
-          />
-        ))}
-      </svg>
-
-      {/* Election year labels as HTML to avoid SVG text stretching */}
-      {electionMarkers.map((m) => (
-        <span
-          key={m.year}
-          className="absolute text-[10px] text-slate-400 -translate-x-1/2"
-          style={{ left: `${(m.x / width) * 100}%`, bottom: '-14px' }}
-        >
-          {m.year}
-        </span>
-      ))}
-    </div>
-  )
-}
-
-// ── Donor Pattern Badges ─────────────────────────────────────
-
-const PATTERN_CONFIG: Record<string, { label: string; className: string; description: string }> = {
-  pac: {
-    label: 'PAC',
-    className: 'bg-purple-100 text-purple-700',
-    description: 'Political Action Committee: an organization that pools contributions to support candidates',
-  },
-  mega: {
-    label: 'Major',
-    className: 'bg-blue-100 text-blue-700',
-    description: 'Top 1% of donors by total amount contributed across all Richmond campaigns',
-  },
-  grassroots: {
-    label: 'Grassroots',
-    className: 'bg-green-100 text-green-700',
-    description: 'Many small donations (under $250 average) spread across multiple candidates',
-  },
-  targeted: {
-    label: 'Targeted',
-    className: 'bg-amber-100 text-amber-700',
-    description: 'Larger donations concentrated on one or two specific candidates',
-  },
-}
-
-function DonorPatternBadge({ pattern }: { pattern: string | null }) {
-  const [open, setOpen] = useState(false)
-  const triggerRef = useRef<HTMLSpanElement>(null)
-
-  if (!pattern || pattern === 'regular') return null
-  const config = PATTERN_CONFIG[pattern]
-  if (!config) return null
-
-  return (
-    <span className="relative inline-block ml-1.5" ref={triggerRef}>
-      <span
-        className={`inline-block text-xs px-1.5 py-0.5 rounded font-medium cursor-help ${config.className}`}
-        onMouseEnter={() => setOpen(true)}
-        onMouseLeave={() => setOpen(false)}
-        onFocus={() => setOpen(true)}
-        onBlur={() => setOpen(false)}
-        tabIndex={0}
-        role="term"
-        aria-label={`${config.label}: ${config.description}`}
-      >
-        {config.label}
-      </span>
-      {open && (
-        <div
-          role="tooltip"
-          className="absolute z-50 w-56 bg-white border border-slate-200 rounded-lg shadow-lg p-3 text-left bottom-full mb-1.5 left-1/2 -translate-x-1/2"
-          onMouseEnter={() => setOpen(true)}
-          onMouseLeave={() => setOpen(false)}
-        >
-          <div className="text-xs font-semibold text-civic-navy">{config.label}</div>
-          <div className="text-xs text-slate-600 mt-1 leading-relaxed">{config.description}</div>
-        </div>
-      )}
-    </span>
-  )
-}
-
-// ── Aggregation ──────────────────────────────────────────────
-
-function aggregateContributions(contributions: DonorContribution[]): DonorAggregate[] {
-  const donorMap = new Map<string, DonorAggregate>()
-  for (const c of contributions) {
-    const existing = donorMap.get(c.donor_name)
-    if (existing) {
-      existing.total_amount += c.amount
-      existing.contribution_count += 1
-    } else {
-      donorMap.set(c.donor_name, {
-        donor_name: c.donor_name,
-        donor_employer: c.donor_employer,
-        total_amount: c.amount,
-        contribution_count: 1,
-        source: c.source,
-        donor_pattern: c.donor_pattern,
-      })
-    }
-  }
-  return Array.from(donorMap.values()).sort((a, b) => b.total_amount - a.total_amount)
 }
 
 // ── Table Columns ────────────────────────────────────────────
+
+function RecordSortHeader<T>({ column, label }: { column: Column<T, unknown>; label: string }) {
+  const sorted = column.getIsSorted()
+  return (
+    <button type="button" onClick={column.getToggleSortingHandler()}
+      className="inline-flex min-h-11 items-center gap-1 rounded text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-civic-navy">
+      {label}<span aria-hidden="true">{sorted === 'asc' ? '↑' : sorted === 'desc' ? '↓' : '↕'}</span>
+    </button>
+  )
+}
 
 const columnHelper = createColumnHelper<DonorAggregate>()
 
 const columns = [
   columnHelper.accessor('donor_name', {
-    header: ({ column }) => <SortableHeader column={column} label="Donor" />,
+    header: ({ column }) => <RecordSortHeader column={column} label="Donor" />,
     cell: (info) => (
       <span className="text-slate-900">
         {info.getValue()}
-        <DonorPatternBadge pattern={info.row.original.donor_pattern} />
       </span>
     ),
   }),
@@ -313,14 +64,14 @@ const columns = [
     meta: { className: 'hidden sm:table-cell' },
   }),
   columnHelper.accessor('total_amount', {
-    header: ({ column }) => <SortableHeader column={column} label="Total" className="text-right" />,
+    header: ({ column }) => <RecordSortHeader column={column} label="Amount" />,
     cell: (info) => (
       <span className="font-medium text-slate-900">{formatCurrency(info.getValue())}</span>
     ),
     meta: { className: 'text-right' },
   }),
   columnHelper.accessor('contribution_count', {
-    header: ({ column }) => <SortableHeader column={column} label="#" className="text-right" />,
+    header: ({ column }) => <RecordSortHeader column={column} label="Records" />,
     cell: (info) => <span className="text-slate-500">{info.getValue()}</span>,
     meta: { className: 'text-right' },
   }),
@@ -332,49 +83,29 @@ const NETFILE_PUBLIC_URL = 'https://public.netfile.com/pub2/?AID=RICH'
 
 interface DonorTableProps {
   contributions: DonorContribution[]
-  electionDates: string[]
-  /** Elections where this official was a candidate — cycles built from these only */
-  candidateElectionDates?: string[]
 }
 
-export default function DonorTable({ contributions, electionDates, candidateElectionDates }: DonorTableProps) {
-  // Build cycle buttons from candidate elections (contributions in non-candidate
-  // years get absorbed into the next cycle the official actually ran in)
-  const cycles = useMemo(() => {
-    const cycleDates = candidateElectionDates && candidateElectionDates.length > 0
-      ? candidateElectionDates
-      : electionDates
-    const allCycles = buildCycles(cycleDates)
-    // Still filter out cycles with zero contributions
-    return allCycles.filter((c) =>
-      c.id === 'all' || filterByCycle(contributions, c).length > 0
-    )
-  }, [electionDates, candidateElectionDates, contributions])
-  const [activeCycleId, setActiveCycleId] = useState('all')
-  const [sorting, setSorting] = useState<SortingState>([
-    { id: 'total_amount', desc: true },
-  ])
+export default function DonorTable({ contributions }: DonorTableProps) {
+  const searchId = useId()
+  const years = useMemo(() => availableContributionYears(contributions), [contributions])
+  const [selectedYear, setSelectedYear] = useState<string | null>(null)
+  const activeYear = selectedYear === 'all' || (selectedYear !== null && years.includes(selectedYear))
+    ? selectedYear : years[0] ?? 'all'
+  const [sorting, setSorting] = useState<SortingState>([{ id: 'total_amount', desc: true }])
   const [showAll, setShowAll] = useState(false)
   const [search, setSearch] = useState('')
 
-  const activeCycle = cycles.find((c) => c.id === activeCycleId) ?? cycles[0]
-
-  // Filter contributions by active cycle, then aggregate
-  const donors = useMemo(() => {
-    if (!activeCycle || activeCycle.id === 'all') return aggregateContributions(contributions)
-    return aggregateContributions(filterByCycle(contributions, activeCycle))
-  }, [contributions, activeCycle])
-
-  // Filter donors by search term
-  const filtered = useMemo(() => {
-    if (!search.trim()) return donors
-    const q = search.toLowerCase()
-    return donors.filter(
-      (d) =>
-        d.donor_name.toLowerCase().includes(q) ||
-        (d.donor_employer ?? '').toLowerCase().includes(q)
-    )
-  }, [donors, search])
+  const records = useMemo(() => contributionsInYear(contributions, activeYear), [contributions, activeYear])
+  const donors = useMemo(() => aggregateDonorRecords(records), [records])
+  const filtered = useMemo(() => searchDonorRecords(donors, search), [donors, search])
+  const matchingRecords = useMemo(() => {
+    const names = new Set(filtered.map(donor => donor.donor_name))
+    return records.filter(record => names.has(record.donor_name))
+  }, [records, filtered])
+  const dateRange = useMemo(() => contributionDateRange(matchingRecords), [matchingRecords])
+  const sources = useMemo(() => donorRecordSources(matchingRecords), [matchingRecords])
+  const recordedAmount = sumRecordedAmounts(filtered.map(donor => donor.total_amount))
+  const recordCount = filtered.reduce((sum, donor) => sum + donor.contribution_count, 0)
 
   const table = useReactTable({
     data: filtered,
@@ -386,7 +117,7 @@ export default function DonorTable({ contributions, electionDates, candidateElec
   })
 
   if (contributions.length === 0) {
-    return <p className="text-sm text-slate-500 italic">No contribution data available.</p>
+    return <p className="text-sm text-slate-500 italic">No historical donation records available.</p>
   }
 
   const allRows = table.getRowModel().rows
@@ -394,62 +125,77 @@ export default function DonorTable({ contributions, electionDates, candidateElec
 
   return (
     <div>
-      {/* Sparkline */}
-      {activeCycle && (
-        <ContributionSparkline
-          contributions={contributions}
-          electionDates={electionDates}
-          activeCycle={activeCycle}
-        />
-      )}
-
-      {/* Cycle toggle + search */}
-      <div className="mb-3 flex flex-wrap items-center gap-3">
-        {cycles.length > 1 && (
-          <div className="flex flex-wrap rounded-md border border-slate-200 text-sm" role="group" aria-label="Election cycle">
-            {cycles.map((cycle, i) => (
+      <p className="mb-4 text-sm text-slate-600">
+        These donation records come from linked committees and may not include all fundraising. Years refer to donation dates.
+      </p>
+      <div className="mb-4 flex flex-wrap items-end gap-4">
+        {years.length > 0 && (
+          <div role="group" aria-label="Contribution year" className="flex flex-wrap gap-1.5">
+            {['all', ...years].map(year => (
               <button
-                key={cycle.id}
-                onClick={() => { setActiveCycleId(cycle.id); setShowAll(false) }}
-                className={`px-3 py-1.5 transition-colors ${
-                  activeCycleId === cycle.id
-                    ? 'bg-civic-navy text-white'
-                    : 'bg-white text-slate-600 hover:bg-slate-50'
-                } ${i === 0 ? 'rounded-l-md' : ''} ${i === cycles.length - 1 ? 'rounded-r-md' : ''} ${i > 0 ? 'border-l border-slate-200' : ''}`}
+                type="button"
+                key={year}
+                aria-pressed={activeYear === year}
+                onClick={() => { setSelectedYear(year); setShowAll(false) }}
+                className={`min-h-11 rounded-md border px-3 py-2 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-civic-navy ${
+                  activeYear === year ? 'border-civic-navy bg-civic-navy text-white' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                }`}
               >
-                {cycle.label}
+                {year === 'all' ? 'All records' : year}
               </button>
             ))}
           </div>
         )}
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => { setSearch(e.target.value); setShowAll(false) }}
-          placeholder="Search donors or employers…"
-          className="w-full sm:w-72 px-3 py-1.5 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-civic-navy/30 focus:border-civic-navy/40"
-        />
+        <div className="w-full sm:w-72">
+          <label htmlFor={searchId} className="mb-1 block text-xs font-medium text-slate-600">Search donors or employers</label>
+          <input
+            id={searchId}
+            type="search"
+            value={search}
+            onChange={event => { setSearch(event.target.value); setShowAll(false) }}
+            className="min-h-11 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-civic-navy/40"
+          />
+        </div>
       </div>
 
-      {/* Total + context */}
-      <div className="flex items-baseline gap-3 mb-3">
-        <span className="text-lg font-semibold text-civic-navy">
-          {formatCurrency(donors.reduce((sum, d) => sum + d.total_amount, 0))}
-        </span>
-        <span className="text-sm text-slate-500">
-          from {donors.length} donor{donors.length !== 1 ? 's' : ''}{activeCycle.id !== 'all' ? ` \u00b7 ${activeCycle.label}` : ''}
-        </span>
+      <div className="mb-4">
+        <CsvDownloadButton filename={`council-donation-records-${activeYear}.csv`}
+          columns={['donor_name', 'donor_employer', 'amount', 'contribution_date', 'contribution_type', 'committee_name', 'committee_fppc_id', 'filing_id', 'source', 'source_url']}
+          rows={matchingRecords.map(record => ({
+            donor_name: record.donor_name, donor_employer: record.donor_employer,
+            amount: record.amount, contribution_date: record.contribution_date,
+            contribution_type: record.contribution_type ?? null, committee_name: record.committee_name ?? null,
+            committee_fppc_id: record.committee_fppc_id ?? null, filing_id: record.filing_id ?? null,
+            source: record.source, source_url: record.source_url ?? null,
+          }))} />
+      </div>
+
+      <div className="mb-3" role="status" aria-live="polite" aria-atomic="true">
+        <p className="flex flex-wrap items-baseline gap-x-2">
+          <span className="text-lg font-semibold text-civic-navy">{formatCurrency(recordedAmount)}</span>
+          <span className="text-sm text-slate-600">
+            in {recordCount} {search.trim() ? 'matching ' : ''}donation record{recordCount !== 1 ? 's' : ''}
+            {' · '}{activeYear === 'all' ? 'All records' : activeYear}
+          </span>
+        </p>
+        {dateRange && (
+          <p className="mt-1 text-xs text-slate-500">
+            Dates of these records: <time dateTime={dateRange.first}>{formatRecordDate(dateRange.first)}</time>
+            {dateRange.first !== dateRange.last && <> to <time dateTime={dateRange.last}>{formatRecordDate(dateRange.last)}</time></>}
+          </p>
+        )}
       </div>
 
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
+          <caption className="sr-only">Historical donation records grouped by reported donor name, {activeYear === 'all' ? 'all recorded years' : activeYear}</caption>
           <thead>
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id} className="border-b border-slate-200 text-left">
                 {headerGroup.headers.map((header) => {
                   const meta = header.column.columnDef.meta as { className?: string } | undefined
                   return (
-                    <th key={header.id} className={`py-2 pr-4 font-medium text-slate-600 ${meta?.className ?? ''}`}>
+                    <th key={header.id} scope="col" aria-sort={header.column.getIsSorted() === 'asc' ? 'ascending' : header.column.getIsSorted() === 'desc' ? 'descending' : undefined} className={`py-2 pr-4 font-medium text-slate-600 ${meta?.className ?? ''}`}>
                       {header.isPlaceholder
                         ? null
                         : flexRender(header.column.columnDef.header, header.getContext())}
@@ -463,7 +209,7 @@ export default function DonorTable({ contributions, electionDates, candidateElec
             {visibleRows.length === 0 ? (
               <tr>
                 <td colSpan={4} className="py-6 text-center text-sm text-slate-400 italic">
-                  No contributions in this period.
+                  {search.trim() ? 'No donors or employers match this search.' : 'No historical donation records in this period.'}
                 </td>
               </tr>
             ) : (
@@ -488,26 +234,54 @@ export default function DonorTable({ contributions, electionDates, candidateElec
       <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
         {!showAll && allRows.length > 10 && (
           <button
+            type="button"
             onClick={() => setShowAll(true)}
-            className="text-sm text-civic-navy-light hover:text-civic-navy"
+            className="inline-flex min-h-11 items-center rounded text-sm text-civic-navy-light hover:text-civic-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-civic-navy"
           >
-            Show all {allRows.length} donors
+            Show all {allRows.length} donor rows
           </button>
         )}
-        {search && (
+        {search.trim() && (
           <span className="text-xs text-slate-400">
-            {filtered.length} of {donors.length} donors match
+            {filtered.length} of {donors.length} donor rows match
           </span>
         )}
       </div>
 
-      {/* Source link */}
+      {sources.length > 0 && (
+        <details className="mt-4 rounded-md border border-slate-200 p-3">
+          <summary className="min-h-11 cursor-pointer rounded text-sm font-medium text-civic-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-civic-navy">
+            Committees and source reports for these records ({sources.length})
+          </summary>
+          <ul className="mt-3 divide-y divide-slate-100">
+            {sources.map(source => (
+              <li key={source.key} className="py-3 first:pt-0 last:pb-0">
+                <p className="text-sm font-medium text-slate-800">{source.committeeName}</p>
+                {source.committeeFppcId && <p className="text-xs text-slate-500">FPPC {source.committeeFppcId}</p>}
+                <p className="mt-1 text-xs text-slate-600">
+                  {source.recordCount} donation record{source.recordCount !== 1 ? 's' : ''} · {formatCurrency(source.recordedAmount)} recorded
+                  {source.dateRange && <>{' · '}<time dateTime={source.dateRange.first}>{formatRecordDate(source.dateRange.first)}</time>
+                    {source.dateRange.first !== source.dateRange.last && <> to <time dateTime={source.dateRange.last}>{formatRecordDate(source.dateRange.last)}</time></>}
+                  </>}
+                </p>
+                {source.recordTypes.length > 0 && <p className="mt-1 text-xs text-slate-500">Record types: {source.recordTypes.map(type => type.replaceAll('_', ' ')).join(', ')}</p>}
+                {source.sourceUrl ? (
+                  <a href={source.sourceUrl} target="_blank" rel="noopener noreferrer" className="mt-1 inline-flex min-h-11 items-center rounded text-sm text-civic-navy-light underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-civic-navy">
+                    Original filing {source.filingId}
+                  </a>
+                ) : <p className="mt-1 text-xs text-slate-500">Original filing link unavailable in these records.</p>}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+
       <div className="mt-4 pt-3 border-t border-slate-100 flex justify-end">
         <a
           href={NETFILE_PUBLIC_URL}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-xs text-slate-400 hover:text-civic-navy-light"
+          className="inline-flex min-h-11 items-center rounded text-xs text-slate-500 hover:text-civic-navy-light focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-civic-navy"
         >
           View all filings on NetFile &rarr;
         </a>
