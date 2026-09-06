@@ -4,7 +4,7 @@ import { useState } from 'react'
 import * as Collapsible from '@radix-ui/react-collapsible'
 import type { AgendaItemWithMotions } from '@/lib/types'
 import type { Significance } from '@/lib/significance'
-import { getOverallResult, isProcedural } from '@/lib/significance'
+import { getOverallResult, getItemResultLabel, isProcedural } from '@/lib/significance'
 import type { OverallResult } from '@/lib/significance'
 
 interface MeetingToCProps {
@@ -24,15 +24,17 @@ interface MeetingToCProps {
 const DOT_COLORS: Record<OverallResult, string> = {
   passed: 'bg-vote-aye',
   failed: 'bg-vote-nay',
-  mixed: 'bg-amber-400',
+  mixed: 'bg-slate-400',
+  unknown: 'bg-slate-300',
   none: 'bg-slate-300',
 }
 
-function ResultDot({ result }: { result: OverallResult }) {
+function ResultDot({ result, label }: { result: OverallResult; label?: string | null }) {
   return (
     <span
       className={`w-2 h-2 rounded-full shrink-0 ${DOT_COLORS[result]}`}
       aria-hidden="true"
+      title={label ?? undefined}
     />
   )
 }
@@ -138,7 +140,8 @@ export default function MeetingToC({
                   : 'text-slate-500 hover:text-civic-navy'
               }`}
             >
-              <ResultDot result={result} />
+              <ResultDot result={result} label={getItemResultLabel(item)} />
+              <span className="sr-only">{getItemResultLabel(item)}{item.motions.length > 0 ? ': ' : ''}</span>
               <span className="text-[13px] leading-snug truncate">
                 {shortName(item)}
               </span>
@@ -151,7 +154,7 @@ export default function MeetingToC({
           <Collapsible.Root open={consentOpen || hasFilteredConsent} onOpenChange={setConsentOpen}>
             <Collapsible.Trigger asChild>
               <button className="w-full flex items-center gap-2 py-1 text-left transition-colors cursor-pointer text-slate-500 hover:text-civic-navy">
-                <ResultDot result="passed" />
+                <ResultDot result="none" />
                 <span className="text-[13px] leading-snug flex-1">
                   Consent ({consent.length})
                 </span>

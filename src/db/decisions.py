@@ -40,6 +40,10 @@ def insert_pending_decision(
     entity_id: str = None,
     link: str = None,
     dedup_key: str = None,
+    review_class: str = "engineering",
+    action_kind: str = "resolve_only",
+    target_brief_id: str = None,
+    target_content_version: int = None,
 ) -> Optional[uuid.UUID]:
     """Insert a pending decision. Returns UUID, or None if deduplicated.
 
@@ -49,15 +53,26 @@ def insert_pending_decision(
     decision_id = uuid.uuid4()
     try:
         with conn.cursor() as cur:
+            if dedup_key:
+                cur.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (dedup_key,))
+                cur.execute(
+                    "SELECT id FROM pending_decisions WHERE dedup_key = %s AND status IN ('pending', 'deferred') LIMIT 1",
+                    (dedup_key,),
+                )
+                if cur.fetchone():
+                    conn.commit()
+                    return None
             cur.execute(
                 """INSERT INTO pending_decisions
                    (id, city_fips, decision_type, severity, title, description,
-                    evidence, source, entity_type, entity_id, link, dedup_key)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                    evidence, source, entity_type, entity_id, link, dedup_key,
+                    review_class, action_kind, target_brief_id, target_content_version)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     decision_id, city_fips, decision_type, severity,
                     title, description, json.dumps(evidence or {}),
                     source, entity_type, entity_id, link, dedup_key,
+                    review_class, action_kind, target_brief_id, target_content_version,
                 ),
             )
         conn.commit()
@@ -73,19 +88,39 @@ def update_decision_status(
     status: str,
     resolved_by: str = "operator",
     resolution_note: str = None,
+    expected_version: int = None,
+    idempotency_key: str | uuid.UUID = None,
 ) -> bool:
-    """Update a decision's status. Returns True if a row was updated."""
-    with conn.cursor() as cur:
-        cur.execute(
-            """UPDATE pending_decisions
-               SET status = %s, resolved_by = %s, resolution_note = %s,
-                   resolved_at = NOW(), updated_at = NOW()
-               WHERE id = %s AND status = 'pending'""",
-            (status, resolved_by, resolution_note, decision_id),
-        )
-        updated = cur.rowcount > 0
-    conn.commit()
-    return updated
+    """Apply the same audited, optimistic transition as the operator website.
+
+    Legacy generic resolutions can read their current version immediately
+    before applying. Publishing always requires an explicitly reviewed version.
+    Callers retrying an uncertain request must reuse their idempotency key.
+    """
+    action = {"approved": "approve", "rejected": "reject", "deferred": "defer", "pending": "reopen"}.get(status)
+    if action is None:
+        raise ValueError(f"Unsupported review status: {status}")
+    try:
+        with conn.cursor() as cur:
+            if expected_version is None:
+                cur.execute("SELECT review_version, action_kind FROM pending_decisions WHERE id = %s", (decision_id,))
+                row = cur.fetchone()
+                if not row:
+                    conn.commit()
+                    return False
+                if row[1] != "resolve_only":
+                    raise ValueError("Publication decisions require an explicitly reviewed expected_version")
+                expected_version = row[0]
+            cur.execute(
+                "SELECT public.review_decision(%s, %s, %s, %s, %s, %s)",
+                (decision_id, action, expected_version, str(idempotency_key or uuid.uuid4()), resolution_note, resolved_by),
+            )
+            result = cur.fetchone()[0]
+        conn.commit()
+        return bool(result.get("ok"))
+    except Exception:
+        conn.rollback()
+        raise
 
 
 def query_pending_decisions(

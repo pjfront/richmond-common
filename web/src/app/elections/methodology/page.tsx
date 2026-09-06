@@ -39,6 +39,21 @@ export default function ElectionsMethodologyPage() {
         </p>
       </header>
 
+      <section id="reconciled-ledger" className="mb-12 scroll-mt-24">
+        <h2 className="text-xl font-bold text-civic-navy">The 2026 source-linked ledger</h2>
+        <p className="mt-3 leading-relaxed text-slate-700">The November guide and its money ledger use a separate, reconciled set of source reports. The older donor categories described later on this page are not used to infer ownership or control in that ledger.</p>
+        <ul className="mt-4 list-disc space-y-3 pl-5 leading-relaxed text-slate-700">
+          <li>A filing is a statement made by its filer. Multiple filings can describe one contribution. The index retains the original source assertions and links matching reports; it does not erase two gifts merely because their amounts are equal and their dates are close.</li>
+          <li>Cash gifts, loans, noncash contributions, refunds, outgoing contributions, and independent expenditures are different kinds of activity. Candidate cash-gift subtotals exclude the other kinds. Upstream committee transfers are not added to downstream advertising as a single spending total.</li>
+          <li>Amendments follow the source system&apos;s explicit filing lineage. An ambiguous match remains outside the reconciled public totals pending review. Source coverage and gaps appear on the guide; a partial set is not a candidate&apos;s complete fundraising total.</li>
+          <li>Independent support or opposition comes from the filing. A source that identifies a candidate but not an election cannot contribute to a November-specific spending total. Earlier and unidentified-election records remain visible with their activity dates.</li>
+          <li>Committee links use reported FPPC identifiers. A person&apos;s employer is not treated as the donor of that person&apos;s gift. Similar names, addresses, or treasurers do not establish ownership, control, or the original source of a nonprofit&apos;s funding.</li>
+          <li>The public projection preserves the existing 90% extraction threshold and requires source attribution. That threshold is an extraction rule, not a statistical probability that a political claim is true.</li>
+          <li>Downloads contain reported names, committee identifiers, dates, amounts, event types, reconciliation status, and original filing URLs. They omit street addresses and private review material. Blank cells mean a value has not been established.</li>
+        </ul>
+        <p className="mt-4 text-sm text-slate-600">Methodology version: September 6, 2026. Read the <Link href="/elections/2026-general/money" className="inline-flex min-h-11 items-center text-civic-navy underline">2026 money ledger</Link> and follow each original source. Reporting deadlines are linked in the November guide.</p>
+      </section>
+
       {/* ── Amount buckets ─────────────────────────────────────── */}
       <section className="mb-12">
         <h2 className="text-xl font-bold text-civic-navy mb-2">

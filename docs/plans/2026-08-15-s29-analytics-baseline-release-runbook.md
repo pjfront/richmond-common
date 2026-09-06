@@ -1,5 +1,12 @@
 # S29 baseline and production release runbook
 
+**Historical record, superseded September 6, 2026:** The operator-authorized
+[resident release plan](../CURRENT-PLAN.md) replaces this experiment's
+baseline/treatment publication dependency. The active source-gate decision and
+unchanged historical baseline are recorded in [s29-release-phase.json](../s29-release-phase.json).
+The text below preserves the August experiment; it does not impose a new release
+hold or establish that the baseline experiment completed.
+
 **Prepared:** 2026-08-16
 
 **Runtime status refreshed:** 2026-08-23

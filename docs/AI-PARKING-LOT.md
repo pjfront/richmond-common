@@ -10,6 +10,15 @@ _Convention: Every session adds observations here. Items stay until promoted to 
 
 - Deployment now requests explicit JSON and parses only CLI59.1.4's documented object/agent envelope or narrow legacy URL forms. The lost September6 stdout cannot establish its exact failure format; installed official CLI code confirms agent detection can change stdout from a bare URL to JSON. Authenticated project/SHA/ref/alias proof stays separate from locator parsing. Future format failures emit only redacted structural diagnostics.
 
+## 2026-09-06 review inbox follow-through
+
+- Generic engineering decisions record a judgment; they do not claim to run a fix. Future automatic repair executors need their own small allowlist and validation contract.
+- Publication producers create draft civic briefs and editorial decisions pinned to a content version. Re-extraction must refresh the packet before approval.
+- `civic_review_packets.py` now prepares bounded finance comparisons and source-backed agenda/receipt drafts without model calls. Fingerprints suppress unchanged and rejected inputs, and draft refresh invalidates stale browser review versions. The real Python writer passes disposable PostgreSQL integration checks.
+- Source rechecks now convert open story publication proposals into versioned engineering closure notes when cancelled/retired/removed agenda evidence no longer qualifies. The old private draft and evidence remain, public content is untouched, and failed/truncated reads cannot trigger withdrawal. Upstream source fetchers must retain last successful state on fetch failure.
+- Story/election follows need delivery integration, not just stored checkboxes: current digest/retry paths filter only topic preferences and orientation ignores preferences. `docs/civic-review-packets.md` identifies the exact small extension; migration150 remains unused.
+- Move the standalone PostgreSQL publication/role verifier into the standard integration gate after this release.
+
 ## 2026-09-06 access verification follow-up
 
 - Keep private operator state behind database grants and role-scoped policies as well as route authentication. The prepared migration 147 has a disposable PostgreSQL role-access verifier covering public denial, service access, registry public reads, and idempotent replay.

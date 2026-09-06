@@ -1,87 +1,40 @@
 import Link from 'next/link'
-import { getMeetingsWithCounts, getConflictFlags, getOfficials, getCurrentCandidacies, getMostDiscussedItems } from '@/lib/queries'
-import { CONFIDENCE_PUBLISHED } from '@/lib/thresholds'
-import LatestMeetingCard from '@/components/LatestMeetingCard'
-import MostDiscussedItems from '@/components/MostDiscussedItems'
-import OfficialCard from '@/components/OfficialCard'
+import { CIVIC_STORIES, CITY_AGENDAS_URL } from '@/data/civic-stories'
+import { getResidentSnapshot } from '@/lib/queries/civic-stories'
+import { CivicDate, CivicLanguageScope, Localized } from '@/components/civic/CivicLanguage'
+import { civicLink, SourceLink, SourceNote, StoryCard } from '@/components/civic/CivicStory'
 
+export const revalidate = 3600
 
-export default async function Home() {
-  const [meetings, officials, candidacies, mostDiscussed] = await Promise.all([
-    getMeetingsWithCounts(),
-    getOfficials(undefined, { councilOnly: true }),
-    getCurrentCandidacies(),
-    getMostDiscussedItems(2),
-  ])
-
-  const latestMeeting = meetings[0] ?? null
-
-  // Get flag count for latest meeting
-  let latestFlagCount = 0
-  if (latestMeeting) {
-    const flags = await getConflictFlags(latestMeeting.id)
-    latestFlagCount = flags.filter((f) => f.confidence >= CONFIDENCE_PUBLISHED).length
-  }
-
-  const currentMembers = officials.filter((o) => o.is_current)
-
-  // Build candidacy map
-  const candidacyMap = new Map<string, { office: string; electionDate: string }>()
-  for (const c of candidacies) {
-    if (c.official_id) {
-      candidacyMap.set(c.official_id, { office: c.office_sought, electionDate: c.election_date })
-    }
-  }
-
-  return (
-    <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      {/* Compact hero — one line, not a marketing pitch */}
-      <section className="mb-8">
-        <h1 className="text-4xl font-bold text-civic-navy">Richmond Commons</h1>
-        <p className="text-base text-slate-600 mt-1">
-          Your city government, in one place and in plain language.
-        </p>
-      </section>
-
-      {/* Latest Meeting — the real content */}
-      {latestMeeting && (
-        <section className="mb-10">
-          <LatestMeetingCard
-            meeting={latestMeeting}
-            agendaItemCount={latestMeeting.agenda_item_count}
-            voteCount={latestMeeting.vote_count}
-            flagCount={latestFlagCount}
-            topicLabels={latestMeeting.top_topic_labels}
-          />
-          <div className="mt-3 text-right">
-            <Link
-              href="/meetings"
-              className="text-sm font-medium text-civic-navy hover:text-civic-navy-light transition-colors"
-            >
-              All meetings &rarr;
-            </Link>
-          </div>
-        </section>
-      )}
-
-      {/* Most Discussed — community engagement signal */}
-      <MostDiscussedItems items={mostDiscussed} />
-
-      {/* Council Members — compact grid */}
-      {currentMembers.length > 0 && (
-        <section>
-          <h2 className="text-xl font-semibold text-slate-800 mb-4">Council Members</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {currentMembers.map((o) => (
-              <OfficialCard
-                key={o.id}
-                official={o}
-                candidacy={candidacyMap.get(o.id)}
-              />
-            ))}
-          </div>
-        </section>
-      )}
-    </div>
-  )
+export default async function HomePage() {
+  const snapshot = await getResidentSnapshot()
+  const nextMeeting = snapshot.upcoming[0]
+  return <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-10 lg:px-8"><CivicLanguageScope>
+    <header className="mb-8 max-w-4xl sm:mb-14">
+      <h1 className="max-w-3xl text-4xl font-semibold leading-[1.12] tracking-tight sm:text-5xl lg:text-6xl"><Localized en="Understand what’s changing in Richmond." es="Entienda qué está cambiando en Richmond." /></h1>
+      <p className="mt-5 max-w-2xl text-lg leading-8 text-slate-700"><Localized en="Make sense of city decisions and campaign money, with the public record a click away." es="Entienda las decisiones municipales y el dinero de las campañas, con los registros públicos a un clic." /></p>
+      <nav aria-label="On this page / En esta página" className="mt-6 flex flex-wrap gap-x-6 gap-y-1 text-sm"><a className={civicLink} href="#what-changed"><Localized en="What changed" es="Qué cambió" /></a><a className={civicLink} href="#coming-up"><Localized en="Coming up" es="Lo que viene" /></a><a className={civicLink} href="#november"><Localized en="November choices" es="Opciones de noviembre" /></a></nav>
+    </header>
+    <section id="what-changed" aria-labelledby="what-changed-heading" className="scroll-mt-6">
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-3"><div><h2 id="what-changed-heading" className="text-2xl font-semibold sm:text-3xl"><Localized en="What changed" es="Qué cambió" /></h2><p className="mt-2 leading-7 text-slate-600"><Localized en="Three decisions worth understanding—and what still needs to happen." es="Tres decisiones que conviene entender y los pasos que siguen pendientes." /></p></div><Link href="/stories" className={civicLink}><Localized en="All stories" es="Todos los temas" /><span aria-hidden="true">→</span></Link></div>
+      <div className="grid gap-5 lg:grid-cols-3">{CIVIC_STORIES.map((story, index) => <StoryCard key={story.slug} story={story} featured={index === 0} />)}</div>
+    </section>
+    <section id="coming-up" aria-labelledby="coming-up-heading" className="my-12 grid scroll-mt-6 gap-6 border-y border-slate-200 py-9 sm:my-16 md:grid-cols-[1fr_2fr] md:gap-12">
+      <div><p className="mb-3 text-sm font-semibold uppercase tracking-wider text-civic-navy"><Localized en="A chance to take part" es="Una oportunidad de participar" /></p><h2 id="coming-up-heading" className="text-2xl font-semibold sm:text-3xl"><Localized en="Coming up" es="Lo que viene" /></h2></div>
+      <div>
+        {nextMeeting ? <><p className="text-xl font-semibold"><CivicDate date={nextMeeting.meeting_date} /></p><p className="mt-2 leading-7 text-slate-700"><Localized en="A Richmond City Council meeting is on the calendar. Read its agenda to see the proposed actions and the city’s instructions for attending or commenting." es="Hay una reunión del Concejo Municipal de Richmond en el calendario. Consulte su agenda para ver las acciones propuestas y las instrucciones municipales para asistir o comentar." /></p><Link href={`/meetings/${nextMeeting.id}`} className={`${civicLink} mt-3`}><Localized en="See the meeting and agenda" es="Ver la reunión y su agenda" /><span aria-hidden="true">→</span></Link></> : <><h3 className="text-xl font-semibold"><Localized en="Find the next public meeting" es="Encuentre la próxima reunión pública" /></h3><p className="mt-2 leading-7 text-slate-700">{snapshot.status === 'unavailable' ? <Localized en="The local calendar could not be loaded. Check the city’s calendar for upcoming meetings and participation instructions." es="No se pudo cargar el calendario local. Consulte el calendario municipal para ver las próximas reuniones y cómo participar." /> : <Localized en="No upcoming council meeting appears in the records currently available here. Check the city’s calendar for updates and participation instructions." es="Los registros disponibles aquí no incluyen una próxima reunión del Concejo. Consulte el calendario municipal para ver las actualizaciones y cómo participar." />}</p></>}
+        <a href={CITY_AGENDAS_URL} className={`${civicLink} mt-2 w-fit`}><Localized en="City calendar and participation details" es="Calendario municipal y detalles para participar" /><span aria-hidden="true">↗</span></a>
+      </div>
+    </section>
+    <section id="november" aria-labelledby="november-heading" className="scroll-mt-6">
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-3"><div><p className="mb-2 text-sm font-semibold uppercase tracking-wider text-civic-navy"><CivicDate date="2026-11-03" /></p><h2 id="november-heading" className="text-2xl font-semibold sm:text-3xl"><Localized en="November choices" es="Opciones de noviembre" /></h2></div><Link href="/elections/2026-general" className={civicLink}><Localized en="Open the election guide" es="Abrir la guía electoral" /><span aria-hidden="true">→</span></Link></div>
+      <div className="grid gap-6 md:grid-cols-2">
+        <article className="border border-slate-200 bg-white p-6 sm:p-7"><p className="mb-3 text-sm font-semibold text-civic-navy"><Localized en="Mayor · runoff" es="Alcaldía · segunda vuelta" /></p><h3 className="text-2xl font-semibold"><span lang="en">Claudia Jimenez & Ahmad Anderson</span></h3><p className="mt-4 leading-7 text-slate-700"><Localized en="The council’s July 21 certification advances both candidates to the November mayoral runoff. See the official result and how campaign-money coverage works." es="La certificación del Concejo del 21 de julio envía a ambos candidatos a la segunda vuelta de la elección de alcalde en noviembre. Consulte el resultado oficial y cómo se presenta el financiamiento de campañas." /></p><SourceLink sourceId="runoff-2026" /><Link className={`${civicLink} mt-3`} href="/elections/2026-general"><Localized en="Explore the mayor’s race" es="Explorar la elección de alcalde" /><span aria-hidden="true">→</span></Link></article>
+        <article className="border border-slate-200 bg-white p-6 sm:p-7"><p className="mb-3 text-sm font-semibold text-civic-navy"><Localized en="Ballot proposal · fire stations" es="Propuesta electoral · estaciones de bomberos" /></p><h3 className="text-2xl font-semibold"><Localized en="Up to $120 million in bonds" es="Hasta $120 millones en bonos" /></h3><p className="mt-4 leading-7 text-slate-700"><Localized en="The council placed a fire-station bond proposal on the November ballot. It requires two-thirds voter approval. Placement on the ballot does not authorize borrowing by itself." es="El Concejo colocó una propuesta de bonos para estaciones de bomberos en la boleta de noviembre. Requiere la aprobación de dos tercios de los votantes. Colocarla en la boleta no autoriza por sí solo el endeudamiento." /></p><SourceLink sourceId="fire-bond" /><Link className={`${civicLink} mt-3`} href="/stories/fire-stations-and-emergency-response"><Localized en="Understand the bond proposal" es="Entender la propuesta de bonos" /><span aria-hidden="true">→</span></Link></article>
+      </div>
+      <p className="mt-4 text-sm leading-6 text-slate-600"><Localized en="A starting guide to Richmond city choices, not a complete sample ballot. Check the official voter guide for all contests and final measure labels." es="Una guía inicial de opciones municipales, no una boleta de muestra completa. Consulte la guía electoral oficial para ver todas las contiendas y las letras definitivas de las medidas." /></p>
+    </section>
+    <section aria-labelledby="start-here-heading" className="my-12 border-y border-slate-200 py-7 sm:my-16"><h2 id="start-here-heading" className="text-xl font-semibold"><Localized en="New to local government?" es="¿Está empezando a conocer el gobierno local?" /></h2><div className="mt-3 flex flex-wrap gap-x-8 gap-y-1"><Link href="/elections/find-my-district" className={civicLink}><Localized en="Find your council district" es="Encuentre su distrito" /><span aria-hidden="true">→</span></Link><Link href="/council" className={civicLink}><Localized en="Meet your representatives" es="Conozca a sus representantes" /><span aria-hidden="true">→</span></Link><Link href="/meetings" className={civicLink}><Localized en="Browse council meetings" es="Explorar reuniones del Concejo" /><span aria-hidden="true">→</span></Link></div></section>
+    <div className="mb-4 max-w-3xl"><SourceNote /></div>
+  </CivicLanguageScope></div>
 }

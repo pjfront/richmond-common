@@ -1,17 +1,13 @@
 'use client'
 
-import { useMemo, useCallback } from 'react'
+import { useCallback } from 'react'
 import { useQueryState, parseAsString } from 'nuqs'
-import { format } from 'date-fns'
 import MeetingAgendaList from './MeetingAgendaList'
 import MiniCalendar from './MiniCalendar'
-import { useOperatorMode } from './OperatorModeProvider'
 import type { MeetingWithCounts } from '@/lib/types'
 
 interface MeetingsDiscoveryProps {
   meetings: MeetingWithCounts[]
-  /** Record of meeting_id → published flag count (serializable across server/client boundary) */
-  flagCounts: Record<string, number>
 }
 
 /**
@@ -25,12 +21,8 @@ interface MeetingsDiscoveryProps {
  * for ~2 meetings/month density. Mini-calendar sidebar handles
  * temporal navigation.
  */
-export default function MeetingsDiscovery({ meetings, flagCounts }: MeetingsDiscoveryProps) {
-  const { isOperator } = useOperatorMode()
+export default function MeetingsDiscovery({ meetings }: MeetingsDiscoveryProps) {
   const [month, setMonth] = useQueryState('month', parseAsString)
-
-  // Hide scanner flag counts from public users
-  const visibleFlagCounts = isOperator ? flagCounts : {}
 
   // When mini-calendar clicks a meeting, navigate to its month
   const handleCalendarDateClick = useCallback((meetingId: string) => {
@@ -50,7 +42,6 @@ export default function MeetingsDiscovery({ meetings, flagCounts }: MeetingsDisc
       <div className="flex-1 min-w-0">
         <MeetingAgendaList
           meetings={meetings}
-          flagCounts={visibleFlagCounts}
           activeMonth={activeMonth}
         />
       </div>

@@ -3,7 +3,7 @@
  *
  * Featured item at the top of the meeting page.
  * Selection is entirely objective (AI-delegable):
- *   1. Most public comments (min 3) — what the community cared about
+ *   1. Most recorded public comments (min 3), within this meeting's records
  *   2. Split votes, ranked by closest margin (4-3 > 5-2 > 6-1)
  *   3. Pulled-from-consent items
  *   4. No qualifying item → renders nothing
@@ -52,13 +52,13 @@ function buildNarrative(item: AgendaItemWithMotions): string {
 
   if (item.public_comment_count > 0) {
     parts.push(
-      `${item.public_comment_count} ${item.public_comment_count === 1 ? 'person' : 'people'} spoke to City Council on this item.`
+      `${item.public_comment_count} public ${item.public_comment_count === 1 ? 'comment is' : 'comments are'} recorded for this item.`
     )
   }
 
   const tally = getVoteTallySummary(item)
   if (tally) {
-    parts.push(`Council voted ${tally}.`)
+    parts.push(`One motion has a recorded ${tally} aye–nay split. See the motion text and its own outcome.`)
   }
 
   if (parts.length > 0) return parts.join(' ')
@@ -71,8 +71,8 @@ function buildNarrative(item: AgendaItemWithMotions): string {
 }
 
 function getHeroLabel(item: AgendaItemWithMotions): string {
-  if (item.public_comment_count >= 3) return 'Most Discussed Item'
-  if (hasSplitVote(item)) return 'Most Contested Item'
+  if (item.public_comment_count >= 3) return 'Most recorded public comments'
+  if (hasSplitVote(item)) return 'Closest recorded split vote'
   if (item.was_pulled_from_consent) return 'Pulled from Consent'
   return 'Notable Item'
 }
@@ -116,19 +116,19 @@ export default function HeroItem({ items, flags }: HeroItemProps) {
           )}
         </div>
       )}
-      <div className="flex items-center gap-3 mt-3">
+      <div className="flex flex-wrap items-center gap-3 mt-3">
         <span className="inline-flex items-center px-2.5 py-1 rounded text-sm font-medium bg-civic-navy/10 text-civic-navy border border-civic-navy/20">
           {hero.public_comment_count > 0
-            ? `${hero.public_comment_count} public ${hero.public_comment_count === 1 ? 'speaker' : 'speakers'}`
-            : 'No public speakers'}
+            ? `${hero.public_comment_count} public ${hero.public_comment_count === 1 ? 'comment' : 'comments'} recorded`
+            : 'No comment records available'}
         </span>
         {tally && (
           <span className={`inline-flex items-center px-2.5 py-1 rounded text-sm font-medium ${
-            passed
-              ? 'bg-slate-100 text-civic-navy border border-slate-300'
-              : 'bg-red-50 text-vote-nay border border-red-200'
+            passed === false
+              ? 'bg-red-50 text-vote-nay border border-red-200'
+              : 'bg-slate-100 text-civic-navy border border-slate-300'
           }`}>
-            {tally}
+            {`Split motion ${tally}${passed === null ? ' · outcome unverified' : passed ? ' · passed' : ' · failed'}`}
           </span>
         )}
         {hero.financial_amount && (

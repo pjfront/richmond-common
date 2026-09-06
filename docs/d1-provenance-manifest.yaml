@@ -36,6 +36,15 @@
 # new entry is required when adding a public-facing table.
 
 tables:
+  finance_public_events:
+    status: exempt
+    reason: "Security-invoker projection of finance_events; original filing URLs, extracted_at, source_tier and confidence_score are NOT NULL on the base table. Public RLS excludes unresolved and low-confidence entries."
+  finance_public_coverage:
+    status: exempt
+    reason: "Security-invoker projection of finance_source_coverage; source/window coverage with the full NOT NULL provenance quartet on its base table. Partial coverage is explicit."
+  civic_brief_candidates:
+    status: exempt
+    reason: "Composite reviewed publication: sources[] holds source URLs, titles, tiers and dates; published_at and content_version identify the exact approved text. Public RLS exposes published versions only; the publication RPC validates sources. A single confidence probability would misrepresent this editorial artifact."
   # ──────────────────────────────────────────────────────────────────────
   # COMPLIANT — all four columns NOT NULL, schema-enforced
   # ──────────────────────────────────────────────────────────────────────

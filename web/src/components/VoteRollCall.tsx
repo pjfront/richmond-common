@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef } from 'react'
 import type { MotionWithVotes, Vote } from '@/lib/types'
 import ReportErrorLink from './ReportErrorLink'
+import { formalMotionResult, motionKindLabel, motionTallyLabel, normalizeRecordedChoice } from '@/lib/vote-records'
 
 /**
  * VoteRollCall — parliamentary roll-call grid for agenda item motions.
@@ -19,20 +20,6 @@ import ReportErrorLink from './ReportErrorLink'
  *   4. aria-label on each circle ("Soheila Bana — Aye")
  *   5. Tooltip on hover/focus with full name + vote
  */
-
-// --- Vote normalization (shared with VoteBadge) ---
-
-const VOTE_ALIASES: Record<string, string> = {
-  noe: 'nay',
-  no: 'nay',
-  yes: 'aye',
-  yea: 'aye',
-}
-
-function normalizeVoteChoice(choice: string): string {
-  const lower = choice.toLowerCase()
-  return VOTE_ALIASES[lower] ?? lower
-}
 
 // --- Roster derivation ---
 
@@ -91,13 +78,6 @@ function matchVotes(votes: Vote[], roster: RosterEntry[]): (Vote | null)[] {
 
 // --- Tally computation (carried from VoteBreakdown) ---
 
-function computeTally(votes: Vote[]): string | null {
-  if (votes.length === 0) return null
-  const ayes = votes.filter(v => v.vote_choice === 'aye').length
-  const nays = votes.filter(v => v.vote_choice === 'nay').length
-  return `${ayes} to ${nays}`
-}
-
 // --- Circle styles ---
 
 const CIRCLE_STYLES: Record<string, string> = {
@@ -105,6 +85,8 @@ const CIRCLE_STYLES: Record<string, string> = {
   nay: 'bg-vote-nay text-white',
   abstain: 'bg-vote-abstain text-white',
   absent: 'bg-white text-slate-300 border border-dashed border-slate-300',
+  recused: 'bg-slate-100 text-slate-700 border border-slate-400',
+  'not-recorded': 'bg-white text-slate-600 border border-dotted border-slate-400',
 }
 
 const RING_STYLES: Record<string, string> = {
@@ -112,6 +94,8 @@ const RING_STYLES: Record<string, string> = {
   nay: 'ring-vote-nay/50',
   abstain: 'ring-vote-abstain/50',
   absent: 'ring-slate-300',
+  recused: 'ring-slate-400',
+  'not-recorded': 'ring-slate-300',
 }
 
 // --- VoteCircle sub-component ---
@@ -122,20 +106,17 @@ function VoteCircle({ entry, vote }: { entry: RosterEntry; vote: Vote | null }) 
   const ref = useRef<HTMLSpanElement>(null)
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const choice = vote ? normalizeVoteChoice(vote.vote_choice) : 'absent'
-  const label = choice.charAt(0).toUpperCase() + choice.slice(1)
+  const choice = vote ? normalizeRecordedChoice(vote.vote_choice) : 'not-recorded'
+  const label = choice === 'not-recorded' ? 'Vote not recorded' : choice.charAt(0).toUpperCase() + choice.slice(1)
   const tooltipText = `${entry.fullName}: ${label}`
 
-  useEffect(() => {
-    if (open && ref.current) {
+  const show = () => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current)
+    if (ref.current) {
       const rect = ref.current.getBoundingClientRect()
       const spaceBelow = window.innerHeight - rect.bottom
       setPosition(spaceBelow < 100 ? 'above' : 'below')
     }
-  }, [open])
-
-  const show = () => {
-    if (timeoutRef.current) clearTimeout(timeoutRef.current)
     setOpen(true)
   }
 
@@ -183,20 +164,20 @@ function VoteCircle({ entry, vote }: { entry: RosterEntry; vote: Vote | null }) 
 export default function VoteRollCall({ motions }: { motions: MotionWithVotes[] }) {
   if (motions.length === 0) return null
 
-  // Split into contested (individual votes recorded) vs procedural (no individual votes)
-  const contested = motions.filter(m => m.votes.length > 0)
-  const procedural = motions.filter(m => m.votes.length === 0)
+  // Roll-call availability does not determine whether a motion is procedural.
+  const withRollCall = motions.filter(m => m.votes.length > 0)
+  const withoutRollCall = motions.filter(m => m.votes.length === 0)
 
   const roster = deriveRoster(motions)
 
   return (
     <div className="space-y-4">
-      {/* Contested motions — full roll-call display */}
-      {contested.length > 0 && (
+      {/* Motions with individual vote records */}
+      {withRollCall.length > 0 && (
         <div className="space-y-4">
           {/* Header: last names + legend */}
           {roster.length > 0 && (
-            <div className="flex items-end justify-between" role="presentation" aria-hidden="true">
+            <div className="flex flex-wrap items-end justify-between gap-y-2" role="presentation" aria-hidden="true">
               <div className="flex gap-2">
                 {roster.map(entry => (
                   <div
@@ -221,17 +202,15 @@ export default function VoteRollCall({ motions }: { motions: MotionWithVotes[] }
             </div>
           )}
 
-          {contested.map((motion) => {
-            // result canonicalized to 'passed' | 'failed' at write time
-            // (extract_transcript_votes._normalize_result + minutes-extraction
-            // produces the same canonical set).
-            const resultColor = motion.result === 'passed'
+          {withRollCall.map((motion) => {
+            const result = formalMotionResult(motion)
+            const resultColor = result === 'passed'
               ? 'text-vote-aye'
-              : motion.result === 'failed'
+              : result === 'failed'
               ? 'text-vote-nay'
               : 'text-slate-600'
 
-            const tally = computeTally(motion.votes)
+            const tally = motionTallyLabel(motion.votes)
             const mapped = matchVotes(motion.votes, roster)
             const isTentative = motion.source === 'transcript'
 
@@ -243,19 +222,17 @@ export default function VoteRollCall({ motions }: { motions: MotionWithVotes[] }
                 {isTentative && (
                   <div
                     className="mb-2 inline-flex items-center gap-1.5 rounded-md border border-civic-amber/40 bg-civic-amber/10 px-2 py-0.5 text-[11px] font-medium text-civic-amber"
-                    title="This vote was parsed from the auto-captioned KCRT recording. The official meeting minutes typically publish 4-6 weeks after the meeting and will replace this with verified roll-call data."
+                    title="This vote was parsed from an auto-captioned recording. Official minutes are needed to verify this motion and outcome."
                   >
                     <span aria-hidden="true">●</span>
                     <span>Tentative: auto-captioned recording</span>
                   </div>
                 )}
                 <div className="flex items-start justify-between gap-2 sm:gap-4">
-                  <p className="text-sm text-slate-700 break-words flex-1 min-w-0">
-                    {motion.motion_text}
-                  </p>
-                  <div className="text-right shrink-0">
+                  <div className="flex-1 min-w-0"><p className="mb-1 text-sm font-medium text-slate-600">{motionKindLabel(motion)} · {motion.source === 'minutes' ? 'Official minutes' : 'Tentative record'}</p><p className="text-sm text-slate-700 break-words">{motion.motion_text}</p></div>
+                  <div className="max-w-[45%] text-right shrink-0">
                     <span className={`font-semibold text-sm ${resultColor}`}>
-                      {motion.result.charAt(0).toUpperCase() + motion.result.slice(1)}
+                      {result === 'unknown' ? 'Outcome unverified' : result.charAt(0).toUpperCase() + result.slice(1)}
                     </span>
                     {tally && (
                       <p className="text-xs text-slate-500 mt-0.5">{tally}</p>
@@ -263,20 +240,20 @@ export default function VoteRollCall({ motions }: { motions: MotionWithVotes[] }
                   </div>
                 </div>
 
-                <div className="flex gap-2 mt-2" role="group" aria-label="Individual votes">
+                <div className="flex flex-wrap gap-2 mt-2" role="group" aria-label="Individual votes">
                   {mapped.map((vote, i) => (
                     <VoteCircle key={roster[i].sortKey} entry={roster[i]} vote={vote} />
                   ))}
                 </div>
 
-                {motion.vote_explainer && (
+                {motion.vote_explainer && result !== 'unknown' && (
                   <div className="bg-blue-50 border border-blue-100 rounded-md p-3 mt-3">
                     <p className="text-xs font-medium text-blue-600 mb-1">Why This Vote Matters</p>
                     <p className="text-sm text-slate-700 leading-relaxed">
                       {motion.vote_explainer}
                     </p>
                     <p className="text-[10px] text-slate-400 mt-2">
-                      Auto-generated context. Source: official meeting records.
+                      Auto-generated context based on {motion.source === 'minutes' ? 'official minutes' : 'a tentative transcript record'}.
                     </p>
                   </div>
                 )}
@@ -286,27 +263,26 @@ export default function VoteRollCall({ motions }: { motions: MotionWithVotes[] }
         </div>
       )}
 
-      {/* Procedural motions — compact list, lower visual weight */}
-      {procedural.length > 0 && (
-        <div className={contested.length > 0 ? 'border-t border-slate-100 pt-3' : ''}>
-          {contested.length > 0 && (
-            <p className="text-[10px] font-medium uppercase tracking-wide text-slate-300 mb-2">Other motions</p>
+      {/* Motions without individual roll-call records; do not infer their type. */}
+      {withoutRollCall.length > 0 && (
+        <div className={withRollCall.length > 0 ? 'border-t border-slate-100 pt-3' : ''}>
+          {withRollCall.length > 0 && (
+            <p className="text-sm font-medium text-slate-600 mb-2">Motions without individual roll-call records</p>
           )}
           <div className="space-y-1">
-            {procedural.map((motion) => {
-              const resultColor = motion.result === 'passed'
+            {withoutRollCall.map((motion) => {
+              const result = formalMotionResult(motion)
+              const resultColor = result === 'passed'
                 ? 'text-vote-aye'
-                : motion.result === 'failed'
+                : result === 'failed'
                 ? 'text-vote-nay'
                 : 'text-slate-500'
 
               return (
                 <div key={motion.id} className="flex items-baseline justify-between gap-3 py-1">
-                  <p className="text-xs text-slate-500 break-words flex-1 min-w-0">
-                    {motion.motion_text}
-                  </p>
-                  <span className={`text-xs font-medium shrink-0 ${resultColor}`}>
-                    {motion.result.charAt(0).toUpperCase() + motion.result.slice(1)}
+                  <div className="flex-1 min-w-0"><p className="mb-1 text-sm font-medium text-slate-600">{motionKindLabel(motion)} · {motion.source === 'minutes' ? 'Official minutes' : 'Tentative record'}</p><p className="text-sm text-slate-600 break-words">{motion.motion_text}</p></div>
+                  <span className={`max-w-[40%] text-sm font-medium shrink-0 ${resultColor}`}>
+                    {result === 'unknown' ? 'Outcome unverified' : result.charAt(0).toUpperCase() + result.slice(1)}
                   </span>
                 </div>
               )

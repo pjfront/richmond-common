@@ -9,6 +9,7 @@ venv/
 
 # Logs
 *.log
+tmp/finance/
 
 # Operator-specific Chat Claude config (contains personal Notion IDs)
 docs/CHAT-SYSTEM-PROMPT.md

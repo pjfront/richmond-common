@@ -39,5 +39,16 @@ jobs:
           node-version: '20'
       - name: Install isolated PostgreSQL runtime
         run: npm install --prefix "$RUNNER_TEMP/permission-db" --no-audit --no-fund --ignore-scripts @electric-sql/pglite@0.5.8
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Install packet writer database dependencies
+        run: pip install psycopg2-binary python-dotenv pytest requests pymupdf
       - name: Exercise roles, grants, RLS, and migration replay
-        run: node tests/operator_table_security.integration.mjs "$RUNNER_TEMP/permission-db/node_modules/@electric-sql/pglite/dist/index.js"
+        run: |
+          node tests/operator_table_security.integration.mjs "$RUNNER_TEMP/permission-db/node_modules/@electric-sql/pglite/dist/index.js"
+          node tests/finance_ledger.integration.mjs "$RUNNER_TEMP/permission-db/node_modules/@electric-sql/pglite/dist/index.js"
+          node tests/operator_review_inbox.integration.mjs "$RUNNER_TEMP/permission-db/node_modules/@electric-sql/pglite/dist/index.js"
+          python tests/civic_review_packets.integration.py "$RUNNER_TEMP/permission-db/node_modules/@electric-sql/pglite/dist/index.js"
+          node tests/finance_legacy_repair.integration.mjs "$RUNNER_TEMP/permission-db/node_modules/@electric-sql/pglite/dist/index.js"
+          node tests/finance_batch.integration.mjs "$RUNNER_TEMP/permission-db/node_modules/@electric-sql/pglite/dist/index.js"

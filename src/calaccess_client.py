@@ -207,7 +207,7 @@ def find_richmond_filing_ids(zip_path: Path) -> dict[str, dict]:
 
 def get_richmond_contributions(
     zip_path: Path,
-    min_amount: float = 100,
+    min_amount: float | None = None,
     filing_map: Optional[dict] = None,
     *,
     city_fips: str | None = None,
@@ -225,7 +225,7 @@ def get_richmond_contributions(
     if filing_map is None:
         filing_map = find_richmond_filing_ids(zip_path)
 
-    print(f"Extracting contributions from RCPT_CD (min ${min_amount:.0f})...")
+    print(f"Extracting contributions from RCPT_CD (minimum: {min_amount})...")
     contributions = []
 
     with zipfile.ZipFile(zip_path, "r") as zf:
@@ -244,7 +244,7 @@ def get_richmond_contributions(
                 except ValueError:
                     continue
 
-                if amount < min_amount:
+                if min_amount is not None and amount < min_amount:
                     continue
 
                 info = filing_map[filing_id]
@@ -264,10 +264,15 @@ def get_richmond_contributions(
                     "amount": amount,
                     "date": (row.get("RCPT_DATE") or "").strip(),
                     "entity_code": (row.get("ENTITY_CD") or "").strip(),
+                    "source": "calaccess",
+                    "transaction_id": (row.get("TRAN_ID") or "").strip(),
+                    "amendment_id": (row.get("AMEND_ID") or "").strip(),
+                    "source_url": f"https://cal-access.sos.ca.gov/Campaign/Committees/Detail.aspx?id={info['filer_id']}",
+                    "amount_kind": "adjustment" if amount < 0 else "monetary",
                     "city_fips": resolved_fips,
                 })
 
-    print(f"Found {len(contributions)} contributions >= ${min_amount:.0f}")
+    print(f"Found {len(contributions)} contributions (minimum: {min_amount})")
     return contributions
 
 
