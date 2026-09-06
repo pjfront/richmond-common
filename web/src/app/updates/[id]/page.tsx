@@ -25,7 +25,7 @@ export default async function PublishedUpdatePage({ params, searchParams }: {
     <Link href={subject.href} className="inline-flex min-h-11 items-center text-civic-navy underline underline-offset-4">Back to {subject.label}</Link>
     <article id={`brief-${brief.id}-v${brief.content_version}`} className="mt-6">
       <h1 className="text-3xl font-semibold leading-tight text-civic-navy sm:text-4xl">{brief.title}</h1>
-      <p className="mt-4 text-sm text-slate-600">AI-written, operator-reviewed · published {formatCivicDate(brief.published_at)} · version {brief.content_version}</p>
+      <p className="mt-4 text-sm text-slate-600">AI-written; checked against linked sources · published {formatCivicDate(brief.published_at)} · version {brief.content_version}</p>
       <p className="mt-6 whitespace-pre-line text-lg leading-8 text-slate-700">{brief.body}</p>
       <h2 className="mt-8 text-xl font-semibold text-civic-navy">Sources for this update</h2>
       <ul className="mt-3 space-y-2">{brief.sources.map((source, index) => <li key={`${source.url}-${index}`} className="text-sm text-slate-600">

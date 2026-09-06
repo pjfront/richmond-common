@@ -17,7 +17,8 @@ describe('reviewed update destination', () => {
     const html = renderToStaticMarkup(await PublishedUpdatePage(props))
     expect(mocked.getPublishedCivicBriefVersion).toHaveBeenCalledWith(id, '2', '2026-09-01T12:00:00Z')
     expect(html).toContain(`id="brief-${id}-v2"`)
-    expect(html).toContain('AI-written, operator-reviewed')
+    expect(html).toContain('AI-written; checked against linked sources')
+    expect(html).not.toMatch(/operator-reviewed|human-reviewed/)
     expect(html).toContain('proposal, not adoption')
     expect(html).toContain('href="/elections/2026-general"')
     expect(html).toContain('href="https://www.richmondca.gov/Archive.aspx?ADID=17785"')
@@ -27,7 +28,7 @@ describe('reviewed update destination', () => {
     const html = renderToStaticMarkup(await PublishedUpdatePage(props))
     expect(html).toContain('This exact publication is no longer available')
     expect(html).toContain('original sources remain linked in your email')
-    expect(html).not.toContain('AI-written, operator-reviewed')
+    expect(html).not.toContain('AI-written; checked against linked sources')
   })
   it('distinguishes a temporary source failure from an unavailable publication', async () => {
     mocked.getPublishedCivicBriefVersion.mockRejectedValue(new Error('timeout'))

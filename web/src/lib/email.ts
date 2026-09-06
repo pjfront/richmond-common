@@ -316,7 +316,7 @@ export function buildDigestEmail(
 
   const briefSections = briefs.map(brief => `<div style="margin-bottom:28px;padding-bottom:24px;border-bottom:1px solid #e2e8f0;">
     <h2 style="color:#1e3a5f;font-size:17px;">${escapeEmailHtml(brief.title)}</h2>
-    <p>AI-written, operator-reviewed. Published ${escapeEmailHtml(brief.published_at)} · version ${brief.content_version}.</p>
+    <p>AI-written; checked against linked sources. Published ${escapeEmailHtml(brief.published_at)} · version ${brief.content_version}.</p>
     <p style="white-space:pre-line;">${escapeEmailHtml(brief.body)}</p>
     <a href="${escapeEmailHtml(digestBriefHref(brief))}">Read this update and its continuing story</a>
     <ul>${brief.sources.map(source => `<li><a href="${escapeEmailHtml(source.url)}">${escapeEmailHtml(source.title)}</a> · ${source.source_tier === 1 ? 'Official record' : 'Independent journalism'}${source.source_date ? ` · ${escapeEmailHtml(source.source_date)}` : ' · source date not supplied'}</li>`).join('')}</ul>
@@ -355,7 +355,7 @@ export function buildDigestEmail(
   const deliveryFooter = canary
     ? 'CANARY TEST — this message was sent only to the operator-approved test address. No subscriber delivery was recorded.'
     : `You're receiving this because you subscribed at richmondcommons.org.\n${manageUrl ? `Manage preferences: ${manageUrl}\n` : ''}Unsubscribe: ${unsubscribeUrl}`
-  const briefText = briefs.map(brief => `${brief.title}\nAI-written, operator-reviewed. Published ${brief.published_at} · version ${brief.content_version}.\n\n${brief.body}\n\nRead this update: ${digestBriefHref(brief)}\n${brief.sources.map(source => `${source.title} (${source.source_tier === 1 ? 'Official record' : 'Independent journalism'}; ${source.source_date ?? 'source date not supplied'}): ${source.url}`).join('\n')}`).join('\n\n---\n\n')
+  const briefText = briefs.map(brief => `${brief.title}\nAI-written; checked against linked sources. Published ${brief.published_at} · version ${brief.content_version}.\n\n${brief.body}\n\nRead this update: ${digestBriefHref(brief)}\n${brief.sources.map(source => `${source.title} (${source.source_tier === 1 ? 'Official record' : 'Independent journalism'}; ${source.source_date ?? 'source date not supplied'}): ${source.url}`).join('\n')}`).join('\n\n---\n\n')
   const text = `${subject}\n\n${[briefText, textSections].filter(Boolean).join('\n\n---\n\n')}\n\n---\n${footerNote}\n${deliveryFooter}`
 
   return { subject, html, text }
