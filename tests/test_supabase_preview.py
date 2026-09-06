@@ -861,6 +861,14 @@ class FakeSupabase:
         assert project_ref == BRANCH_REF
         if sql == "select 1 as ok":
             return [{"ok": 1}]
+        if sql == preview._DATABASE_STARTUP_HEALTH_QUERY:
+            assert read_only is True
+            # Lifecycle fixtures model an already mature server. Dedicated
+            # startup tests below exercise clock progression and restarts.
+            created_at = self.branches[0].created_at
+            return [{"postmaster_started_at": created_at.isoformat(),
+                     "observed_at": (created_at + timedelta(seconds=65)).isoformat(),
+                     "in_recovery": False}]
         if sql == preview._EMPTY_APPLICATION_CATALOG_QUERY:
             assert read_only is True
             return list(self.application_objects)

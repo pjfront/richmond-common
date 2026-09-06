@@ -67,9 +67,16 @@ immutable UUID/ref until the authoritative `preview_project_status` is
 health. Replacement, timeout, or an unsafe record fails closed and invokes
 exact hard cleanup before Vercel state is written.
 
-A fresh database can restart after its first successful `SELECT 1`. Bootstrap
-first waits for authoritative `preview_project_status=ACTIVE_HEALTHY` on the
-exact immutable branch before its first database query or baseline write.
+A fresh database can restart after its first successful SQL read, even while
+the control plane reports `ACTIVE_HEALTHY`. Before its first baseline write,
+bootstrap requires the exact branch to be at least 60 seconds old and two
+consecutive read-only samples of the same PostgreSQL postmaster with at least
+30 seconds of uptime. Every sample rechecks immutable UUID/ref/creation time,
+branch scope, Micro/data-less boundaries, and authoritative service health.
+Recovery, a changed postmaster, or an unhealthy sample resets readiness.
+Polling is capped at 180 seconds (or the caller's shorter timeout); an
+in-flight API request retains the existing HTTP timeout. A later platform
+restart remains possible and never authorizes retrying a schema write.
 The clean-room catalog/clone guards and post-restore health check still apply.
 Subsequent
 Management API read-only queries retry only the API's explicit connection
