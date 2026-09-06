@@ -5,6 +5,9 @@ Enumerates all Archive Module IDs (AMIDs) on a CivicPlus city website,
 catalogs available document categories, and downloads documents by
 priority tier into Layer 1.
 
+Reads downloaded Archive Center PDFs and their deterministic PyMuPDF text.
+Does NOT read generated summaries or call a model for scanned documents.
+
 Architecture:
   - Discovery: enumerate_amids scans AMID range, identifies active modules
   - Listing: _parse_document_list extracts ADID + title + date per module
@@ -24,6 +27,7 @@ Usage:
 from __future__ import annotations
 
 import json
+import hashlib
 import logging
 import os
 import re
@@ -48,6 +52,11 @@ CITY_FIPS = "0660620"
 DATA_DIR = Path(__file__).parent / "data"
 RAW_DIR = DATA_DIR / "raw" / "archive_center"
 CACHE_DIR = DATA_DIR / "cache"
+
+# New scan evidence has no historical storage footprint. Keep normal daily
+# catch-up small; existing hashes and text-bearing documents do not spend this.
+MAX_NEW_SCAN_DOCUMENTS = 20
+MAX_NEW_SCAN_BYTES = 32 * 1024 * 1024
 
 CIVICPLUS_PLATFORM_PROFILE = {
     "platform": "CivicPlus (CivicEngage)",
@@ -364,7 +373,11 @@ def extract_text(filepath: Path) -> str | None:
 
 # ── Database operations ───────────────────────────────────────
 
-def save_to_documents(conn, docs: list[dict], city_fips: str, *, base_url: str | None = None) -> dict:
+def save_to_documents(
+    conn, docs: list[dict], city_fips: str, *, base_url: str | None = None,
+    max_new_scan_documents: int = MAX_NEW_SCAN_DOCUMENTS,
+    max_new_scan_bytes: int = MAX_NEW_SCAN_BYTES,
+) -> dict:
     """Save archive documents to Layer 1 documents table.
 
     Counter Contract (Phase D-3b, 2026-05-16, audit B9): uses
@@ -383,18 +396,79 @@ def save_to_documents(conn, docs: list[dict], city_fips: str, *, base_url: str |
     from db import ingest_document_with_status
 
     _base = base_url or CIVICPLUS_BASE_URL
+    if max_new_scan_documents < 0 or max_new_scan_bytes < 0:
+        raise ValueError("Archive scan persistence limits cannot be negative")
     inserted = 0
     deduplicated = 0
     errors = 0
+    scans_inserted = 0
+    scan_bytes_inserted = 0
+    scans_deferred = 0
+    scans_retained = 0
 
-    for doc in docs:
+    # The City assigns ascending ADIDs. Prioritize newer evidence when the
+    # scan budget is reached, without changing any source identity or date.
+    ordered_docs = sorted(docs, key=lambda doc: (
+        int(str(doc.get("adid"))) if str(doc.get("adid", "")).isdecimal() else 0
+    ), reverse=True)
+    for doc in ordered_docs:
         try:
             text = (doc.get("text") or "").replace("\x00", "")
+            if text.strip():
+                # Keep the historical identity of text-bearing records. A raw
+                # PDF migration must not duplicate all existing text-hash rows.
+                raw_content = text.encode("utf-8")
+                content_format = "legacy_extracted_text"
+            else:
+                # Image-only PDFs are still primary evidence. Hashing None
+                # dropped every such record; fabricated empty text would merge
+                # unrelated scans. Preserve the exact downloaded bytes instead.
+                pdf_path = doc.get("pdf_path")
+                if not pdf_path:
+                    raise ValueError("No extracted text or downloaded PDF is available")
+                content_format = "pdf_bytes"
+                with Path(pdf_path).open("rb") as pdf_file:
+                    prefix = pdf_file.read(5)
+                    if prefix != b"%PDF-":
+                        raise ValueError("Downloaded archive content is not a PDF")
+                    # Hash retained/oversized scans without loading the whole
+                    # PDF into memory. Only an admitted new scan is materialized.
+                    digest = hashlib.sha256(prefix)
+                    pdf_size = len(prefix)
+                    while chunk := pdf_file.read(1024 * 1024):
+                        digest.update(chunk)
+                        pdf_size += len(chunk)
+                    content_hash = digest.hexdigest()
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "SELECT id FROM documents WHERE city_fips = %s AND content_hash = %s",
+                            (city_fips, content_hash),
+                        )
+                        retained = cur.fetchone()
+                    if retained:
+                        deduplicated += 1
+                        scans_retained += 1
+                        continue
+                    if (
+                        scans_inserted >= max_new_scan_documents
+                        or scan_bytes_inserted + pdf_size > max_new_scan_bytes
+                    ):
+                        scans_deferred += 1
+                        continue
+                    # Keep the final read bounded even if a local download is
+                    # replaced or grows after hashing; never persist changed bytes.
+                    pdf_file.seek(0)
+                    raw_content = pdf_file.read(pdf_size + 1)
+                    if (
+                        len(raw_content) != pdf_size
+                        or hashlib.sha256(raw_content).hexdigest() != content_hash
+                    ):
+                        raise ValueError("Downloaded archive PDF changed before persistence")
             _doc_id, was_inserted = ingest_document_with_status(
                 conn,
                 city_fips=city_fips,
                 source_type="archive_center",
-                raw_content=text.encode("utf-8") if text else None,
+                raw_content=raw_content,
                 raw_text=text if text.strip() else None,
                 credibility_tier=1,
                 source_url=f"{_base}{ARCHIVE_DOCUMENT_URL.format(adid=doc['adid'])}",
@@ -407,12 +481,19 @@ def save_to_documents(conn, docs: list[dict], city_fips: str, *, base_url: str |
                     "title": doc.get("title"),
                     "date": doc.get("date"),
                     "pipeline": "archive_center_discovery",
+                    "raw_content_format": content_format,
+                    "text_extraction_status": "available" if text.strip() else "unavailable",
                 },
             )
             if was_inserted:
                 inserted += 1
+                if content_format == "pdf_bytes":
+                    scans_inserted += 1
+                    scan_bytes_inserted += len(raw_content)
             else:
                 deduplicated += 1
+            if content_format == "pdf_bytes":
+                scans_retained += 1
         except Exception as e:
             logger.error(f"Failed to save ADID {doc.get('adid')}: {e}")
             errors += 1
@@ -422,12 +503,16 @@ def save_to_documents(conn, docs: list[dict], city_fips: str, *, base_url: str |
         "inserted": inserted,
         "deduplicated": deduplicated,
         "errors": errors,
-        "total": inserted + deduplicated + errors,
+        "total": inserted + deduplicated + errors + scans_deferred,
+        "scans_retained": scans_retained,
+        "scans_inserted": scans_inserted,
+        "scan_bytes_inserted": scan_bytes_inserted,
+        "scans_deferred": scans_deferred,
         # Backward-compat alias for any external caller that still
         # reads `saved` / `skipped` from this return value. Remove
         # after sweep confirms no external callers remain.
         "saved": inserted,
-        "skipped": deduplicated + errors,
+        "skipped": deduplicated + errors + scans_deferred,
     }
 
 
