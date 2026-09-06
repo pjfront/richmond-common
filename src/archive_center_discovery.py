@@ -426,26 +426,44 @@ def save_to_documents(
                 pdf_path = doc.get("pdf_path")
                 if not pdf_path:
                     raise ValueError("No extracted text or downloaded PDF is available")
-                raw_content = Path(pdf_path).read_bytes()
-                if not raw_content.startswith(b"%PDF-"):
-                    raise ValueError("Downloaded archive content is not a PDF")
                 content_format = "pdf_bytes"
-                with conn.cursor() as cur:
-                    cur.execute(
-                        "SELECT id FROM documents WHERE city_fips = %s AND content_hash = %s",
-                        (city_fips, hashlib.sha256(raw_content).hexdigest()),
-                    )
-                    retained = cur.fetchone()
-                if retained:
-                    deduplicated += 1
-                    scans_retained += 1
-                    continue
-                if (
-                    scans_inserted >= max_new_scan_documents
-                    or scan_bytes_inserted + len(raw_content) > max_new_scan_bytes
-                ):
-                    scans_deferred += 1
-                    continue
+                with Path(pdf_path).open("rb") as pdf_file:
+                    prefix = pdf_file.read(5)
+                    if prefix != b"%PDF-":
+                        raise ValueError("Downloaded archive content is not a PDF")
+                    # Hash retained/oversized scans without loading the whole
+                    # PDF into memory. Only an admitted new scan is materialized.
+                    digest = hashlib.sha256(prefix)
+                    pdf_size = len(prefix)
+                    while chunk := pdf_file.read(1024 * 1024):
+                        digest.update(chunk)
+                        pdf_size += len(chunk)
+                    content_hash = digest.hexdigest()
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "SELECT id FROM documents WHERE city_fips = %s AND content_hash = %s",
+                            (city_fips, content_hash),
+                        )
+                        retained = cur.fetchone()
+                    if retained:
+                        deduplicated += 1
+                        scans_retained += 1
+                        continue
+                    if (
+                        scans_inserted >= max_new_scan_documents
+                        or scan_bytes_inserted + pdf_size > max_new_scan_bytes
+                    ):
+                        scans_deferred += 1
+                        continue
+                    # Keep the final read bounded even if a local download is
+                    # replaced or grows after hashing; never persist changed bytes.
+                    pdf_file.seek(0)
+                    raw_content = pdf_file.read(pdf_size + 1)
+                    if (
+                        len(raw_content) != pdf_size
+                        or hashlib.sha256(raw_content).hexdigest() != content_hash
+                    ):
+                        raise ValueError("Downloaded archive PDF changed before persistence")
             _doc_id, was_inserted = ingest_document_with_status(
                 conn,
                 city_fips=city_fips,

@@ -1,6 +1,8 @@
 """No network/model calls: exercise real image-only PDFs and the real hash writer."""
 import hashlib
+import io
 import json
+from pathlib import Path
 
 import fitz
 import pytest
@@ -166,6 +168,63 @@ def test_new_scan_byte_budget_never_counts_existing_hashes(tmp_path):
     assert replay["deduplicated"] == 1
     assert replay["scans_deferred"] == 0
     assert replay["scan_bytes_inserted"] == 0
+
+
+def test_oversized_scan_is_hashed_in_chunks_without_a_full_read(tmp_path, monkeypatch):
+    path = tmp_path / "large-scan.pdf"
+    original = scanned_pdf(path) + b"\n" * (2 * 1024 * 1024)
+    requested_sizes = []
+
+    class ObservedPdf(io.BytesIO):
+        def read(self, size=-1):
+            requested_sizes.append(size)
+            return super().read(size)
+
+        def seek(self, *_):
+            raise AssertionError("Deferred PDF must not be materialized")
+
+    original_open = Path.open
+    monkeypatch.setattr(Path, "open", lambda self, *args, **kwargs:
+                        ObservedPdf(original) if self == path else original_open(self, *args, **kwargs))
+    conn = DocumentConnection()
+    result = save_to_documents(conn, [{"adid": "1", "pdf_path": path}], "0660620",
+                               max_new_scan_bytes=1024)
+    assert result["scans_deferred"] == 1
+    assert result["errors"] == 0
+    assert conn.rows == {}
+    assert requested_sizes[0] == 5
+    assert requested_sizes[1:] == [1024 * 1024] * 4
+
+
+@pytest.mark.parametrize("change", ["grow", "same_size"])
+def test_scan_changed_after_hashing_is_never_persisted(tmp_path, monkeypatch, change):
+    path = tmp_path / "changing-scan.pdf"
+    original = scanned_pdf(path)
+    changed = original + b"new bytes" if change == "grow" else original[:-1] + b"X"
+    requested_sizes = []
+
+    class ChangedPdf(io.BytesIO):
+        def read(self, size=-1):
+            requested_sizes.append(size)
+            return super().read(size)
+
+        def seek(self, offset, whence=0):
+            super().seek(0)
+            super().write(changed)
+            super().truncate()
+            return super().seek(offset, whence)
+
+    original_open = Path.open
+    monkeypatch.setattr(Path, "open", lambda self, *args, **kwargs:
+                        ChangedPdf(original) if self == path else original_open(self, *args, **kwargs))
+    conn = DocumentConnection()
+    result = save_to_documents(conn, [{"adid": "1", "pdf_path": path}], "0660620",
+                               max_new_scan_bytes=len(original))
+    assert result["errors"] == 1
+    assert result["scans_inserted"] == 0
+    assert conn.rows == {}
+    assert requested_sizes[-1] == len(original) + 1
+    assert -1 not in requested_sizes
 
 
 def test_failed_evidence_is_not_reported_as_complete(tmp_path, monkeypatch):

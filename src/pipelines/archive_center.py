@@ -34,8 +34,9 @@ def sync_archive_center(
 ) -> dict:
     """Sync documents from CivicPlus Archive Center.
 
-    For incremental: downloads new docs from Tier 1-2 AMIDs since last sync.
-    For full: re-enumerates all AMIDs and downloads Tier 1-2.
+    Both modes currently enumerate the full Tier 1-2 inventory. Downloaded
+    files are reused only when present locally; no incremental cutoff or
+    durable cross-run PDF cache is implemented here.
     """
     from archive_center_discovery import (
         create_session,
