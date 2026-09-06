@@ -32,6 +32,7 @@ import { GET, POST } from './route'
 function request(body: Record<string, unknown> = {}) {
   return {
     headers: new Headers({ authorization: 'Bearer test-secret' }),
+    nextUrl: new URL('https://example.test/api/email/send-digest'),
     json: vi.fn(async () => body),
   } as unknown as NextRequest
 }

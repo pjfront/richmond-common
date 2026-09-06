@@ -18,6 +18,7 @@ import {
 } from '@/lib/email-content-source'
 import { RICHMOND_LOCAL_ISSUES } from '@/lib/local-issues'
 import { loadPublishedDigestBriefs, selectSubscriberDigest, type DigestPreferenceRow, type DigestBrief } from '@/lib/digest-selection'
+import { PROVIDER_EMAIL_ID, readDigestCanaryProof } from '@/lib/digest-canary-proof'
 
 const RICHMOND_FIPS = '0660620'
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://richmondcommons.org'
@@ -53,16 +54,29 @@ function isAuthorized(request: NextRequest): boolean {
   return Boolean(secret && secret === process.env.API_SECRET)
 }
 
-/** Read-only handshake used before a workflow can invoke the canary path. */
+/** Read-only capability handshake, or redacted proof for the configured canary. */
 export async function GET(request: NextRequest) {
+  const headers = { 'Cache-Control': 'private, no-store' }
   if (!isAuthorized(request)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers })
+  }
+  const params = request.nextUrl.searchParams
+  if (params.size) {
+    const ids = params.getAll('provider_id')
+    const canaryEmail = configuredCanaryEmail()
+    if (params.size !== 1 || ids.length !== 1 || !PROVIDER_EMAIL_ID.test(ids[0]) || !canaryEmail) {
+      return NextResponse.json({ error: 'Canary provider proof unavailable' }, { status: 503, headers })
+    }
+    const proof = await readDigestCanaryProof(ids[0], canaryEmail)
+    return proof
+      ? NextResponse.json(proof, { headers })
+      : NextResponse.json({ error: 'Canary provider proof unavailable' }, { status: 503, headers })
   }
   return NextResponse.json({
     capability: DIGEST_CAPABILITY,
     canary_ready: configuredCanaryEmail() !== null,
     broadcast_ready: DIGEST_BROADCAST_ENABLED,
-  })
+  }, { headers })
 }
 
 /** Send the immediately completed calendar week's digest. */
@@ -141,7 +155,7 @@ export async function POST(request: NextRequest) {
       // verification. A successful transport without an ID is ambiguous and
       // must never authorize activation or another send.
       const providerConfirmed = result.success && typeof result.providerId === 'string'
-        && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(result.providerId)
+        && PROVIDER_EMAIL_ID.test(result.providerId)
       return NextResponse.json({
         mode,
         period,
