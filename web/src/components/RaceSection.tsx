@@ -5,6 +5,7 @@ import * as Collapsible from '@radix-ui/react-collapsible'
 import type { CandidateFundraisingDetail } from '@/lib/types'
 import { buildRaceNarrative } from '@/lib/electionNarrative'
 import CandidateCard from './CandidateCard'
+import type { CandidateFinanceCoverageById } from './CandidateCard'
 
 interface RaceSectionProps {
   office: string
@@ -15,6 +16,7 @@ interface RaceSectionProps {
   id: string
   /** Election slug for candidate profile links, e.g. "2026-primary" */
   electionSlug?: string
+  financeCoverage?: CandidateFinanceCoverageById
 }
 
 export default function RaceSection({
@@ -23,13 +25,14 @@ export default function RaceSection({
   isHeroRace = false,
   id,
   electionSlug,
+  financeCoverage = {},
 }: RaceSectionProps) {
   const isUnopposed = candidates.length === 1
   const isContested = candidates.length > 1
   const showRoster = candidates.length >= 2
 
   if (isUnopposed) {
-    return <UnopposedSection office={office} candidate={candidates[0]} id={id} />
+    return <UnopposedSection office={office} candidate={candidates[0]} id={id} financeCoverage={financeCoverage} />
   }
 
   return (
@@ -41,6 +44,7 @@ export default function RaceSection({
       id={id}
       defaultExpanded={isHeroRace}
       electionSlug={electionSlug}
+      financeCoverage={financeCoverage}
     />
   )
 }
@@ -51,12 +55,15 @@ function UnopposedSection({
   office,
   candidate,
   id,
+  financeCoverage,
 }: {
   office: string
   candidate: CandidateFundraisingDetail
   id: string
+  financeCoverage: CandidateFinanceCoverageById
 }) {
-  const narrative = buildRaceNarrative(office, [candidate])
+  const coverage = financeCoverage[candidate.id]
+  const narrative = buildRaceNarrative(office, [candidate], { includeFundraising: !coverage })
 
   return (
     <section id={id} aria-label={`${office}, unopposed`} className="mb-4 scroll-mt-20">
@@ -69,6 +76,7 @@ function UnopposedSection({
       {narrative && (
         <p className="text-sm text-slate-500 mt-1.5 leading-relaxed">{narrative}</p>
       )}
+      {coverage && <CandidateCard candidate={candidate} financeCoverage={coverage} />}
     </section>
   )
 }
@@ -83,6 +91,7 @@ function ContestedSection({
   id,
   defaultExpanded,
   electionSlug,
+  financeCoverage,
 }: {
   office: string
   candidates: CandidateFundraisingDetail[]
@@ -91,6 +100,7 @@ function ContestedSection({
   id: string
   defaultExpanded: boolean
   electionSlug?: string
+  financeCoverage: CandidateFinanceCoverageById
 }) {
   const sectionRef = useRef<HTMLElement>(null)
   const [open, setOpen] = useState(defaultExpanded)
@@ -112,7 +122,11 @@ function ContestedSection({
     return () => window.removeEventListener('hashchange', checkHash)
   }, [id]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const narrative = buildRaceNarrative(office, candidates)
+  const hasUnreconciledFinance = candidates.some(candidate => financeCoverage[candidate.id])
+  const displayedCandidates = hasUnreconciledFinance
+    ? [...candidates].sort((a, b) => a.candidate_name.localeCompare(b.candidate_name))
+    : candidates
+  const narrative = buildRaceNarrative(office, displayedCandidates, { includeFundraising: !hasUnreconciledFinance })
 
   const labelClass = isHeroRace
     ? 'text-sm font-semibold text-civic-navy uppercase tracking-wide'
@@ -151,7 +165,7 @@ function ContestedSection({
 
             {/* Roster strip for 3+ candidates — always visible */}
             {showRoster && (
-              <CandidateRosterStrip candidates={candidates} />
+              <CandidateRosterStrip candidates={displayedCandidates} financeCoverage={financeCoverage} />
             )}
           </div>
 
@@ -169,8 +183,8 @@ function ContestedSection({
         {/* Expanded: full candidate cards */}
         <Collapsible.Content className="collapsible-content overflow-hidden">
           <div className="mt-4 pt-4 border-t border-slate-100 space-y-3">
-            {candidates.map((candidate) => (
-              <CandidateCard key={candidate.candidate_name} candidate={candidate} electionSlug={electionSlug} />
+            {displayedCandidates.map((candidate) => (
+              <CandidateCard key={candidate.candidate_name} candidate={candidate} electionSlug={electionSlug} financeCoverage={financeCoverage[candidate.id]} />
             ))}
           </div>
         </Collapsible.Content>
@@ -183,12 +197,15 @@ function ContestedSection({
 
 function CandidateRosterStrip({
   candidates,
+  financeCoverage,
 }: {
   candidates: CandidateFundraisingDetail[]
+  financeCoverage: CandidateFinanceCoverageById
 }) {
-  const sorted = [...candidates].sort(
-    (a, b) => b.total_raised - a.total_raised,
-  )
+  const hasUnreconciledFinance = candidates.some(candidate => financeCoverage[candidate.id])
+  const sorted = [...candidates].sort(hasUnreconciledFinance
+    ? (a, b) => a.candidate_name.localeCompare(b.candidate_name)
+    : (a, b) => b.total_raised - a.total_raised)
 
   return (
     <ul className="mt-3 space-y-1" aria-label="Candidate overview">
@@ -210,7 +227,7 @@ function CandidateRosterStrip({
           {/* Roster fundraising. Graduated to public 2026-05-22 (D56b
               verification PR). total_raised comes from Form 460 cover. */}
           <span className="text-slate-400 tabular-nums whitespace-nowrap shrink-0 text-xs">
-            {c.total_raised > 0
+            {financeCoverage[c.id] ? <a href={financeCoverage[c.id].href} className="inline-flex min-h-11 items-center text-civic-navy underline underline-offset-4">Dated source summary</a> : c.total_raised > 0
               ? `$${c.total_raised.toLocaleString('en-US', { maximumFractionDigits: 0 })} · ${c.donor_count} donor${c.donor_count !== 1 ? 's' : ''}`
               : 'No filings linked'}
           </span>
