@@ -1,10 +1,12 @@
 import Link from 'next/link'
 import type { Metadata } from 'next'
 import SuggestCorrectionLink from '@/components/SuggestCorrectionLink'
+import { JimenezReportFreshness } from '@/components/JimenezFinanceSummary'
 import { CivicDate, CivicLanguageScope, Localized } from '@/components/civic/CivicLanguage'
 import { formatReportedMoney as money, reportedCents } from '@/lib/reported-money'
 import { JIMENEZ_FINANCE as data, JIMENEZ_MONEY_PATH, jimenezSource, jimenezSourcePage,
   jimenezPeriodTotal, jimenezDonationPeriods } from '@/lib/jimenez-finance'
+import { getJimenezFilingCoverage } from '@/lib/queries/candidate-filing-coverage'
 
 export const metadata: Metadata = {
   title: 'Claudia Jimenez: campaign donations, cash and original reports',
@@ -32,7 +34,8 @@ function Donations({ receipts }: { receipts: typeof data.rapid_receipts }) {
   ))}</ol>
 }
 
-export default function JimenezMoneyPage() {
+export default async function JimenezMoneyPage() {
+  const coverage = await getJimenezFilingCoverage()
   const { later, earlier } = jimenezDonationPeriods()
   const latest = data.periodic.reported
   const periodTotal = jimenezPeriodTotal()
@@ -53,6 +56,7 @@ export default function JimenezMoneyPage() {
       <CivicDate date={data.reviewed_at.slice(0, 10)} />.
     </p>
     <p className="mt-2 text-sm text-slate-600">{data.committee.name} · FPPC {data.committee.fppc_id}</p>
+    <JimenezReportFreshness coverage={coverage} />
     <nav aria-label="On this page" className="mt-4 flex flex-wrap gap-x-6">
       <a className={linkClass} href="#donations"><Localized en="July donations" es="Donaciones de julio" /></a>
       <a className={linkClass} href="#calculation"><Localized en="How we counted" es="Cómo calculamos" /></a>

@@ -1,5 +1,6 @@
 import data from '@/data/jimenez-reported-finance.json'
 import { reportedCents } from '@/lib/reported-money'
+import type { CandidateFiling, CandidateFilingCoverage } from '@/data/anderson-paper-filings'
 
 export const JIMENEZ_FINANCE = data
 export const JIMENEZ_MONEY_PATH = '/elections/2026-general/money/claudia-jimenez'
@@ -52,4 +53,26 @@ export function jimenezDonationPeriods() {
     later: data.rapid_receipts.filter(receipt => receipt.received_date > through),
     earlier: data.rapid_receipts.filter(receipt => receipt.received_date <= through),
   }
+}
+
+function reviewedFiling(filingId: string): CandidateFiling {
+  const source = jimenezSource(filingId)
+  if (source.form !== '460' && source.form !== '497') throw new Error('Unsupported reviewed form')
+  return { id: source.filing_id, form: source.form, filedAt: source.filed_at,
+    periodStart: source.period_start, periodEnd: source.period_end, sourceUrl: source.source_url,
+    paperVerified: !source.is_electronic }
+}
+
+export const VERIFIED_JIMENEZ_FILINGS: CandidateFilingCoverage = {
+  status: 'available', checkedAt: data.reviewed_at,
+  latestPeriodic: reviewedFiling(data.periodic.filing_id),
+  recentRapid: [...new Set(data.rapid_receipts.map(row => row.filing_id))].map(reviewedFiling)
+    .sort((a, b) => b.filedAt.localeCompare(a.filedAt) || a.id.localeCompare(b.id)),
+}
+
+/** Metadata can request review, but never replace source-checked amounts. */
+export function hasNewJimenezReports(coverage: CandidateFilingCoverage): boolean {
+  const reviewed = new Set(data.sources.map(source => source.filing_id))
+  return coverage.latestPeriodic.id !== data.periodic.filing_id
+    || coverage.recentRapid.some(source => !reviewed.has(source.id))
 }
