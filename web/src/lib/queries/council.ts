@@ -248,54 +248,103 @@ export async function getOfficialVotingRecord(
   return (data ?? []) as unknown as OfficialVotingRecordRow[]
 }
 
+const COLS_OFFICIAL_CONTRIBUTION_COMMITTEES = 'id, name, filer_id'
+const COLS_OFFICIAL_CONTRIBUTIONS = 'id, committee_id, amount, contribution_date, contribution_type, filing_id, source, donors!inner(name, employer, donor_pattern)'
+const HISTORICAL_CONTRIBUTION_PAGE_SIZE = 1000
+const MAX_HISTORICAL_CONTRIBUTIONS = 10000
+const MAX_HISTORICAL_CONTRIBUTION_PAGES = 20
+
 export async function getOfficialContributions(
   officialId: string,
   cityFips = RICHMOND_FIPS
 ): Promise<DonorContribution[]> {
-  // Find committees linked to this official
-  const { data: committees } = await supabase
+  // Keep the directly linked historical committees. Current candidate finance
+  // uses its separate reviewed projection; do not union its legacy rows here.
+  const { data: committees, count: committeeCount, error: committeeError } = await supabase
     .from('committees')
-    .select('id')
+    .select(COLS_OFFICIAL_CONTRIBUTION_COMMITTEES, { count: 'exact' })
     .eq('official_id', officialId)
     .eq('city_fips', cityFips)
+    .order('id')
+    .limit(100)
+
+  if (committeeError) failReadPath('Historical contribution committees', committeeError)
+  if (committeeCount == null || !Number.isSafeInteger(committeeCount) || committeeCount < 0 || committeeCount > 100 || (committees?.length ?? 0) !== committeeCount) {
+    failReadPath('Historical contribution committees', new Error('Committee lookup was incomplete'))
+  }
 
   const committeeIds = (committees ?? []).map((c) => c.id)
   if (committeeIds.length === 0) return []
+  const committeeById = new Map((committees ?? []).map((committee) => [committee.id, committee]))
 
-  // Get all contributions with dates for client-side aggregation
-  const { data, error } = await supabase
-    .from('contributions')
-    .select('amount, contribution_date, source, donors!inner(name, employer, donor_pattern)')
-    .in('committee_id', committeeIds)
-    .eq('city_fips', cityFips)
-
-  if (error) {
-    console.error('getOfficialContributions query failed:', error)
-    return []
-  }
-
+  // Exact counts prevent a server row cap or an unexpectedly short page from
+  // masquerading as the complete historical subtotal. A changing count or
+  // duplicate page fails revalidation, preserving the previous successful ISR.
   const results: DonorContribution[] = []
-  for (const row of data ?? []) {
-    const donor = (row as Record<string, unknown>).donors as {
-      name: string
-      employer: string | null
-      donor_pattern: string | null
+  const seenIds = new Set<string>()
+  let offset = 0
+  let pages = 0
+  let expectedCount: number | null = null
+  do {
+    if (++pages > MAX_HISTORICAL_CONTRIBUTION_PAGES) {
+      failReadPath('Historical contributions', new Error('Historical contribution page budget was exhausted'))
     }
+    const { data, error, count } = await supabase
+      .from('contributions')
+      .select(COLS_OFFICIAL_CONTRIBUTIONS, { count: 'exact' })
+      .in('committee_id', committeeIds)
+      .eq('city_fips', cityFips)
+      .order('contribution_date', { ascending: true })
+      .order('id', { ascending: true })
+      .range(offset, offset + HISTORICAL_CONTRIBUTION_PAGE_SIZE - 1)
 
-    // Skip government entities that appear as "donors" in filing data
-    // (public financing, refunds, inter-committee transfers, etc.)
-    const nameLower = donor.name.toLowerCase()
-    if (/^(the )?(city|county|state|town) of\b/.test(nameLower)) continue
+    if (error) failReadPath('Historical contributions', error)
+    if (count == null || !Number.isSafeInteger(count) || count < 0 || count > MAX_HISTORICAL_CONTRIBUTIONS || (expectedCount != null && count !== expectedCount)) {
+      failReadPath('Historical contributions', new Error('Historical contribution coverage changed or exceeded its bound'))
+    }
+    expectedCount = count
+    const rows = data ?? []
+    if (rows.length > HISTORICAL_CONTRIBUTION_PAGE_SIZE || offset + rows.length > count || (!rows.length && offset < count)) {
+      failReadPath('Historical contributions', new Error('Historical contribution page was incomplete'))
+    }
+    for (const row of rows) {
+      const committee = committeeById.get(row.committee_id)
+      const donor = (row as Record<string, unknown>).donors as {
+        name: string
+        employer: string | null
+        donor_pattern: string | null
+      }
+      const amount = Number(row.amount)
+      if (!committee || typeof row.id !== 'string' || seenIds.has(row.id) || row.amount == null || !Number.isFinite(amount)
+          || typeof row.contribution_date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(row.contribution_date)
+          || typeof donor?.name !== 'string' || !donor.name.trim()) {
+        failReadPath('Historical contributions', new Error('Historical contribution identity or amount was invalid'))
+      }
+      seenIds.add(row.id)
 
-    results.push({
-      donor_name: donor.name,
-      donor_employer: donor.employer,
-      donor_pattern: donor.donor_pattern,
-      amount: row.amount as number,
-      contribution_date: row.contribution_date as string,
-      source: row.source as string,
-    })
-  }
+      // Preserve the existing government-entity exclusion for this historical
+      // donor list. The separate finance projection retains event-kind context.
+      const nameLower = donor.name.toLowerCase()
+      if (/^(the )?(city|county|state|town) of\b/.test(nameLower)) continue
+
+      const filingId = typeof row.filing_id === 'string' && /^[0-9]{6,12}$/.test(row.filing_id) ? row.filing_id : null
+      results.push({
+        donor_name: donor.name,
+        donor_employer: donor.employer,
+        donor_pattern: donor.donor_pattern,
+        amount,
+        contribution_date: row.contribution_date as string,
+        contribution_type: row.contribution_type as string,
+        source: row.source as string,
+        committee_name: committee.name,
+        committee_fppc_id: committee.filer_id,
+        filing_id: filingId,
+        source_url: filingId && ['city_clerk', 'netfile', 'netfile_paper'].includes(row.source)
+          ? `https://netfile.com/Connect2/api/public/image/${filingId}` : null,
+      })
+    }
+    offset += rows.length
+  } while (offset < expectedCount)
 
   return results
 }
