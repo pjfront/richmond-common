@@ -28,7 +28,8 @@ export async function getPublishedCivicBriefVersion(id: string, version: string 
   const { data, error } = await supabase.from('civic_brief_candidates')
     .select('id,subject_key,title,body,sources,content_version,published_at')
     .eq('id', id).eq('status', 'published').eq('content_version', Number(version))
-    .eq('published_at', new Date(published).toISOString()).maybeSingle()
+    // Preserve PostgreSQL microseconds; Date.toISOString would truncate them.
+    .eq('published_at', published).maybeSingle()
   if (error) throw new Error('Reviewed update unavailable')
   return data as unknown as (PublicBrief & { subject_key: string }) | null
 }

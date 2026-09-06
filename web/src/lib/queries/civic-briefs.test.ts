@@ -10,8 +10,8 @@ describe('published update email links', () => {
   it('loads one exact publication independently of the six-item feed', async () => {
     const query = { select: vi.fn(), eq: vi.fn(), maybeSingle: vi.fn(async () => ({ data: { id, content_version: 3 }, error: null })) }
     query.select.mockReturnValue(query); query.eq.mockReturnValue(query); mocked.from.mockReturnValue(query)
-    expect(await getPublishedCivicBriefVersion(id, '3', '2026-09-01T12:00:00+00:00')).toEqual({ id, content_version: 3 })
-    expect(query.eq.mock.calls).toEqual([['id', id], ['status', 'published'], ['content_version', 3], ['published_at', '2026-09-01T12:00:00.000Z']])
+    expect(await getPublishedCivicBriefVersion(id, '3', '2026-09-01T12:00:00.123456+00:00')).toEqual({ id, content_version: 3 })
+    expect(query.eq.mock.calls).toEqual([['id', id], ['status', 'published'], ['content_version', 3], ['published_at', '2026-09-01T12:00:00.123456+00:00']])
     query.maybeSingle.mockResolvedValueOnce({ data: null as never, error: null })
     expect(await getPublishedCivicBriefVersion(id, '3', '2026-09-01T12:00:00Z')).toBeNull()
   })
