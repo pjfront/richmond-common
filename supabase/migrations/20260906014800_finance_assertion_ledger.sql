@@ -145,6 +145,7 @@ SELECT event_key,source,scope_key,event_kind,reporting_filer_name,reporting_file
        source_url,extracted_at,source_tier,confidence_score
 FROM public.finance_events
 WHERE is_current AND confidence_score >= 0.90 AND reconciliation_status IN ('source_reported','matched_exact');
+REVOKE ALL ON public.finance_public_events FROM PUBLIC,anon,authenticated;
 GRANT SELECT ON public.finance_public_events TO anon,authenticated,service_role;
 
 CREATE OR REPLACE VIEW public.finance_public_coverage WITH (security_invoker=true) AS
@@ -152,6 +153,7 @@ SELECT source,form_type,scope_key,status,checked_at,activity_from,activity_throu
        filing_count,assertion_count,pending_count,limitations,
        source_url,extracted_at,source_tier,confidence_score
 FROM public.finance_source_coverage;
+REVOKE ALL ON public.finance_public_coverage FROM PUBLIC,anon,authenticated;
 GRANT SELECT ON public.finance_public_coverage TO anon,authenticated,service_role;
 
 -- A public source link is sufficient; do not expose raw address fields through

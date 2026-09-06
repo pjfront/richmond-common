@@ -57,6 +57,11 @@ try {
       }
     }
     await assert.rejects(db.query('SELECT * FROM finance_assertions'), e => e.code === '42501'); checks++
+    for (const view of ['finance_public_events','finance_public_coverage']) {
+      for (const operation of ['INSERT','UPDATE','DELETE','TRUNCATE']) {
+        assert.equal((await db.query('SELECT has_table_privilege($1,$2,$3) allowed', [role,view,operation])).rows[0].allowed, false); checks++
+      }
+    }
     assert.deepEqual((await db.query('SELECT event_key FROM finance_public_events')).rows, [{event_key:'visible'}]); checks++
     assert.equal((await db.query('SELECT status FROM finance_public_coverage')).rows[0].status, 'partial'); checks++
     assert.deepEqual((await db.query('SELECT source_type FROM documents')).rows, [{source_type:'agenda'}]); checks++

@@ -24,7 +24,7 @@ The first acquisition returned 1,265 electronic assertions across 1108 Schedule 
 
 Unique exact cross-report claims may form one event; same-role repeated gifts survive. Exact reported names can bridge a missing donor ID only where the retained assertions supply one unambiguous ID for that name. Multiple possible matches are held for review. Near-date disagreement never authorizes deletion: the periodic recipient statement remains visible and the unmatched rapid/outgoing assertion waits for review. Negative adjustments stay signed and are not automatically described as cash refunds. Noncash and Schedule B1 values stay separate from monetary receipts; B1 is not a net-new-loan total.
 
-Known mayor committee IDs are Ahmad Anderson 1481105 and Claudia Jimenez 1488504. Safe Richmond Neighborhoods is 1490887. The current legacy database lacks a committee row with that latter identifier; a targeted repair must create it from its source identity rather than a surname guess.
+Known mayor committee IDs are Ahmad Anderson 1481105 and Claudia Jimenez 1488504. Safe Richmond Neighborhoods is 1490887. The legacy database already has that committee under its exact legal name with a `Pending` identifier. The targeted repair updates that existing row from verified source identity; it does not create a duplicate committee.
 
 ## Run and verify
 
