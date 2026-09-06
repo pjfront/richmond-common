@@ -40,4 +40,7 @@ jobs:
       - name: Install isolated PostgreSQL runtime
         run: npm install --prefix "$RUNNER_TEMP/permission-db" --no-audit --no-fund --ignore-scripts @electric-sql/pglite@0.5.8
       - name: Exercise roles, grants, RLS, and migration replay
-        run: node tests/operator_table_security.integration.mjs "$RUNNER_TEMP/permission-db/node_modules/@electric-sql/pglite/dist/index.js"
+        run: |
+          node tests/operator_table_security.integration.mjs "$RUNNER_TEMP/permission-db/node_modules/@electric-sql/pglite/dist/index.js"
+          node tests/finance_ledger.integration.mjs "$RUNNER_TEMP/permission-db/node_modules/@electric-sql/pglite/dist/index.js"
+          node tests/operator_review_inbox.integration.mjs "$RUNNER_TEMP/permission-db/node_modules/@electric-sql/pglite/dist/index.js"

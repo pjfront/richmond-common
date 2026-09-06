@@ -1,4 +1,4 @@
-import { getPublicFinanceSnapshot } from '@/lib/finance-public'
+import { getPublicFinanceSnapshot } from '@/lib/queries/finance-public'
 import { filterFinanceEvents, financeCsv } from '@/lib/finance-ledger'
 
 export async function GET(request: Request) {

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 vi.mock('next/cache', () => ({ unstable_cache: (fn: unknown) => fn }))
-import { candidateMoney, type FinanceEvent } from './finance-public'
+import { candidateMoney, type FinanceEvent } from './queries/finance-public'
 import { filterFinanceEvents, financeCsv } from './finance-ledger'
 import { electionCalendar, NOVEMBER_DATES } from './november-election'
 

@@ -1,4 +1,4 @@
-import type { FinanceEvent } from './finance-public'
+import type { FinanceEvent } from './queries/finance-public'
 
 export function filterFinanceEvents(events: FinanceEvent[], query: string, committee: string): FinanceEvent[] {
   const search = query.trim().normalize('NFKC').toLocaleLowerCase('en-US').slice(0, 150)

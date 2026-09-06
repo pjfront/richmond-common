@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+vi.mock('@/components/PublishedCivicBriefs', () => ({ default: () => null }))
 import { renderToStaticMarkup } from 'react-dom/server'
 import { CIVIC_STORIES } from '@/data/civic-stories'
 import type { ResidentSnapshot } from '@/lib/queries/civic-stories'

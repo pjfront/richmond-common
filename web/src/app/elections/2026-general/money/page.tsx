@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import type { Metadata } from 'next'
-import { getPublicFinanceSnapshot, type FinanceEvent } from '@/lib/finance-public'
+import { getPublicFinanceSnapshot, type FinanceEvent } from '@/lib/queries/finance-public'
 import { filterFinanceEvents } from '@/lib/finance-ledger'
 import { formatCivicDate } from '@/lib/november-election'
 import SuggestCorrectionLink from '@/components/SuggestCorrectionLink'

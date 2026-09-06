@@ -2,7 +2,7 @@ import Link from 'next/link'
 import SubscribeForm from '@/components/SubscribeForm'
 import SuggestCorrectionLink from '@/components/SuggestCorrectionLink'
 import PublishedCivicBriefs from '@/components/PublishedCivicBriefs'
-import { getPublicFinanceSnapshot, candidateMoney, type FinanceEvent, type PublicFinanceSnapshot } from '@/lib/finance-public'
+import { getPublicFinanceSnapshot, candidateMoney, type FinanceEvent, type PublicFinanceSnapshot } from '@/lib/queries/finance-public'
 import { NOVEMBER_CANDIDATES, NOVEMBER_DATES, NOVEMBER_ELECTION as election, formatCivicDate } from '@/lib/november-election'
 
 const money = (amount: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(amount)

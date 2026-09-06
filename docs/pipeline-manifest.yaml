@@ -1360,14 +1360,28 @@ enrichments:
 # ══════════════════════════════════════════════════════════════
 
 queries:
+  getResidentSnapshot:
+    file: queries/civic-stories.ts
+    tables: [meetings, agenda_items, bodies]
+    used_by: ["/", "/stories", "/stories/[slug]"]
+    description: "Bounded recent/upcoming council agenda discovery; exact item links, source-alias deduplication, and an explicit unavailable state."
+  COLS_RESIDENT_MEETING: {file: queries/civic-stories.ts, tables: [], used_by: []}
+  COLS_RESIDENT_AGENDA_ITEM: {file: queries/civic-stories.ts, tables: [], used_by: []}
+  STORY_AGENDA_LIMIT: {file: queries/civic-stories.ts, tables: [], used_by: []}
+  RECENT_COUNCIL_LIMIT: {file: queries/civic-stories.ts, tables: [], used_by: []}
+  UPCOMING_COUNCIL_LIMIT: {file: queries/civic-stories.ts, tables: [], used_by: []}
+  groupStoryAgendaEntries: {file: queries/civic-stories.ts, tables: [], used_by: []}
+  uniqueResidentMeetings: {file: queries/civic-stories.ts, tables: [], used_by: []}
+  richmondDate: {file: queries/civic-stories.ts, tables: [], used_by: []}
+  candidateMoney: {file: queries/finance-public.ts, tables: [], used_by: []}
   getPublishedCivicBriefs:
-    file: components/PublishedCivicBriefs.tsx
+    file: queries/civic-briefs.ts
     tables: [civic_brief_candidates]
     used_by: ["/stories/[slug]", "/elections/2026-general"]
     description: "Only source-linked published briefs, public RLS plus explicit status predicate; private draft evidence never enters page props."
 
   getPublicFinanceSnapshot:
-    file: finance-public.ts
+    file: queries/finance-public.ts
     tables: [finance_events, finance_source_coverage]
     used_by: ["/elections/2026-general", "/elections/2026-general/money"]
     description: "Bounded cached public projections with explicit source coverage; read errors are not cached as no activity."
@@ -1933,6 +1947,21 @@ queries:
 # ══════════════════════════════════════════════════════════════
 
 pages:
+  "/stories":
+    queries: [getResidentSnapshot]
+    description: "Three source-checked continuing Richmond issue histories with recent agenda entries."
+  "/stories/[slug]":
+    queries: [getResidentSnapshot, getPublishedCivicBriefs]
+    description: "Formal source chronology, proposed agenda entries, and exactly reviewed public updates."
+  "/elections/2026-general":
+    queries: [getPublicFinanceSnapshot, getPublishedCivicBriefs]
+    description: "Source-checked municipal choices, separate money meanings and explicit coverage, voting and filing dates."
+  "/elections/2026-general/money":
+    queries: [getPublicFinanceSnapshot]
+    description: "Search reported legal names/FPPC identifiers and read/download source-linked public events."
+  "/support":
+    queries: []
+    description: "Existing voluntary support link and free civic research tools."
   "/sitemap.xml":
     description: "Daily, bounded inventory of canonical public routes; operator/noindex, candidate, retired mayor-funding, campaign-directory, management, API, and heavy detail routes are excluded"
     queries: [getSitemapMeetings, getRecentAgendaItemSlugs,
@@ -2390,6 +2419,13 @@ rpcs:
 # ══════════════════════════════════════════════════════════════
 
 api_routes:
+  "/api/finance/export":
+    file: "web/src/app/api/finance/export/route.ts"
+    method: GET
+    tables_read: [finance_events, finance_source_coverage]
+    tables_written: []
+    description: "Bounded public ledger CSV, formula-neutralized with original sources, no private payloads or street addresses."
+    used_by_pages: ["/elections/2026-general/money"]
   "/api/health":
     file: "web/src/app/api/health/route.ts"
     method: GET
@@ -2608,6 +2644,44 @@ api_routes:
 # ══════════════════════════════════════════════════════════════
 
 field_map:
+  "/stories":
+    "recent and upcoming agenda entries":
+      query: getResidentSnapshot
+      column: agenda_items.title
+      sources: [escribemeetings]
+    "source-checked issue context":
+      column: "web/src/data/civic-stories.ts"
+      sources: [archive_center]
+  "/stories/[slug]":
+    "agenda entry and exact item link":
+      query: getResidentSnapshot
+      column: agenda_items.title
+      sources: [escribemeetings]
+    "reviewed update":
+      query: getPublishedCivicBriefs
+      column: civic_brief_candidates.body
+      sources: []
+      note: "Exact operator-approved text with its own sources[] provenance and publication version."
+  "/elections/2026-general":
+    "reported cash gifts and independently attributed election spending":
+      query: getPublicFinanceSnapshot
+      column: finance_events.amount
+      sources: [netfile]
+    "reviewed election update":
+      query: getPublishedCivicBriefs
+      column: civic_brief_candidates.body
+      sources: []
+      note: "Exact operator-approved text with its own sources[] provenance and publication version."
+  "/elections/2026-general/money":
+    "reported donor, recipient, spender, activity and original source":
+      query: getPublicFinanceSnapshot
+      column: finance_events.source_url
+      sources: [netfile]
+  "/support":
+    "support destination":
+      column: ".github/FUNDING.yml"
+      sources: []
+      note: "Existing repository funding configuration; no payment or billing integration is created."
 
   # ── Public sitemap (/sitemap.xml) ────────────────────────────
 
