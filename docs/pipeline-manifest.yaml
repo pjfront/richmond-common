@@ -2076,7 +2076,7 @@ pages:
     queries: []  # Static content
 
   "/operator/decisions":
-    description: "Operator decision queue (operator-only)"
+    description: "Operator decision queue; session-authenticated server read using the service-role client"
     queries: []
     api_routes: ["/api/operator/decisions"]
 
