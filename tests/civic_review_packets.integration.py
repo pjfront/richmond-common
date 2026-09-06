@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+from uuid import uuid4
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import civic_review_packets as packets
@@ -130,7 +131,56 @@ def main():
             assert "fixture failure" in str(error)
         assert db.call("SELECT count(*)::int AS n FROM civic_brief_candidates")["rows"][0]["n"] == 2
         assert db.call("SELECT count(*)::int AS n FROM pending_decisions")["rows"][0]["n"] == 2
-        print("Packet writer PostgreSQL integration passed: role grants, private draft, refresh versions, stale approval, publication, rejection suppression, atomic rollback.")
+        db.call("""RESET ROLE; DROP TRIGGER reject_packet ON pending_decisions;
+            CREATE TABLE bodies(id uuid PRIMARY KEY,body_type text);
+            CREATE TABLE meetings(id uuid PRIMARY KEY,body_id uuid,meeting_date date,agenda_url text,source_meeting_guid text,source_cancelled_at timestamptz,extracted_at timestamptz);
+            CREATE TABLE agenda_items(meeting_id uuid,item_number text,title text,agenda_source_retired_at timestamptz);
+            INSERT INTO bodies VALUES('00000000-0000-4000-8000-000000000001','city_council');
+            GRANT SELECT ON bodies,meetings,agenda_items TO service_role;
+            SET ROLE service_role;""", exec=True)
+        for cause in ("cancelled", "retired", "removed"):
+            row = {**source, "meeting_id": str(uuid4()), "source_meeting_guid": f"guid-{cause}",
+                   "agenda_url": f"https://richmondca.escribemeetings.com/Meeting.aspx?Id=guid-{cause}"}
+            proposed = packets.prepare_story_packets([row], date(2026, 9, 6))[0]
+            db.call("RESET ROLE")
+            db.call("INSERT INTO meetings VALUES($1,'00000000-0000-4000-8000-000000000001',$2,$3,$4,NULL,'2026-09-01')",
+                    [row["meeting_id"], row["meeting_date"], row["agenda_url"], row["source_meeting_guid"]])
+            db.call("INSERT INTO agenda_items VALUES($1,$2,$3,NULL)", [row["meeting_id"], row["item_number"], row["title"]])
+            db.call("SET ROLE service_role")
+            assert packets.persist_packet(db, proposed) == "created"
+            decision = db.call("SELECT * FROM pending_decisions WHERE entity_id=$1", [proposed.identity])["rows"][0]
+            if cause == "retired":
+                assert review("defer", 1)["ok"]
+                decision = db.call("SELECT * FROM pending_decisions WHERE id=$1", [decision["id"]])["rows"][0]
+            assert packets.read_story_invalidations(db, date(2026, 9, 6)) == []
+            db.commit()
+            db.call("RESET ROLE")
+            # The polling timestamp remains unchanged in every mutation.
+            if cause == "cancelled":
+                db.call("UPDATE meetings SET source_cancelled_at='2026-09-06' WHERE id=$1", [row["meeting_id"]])
+            elif cause == "retired":
+                db.call("UPDATE agenda_items SET agenda_source_retired_at='2026-09-06' WHERE meeting_id=$1", [row["meeting_id"]])
+            else:
+                db.call("DELETE FROM agenda_items WHERE meeting_id=$1", [row["meeting_id"]])
+            db.call("SET ROLE service_role")
+            invalidations = packets.read_story_invalidations(db, date(2026, 9, 6))
+            db.commit()
+            assert len(invalidations) == 1 and invalidations[0]["id"] == decision["id"]
+            assert packets.invalidate_story_packet(db, invalidations[0]) == "invalidated"
+            updated = db.call("SELECT * FROM pending_decisions WHERE id=$1", [decision["id"]])["rows"][0]
+            assert updated["review_version"] == decision["review_version"] + 1
+            assert updated["status"] == decision["status"]
+            assert updated["action_kind"] == "resolve_only" and updated["target_brief_id"] is None
+            assert updated["evidence"]["agenda_entries"] == decision["evidence"]["agenda_entries"]
+            assert review("approve", decision["review_version"])["code"] == "stale_decision"
+            assert packets.invalidate_story_packet(db, invalidations[0]) == "unchanged"
+            assert packets.read_story_invalidations(db, date(2026, 9, 6)) == []
+            db.commit()
+            assert db.call("SELECT review_version FROM pending_decisions WHERE id=$1", [decision["id"]])["rows"][0]["review_version"] == updated["review_version"]
+            assert review("approve", updated["review_version"])["effect"] == "decision_recorded"
+            assert db.call("SELECT status FROM civic_brief_candidates WHERE id=$1", [decision["target_brief_id"]])["rows"][0]["status"] == "draft"
+            assert db.call("SELECT count(*)::int AS n FROM civic_brief_candidates WHERE status='published'")["rows"][0]["n"] == 1
+        print("Packet writer PostgreSQL integration passed: role grants, private draft, refresh versions, stale approval, publication, rejection suppression, atomic rollback, cancelled/retired/removed source withdrawal, unchanged poll times, repeat safety, preserved deferred state and published content.")
     finally:
         db.close()
 

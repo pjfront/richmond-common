@@ -89,7 +89,7 @@ sources:
     sync_key: archive_center
     module: archive_center_discovery.py
     external_api: "https://www.ci.richmond.ca.us/ArchiveCenter/"
-    description: "Council minutes PDFs, resolutions, ordinances (9 AMIDs)"
+    description: "Council minutes, resolutions, ordinances and other Tier 1–2 archives (12 AMIDs). Scan-only documents retain downloaded PDF bytes without model calls, capped at 20 new scans / 32 MiB per run with deferred counts; existing text-hash identities remain unchanged."
     tables_written:
       - documents
     layer: 1
@@ -1112,7 +1112,7 @@ enrichments:
     writes_to: [pending_decisions, civic_brief_candidates]
     depends_on: []
     cascade_enabled: false  # Run the bounded CLI after the daily ledger ingest.
-    notes: "Migration148+149 prerequisite. CLI defaults read-only; --apply creates or refreshes at most6 private packets per run. All-status fingerprint dedup suppresses unchanged/rejected evidence. Workflow integration follows the daily finance ledger ingest; source updates use a14-day lookback and21-day forward agenda window."
+    notes: "Migration148+149 prerequisite. CLI defaults read-only; --apply creates or refreshes at most6 private packets per run. All-status fingerprint dedup suppresses unchanged/rejected evidence. Complete source rechecks first withdraw unsupported open story publication proposals (max100), preserving private drafts and published content. Failed or truncated source reads abort before writes. Workflow integration follows the daily finance ledger ingest; new source updates use a14-day lookback and21-day forward agenda window."
 
   minutes_extraction:
     module: batch_extract.py
@@ -1496,11 +1496,6 @@ queries:
     file: queries.ts
     tables: [conflict_flags, meetings, agenda_items]
     used_by: ["/reports"]
-
-  getMeetingFlagCounts:
-    file: queries.ts
-    tables: [conflict_flags]
-    used_by: ["/meetings"]
 
   getAgendaItemsByCategory:
     file: queries.ts
@@ -1990,8 +1985,8 @@ pages:
     queries: [getMeetingsWithCounts]
 
   "/meetings":
-    description: "Meeting discovery — month-grouped list, mini-calendar, calendar grid toggle"
-    queries: [getMeetingsWithCounts, getMeetingFlagCounts]
+    description: "Meeting discovery — month-grouped list and mini-calendar; no scanner aggregation on the public path"
+    queries: [getMeetingsWithCounts]
 
   "/meetings/[id]":
     description: "Meeting detail — agenda items, votes, attendance"
@@ -2426,8 +2421,8 @@ rpcs:
     migration: "053"
     reads_from: [conflict_flags, agenda_items, meetings]
     returns: "{meeting_id, flags_total, flags_published, items_scanned}"
-    used_by_queries: [getMeetingFlagCounts]
-    notes: "Server-side aggregation to avoid 17K+ JSONB rows hitting anon's 3s timeout. Filters government-entity vendor/employer matches. See src/migrations/053_flag_count_rpc.sql."
+    used_by_queries: []
+    notes: "Retained database RPC; removed from the public meetings page on September 6 after a production build timeout. Scanner review belongs in operator workflows, not public calendar rendering."
 
 
 # ══════════════════════════════════════════════════════════════
@@ -2833,12 +2828,6 @@ field_map:
       rpc: get_meeting_counts
       column: "COUNT(agenda_items.meeting_id)"
       sources: [escribemeetings, minutes_extraction]
-
-    "per-meeting flag counts":
-      query: getMeetingFlagCounts
-      column: "COUNT(conflict_flags) GROUP BY meeting_id"
-      sources: []
-      enrichment: conflict_scanning
 
   # ── Meeting Detail (/meetings/[id]) ─────────────────────────
 

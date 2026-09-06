@@ -605,7 +605,7 @@ verify_checkout
 # repo-root layout. `--meta` preserves exact-SHA attestation despite no .git.
 echo "→ Deploying immutable $SHORT_SHA artifact with pinned Vercel CLI..."
 if ! DEPLOY_OUTPUT="$(
-  vercel_cli --cwd "$DEPLOY_DIR" --prod --yes \
+  vercel_cli --cwd "$DEPLOY_DIR" --prod --yes --format=json \
     --meta "githubCommitSha=$APPROVED_SHA" \
     --meta "githubCommitRef=main" \
     --meta "githubDeployment=1"
@@ -623,9 +623,11 @@ if ! DEPLOY_OUTPUT="$(
   exit 1
 fi
 
-DEPLOY_URL="${DEPLOY_OUTPUT//$'\r'/}"
-if (( ${#DEPLOY_URL} > 512 )) || [[ "$DEPLOY_URL" == *$'\n'* ]] ||
-  [[ ! "$DEPLOY_URL" =~ ^https://[A-Za-z0-9][A-Za-z0-9.-]*\.vercel\.app/?$ ]]; then
+# Agent detection in CLI59.1.4 can wrap explicit JSON in {status,deployment}.
+# Parse only documented locator fields / narrow legacy text forms; never pick
+# a URL from build logs, advisory commands, notices, or a custom-domain alias.
+# The helper reports structural diagnostics without echoing raw CLI stdout.
+if ! DEPLOY_URL="$(printf '%s' "$DEPLOY_OUTPUT" | node "$DEPLOY_DIR/web/scripts/parse-deploy-output.mjs")"; then
   report_post_deploy_ambiguity "pinned CLI returned an invalid or unbounded deployment URL"
 fi
 

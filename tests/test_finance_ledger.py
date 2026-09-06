@@ -2,7 +2,7 @@
 from copy import deepcopy
 from decimal import Decimal
 
-import fitz
+import pymupdf as fitz
 import pytest
 
 from finance_ledger import assertion_from_netfile, reconcile, parse_496_context

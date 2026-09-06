@@ -184,10 +184,19 @@ def test_reversion_to_rejected_source_revokes_intervening_publish_action():
     packet = packets.prepare_story_packets([agenda()], TODAY)[0]
     conn, cur = connection({"id": "rejected1", "status": "rejected"},
                           {"id": "intervening", "target_brief_id": "draft2", "action_kind": "publish_brief"})
-    assert packets.persist_packet(conn, packet) == "unchanged"
+    assert packets.persist_packet(conn, packet) == "refreshed"
     sql = cur.execute.call_args_list[-1].args[0]
     assert "action_kind='resolve_only'" in sql and "target_brief_id=NULL" in sql
     assert "INSERT" not in sql
+
+
+def test_unchanged_reversion_does_not_advance_a_withdrawn_proposal_again():
+    packet = packets.prepare_story_packets([agenda()], TODAY)[0]
+    conn, cur = connection({"id": "rejected1", "status": "rejected"},
+                          {"id": "intervening", "target_brief_id": None, "action_kind": "resolve_only",
+                           "evidence": {"previous_decision_id": "rejected1"}})
+    assert packets.persist_packet(conn, packet) == "unchanged"
+    assert not any(call.args[0].lstrip().startswith("UPDATE") for call in cur.execute.call_args_list)
 
 
 def test_subject_allowlist_fails_before_any_database_work():
@@ -210,3 +219,113 @@ def test_large_pending_backlog_fails_explicitly_instead_of_partial_pairing():
     rows = [assertion(record_key=str(i), reconciliation_status="pending_review") for i in range(101)]
     with pytest.raises(ValueError, match="100 pending"):
         packets.prepare_finance_packets(rows, TODAY)
+
+
+def observed_proposal(**updates):
+    packet = packets.prepare_story_packets([agenda()], TODAY)[0]
+    return {"id": "decision1", "entity_id": packet.identity, "subject_key": packet.subject,
+            "review_version": 2, "target_brief_id": "draft1", "target_content_version": 3, **updates}
+
+
+@pytest.mark.parametrize("rows", [
+    [agenda(source_cancelled_at="2026-09-06", extracted_at="2026-09-01")],
+    [agenda(agenda_source_retired_at="2026-09-06", extracted_at="2026-09-01")],
+    [], [agenda(title="Routine consent calendar", extracted_at="2026-09-01")],
+])
+def test_complete_recheck_withdraws_cancelled_retired_removed_or_unrelated_evidence(rows):
+    conn, cur = connection()
+    observed = observed_proposal()
+    cur.fetchall.side_effect = [[observed], rows]
+    assert packets.read_story_invalidations(conn, TODAY) == [observed]
+    sql = cur.execute.call_args_list[-1].args[0]
+    assert "source_cancelled_at IS NULL" not in sql
+    assert "agenda_source_retired_at IS NULL" not in sql
+    assert "BETWEEN" not in sql
+    conn.commit.assert_not_called()
+    assert not any(call.args[0].lstrip().startswith(("INSERT", "UPDATE")) for call in cur.execute.call_args_list)
+
+
+def test_remaining_relevant_evidence_and_aged_out_meetings_keep_existing_proposals():
+    conn, cur = connection()
+    cur.fetchall.side_effect = [[observed_proposal()], [agenda(meeting_date="2026-05-01")]]
+    assert packets.read_story_invalidations(conn, TODAY) == []
+
+
+def test_source_recheck_failure_is_not_evidence_of_removal():
+    conn, cur = connection()
+    cur.fetchall.side_effect = [[observed_proposal()], RuntimeError("source read failed")]
+    with pytest.raises(RuntimeError, match="source read failed"):
+        packets.read_story_invalidations(conn, TODAY)
+    assert not any(call.args[0].lstrip().startswith(("INSERT", "UPDATE")) for call in cur.execute.call_args_list)
+
+
+@pytest.mark.parametrize("opened,rows", [
+    ([observed_proposal()] * (packets.MAX_OPEN_STORY_PACKETS + 1), []),
+    ([observed_proposal()], [agenda()] * (packets.MAX_AGENDA_ROWS + 1)),
+])
+def test_incomplete_source_scan_fails_before_any_withdrawal(opened, rows):
+    conn, cur = connection()
+    cur.fetchall.side_effect = [opened, rows]
+    with pytest.raises(ValueError, match="bounded"):
+        packets.read_story_invalidations(conn, TODAY)
+    assert not any(call.args[0].lstrip().startswith(("INSERT", "UPDATE")) for call in cur.execute.call_args_list)
+
+
+def test_invalidation_preserves_evidence_and_removes_exact_publish_action_only():
+    observed = observed_proposal()
+    conn, cur = connection({**observed, "evidence": {"agenda_entries": [{"title": "Flock contract"}]}},
+                          {"status": "draft", "content_version": 3})
+    assert packets.invalidate_story_packet(conn, observed) == "invalidated"
+    sql, params = cur.execute.call_args_list[-1].args
+    assert "action_kind='resolve_only'" in sql and "target_brief_id=NULL" in sql
+    assert "status=" not in sql
+    evidence = params[2].adapted
+    assert evidence["agenda_entries"] == [{"title": "Flock contract"}]
+    assert evidence["source_invalidation"]["previous_content_version"] == 3
+    assert "does not publish" in evidence["recommendation"]
+    assert not any("UPDATE civic_brief_candidates" in call.args[0] for call in cur.execute.call_args_list)
+    conn.commit.assert_called_once()
+
+
+@pytest.mark.parametrize("current,candidate", [
+    (None, None),
+    (observed_proposal(review_version=3), None),
+    (observed_proposal(target_brief_id="different-draft"), None),
+    (observed_proposal(), {"status": "published", "content_version": 3}),
+    (observed_proposal(), {"status": "draft", "content_version": 4}),
+])
+def test_already_reviewed_or_changed_target_is_not_automatically_withdrawn(current, candidate):
+    conn, cur = connection(current, candidate)
+    assert packets.invalidate_story_packet(conn, observed_proposal()) == "unchanged"
+    assert not any(call.args[0].lstrip().startswith("UPDATE") for call in cur.execute.call_args_list)
+
+
+def test_returning_eligible_source_refreshes_only_a_still_unjudged_withdrawal():
+    packet = packets.prepare_story_packets([agenda()], TODAY)[0]
+    conn, cur = connection({"id": "decision1", "status": "deferred"},
+                          {"id": "decision1", "target_brief_id": None, "action_kind": "resolve_only", "evidence": {"source_invalidation": {"reason": "withdrawn"}}},
+                          {"id": "new-draft", "content_version": 1})
+    assert packets.persist_packet(conn, packet) == "refreshed"
+    sql, params = cur.execute.call_args_list[-1].args
+    assert params[4:8] == ("publish_brief", "editorial", "new-draft", 1)
+    assert "status=" not in sql
+
+
+def test_cli_source_failure_does_not_apply_any_prepared_packets(monkeypatch):
+    import db
+    import sys
+    conn, _ = connection()
+    monkeypatch.setattr(db, "get_connection", lambda: conn)
+    monkeypatch.setattr(sys, "argv", ["civic_review_packets.py", "--section", "stories", "--apply", "--as-of", str(TODAY)])
+    monkeypatch.setattr(packets, "read_inputs", lambda *args: ([], [agenda()]))
+    def fail(*args):
+        raise RuntimeError("source fetch failed")
+    monkeypatch.setattr(packets, "read_story_invalidations", fail)
+    writer, invalidator = MagicMock(), MagicMock()
+    monkeypatch.setattr(packets, "persist_packet", writer)
+    monkeypatch.setattr(packets, "invalidate_story_packet", invalidator)
+    with pytest.raises(RuntimeError, match="source fetch failed"):
+        packets.main()
+    writer.assert_not_called()
+    invalidator.assert_not_called()
+    conn.close.assert_called_once()

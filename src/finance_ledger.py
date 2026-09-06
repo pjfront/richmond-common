@@ -185,7 +185,7 @@ def parse_496_context(pdf: bytes, candidate: str | None) -> dict:
     OPPOSE qualifies. Scans, ambiguous marks and measure layouts stay pending.
     The form has no election-date field, so no election is inferred here.
     """
-    import fitz
+    import pymupdf as fitz
     result = {"pdf_sha256": hashlib.sha256(pdf).hexdigest(), "parser": "netfile-496-layout-v1"}
     with fitz.open(stream=pdf, filetype="pdf") as doc:
         page = doc[0]

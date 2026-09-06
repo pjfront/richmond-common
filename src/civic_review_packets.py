@@ -25,6 +25,7 @@ from zoneinfo import ZoneInfo
 PRODUCER = "civic_review_packets"
 MAX_FINANCE_ROWS = 5000
 MAX_AGENDA_ROWS = 1000
+MAX_OPEN_STORY_PACKETS = 100
 MAX_PACKET_ROWS = 8
 SUBJECTS = {
     "chevron-settlement-and-city-budget": (
@@ -227,13 +228,13 @@ def prepare_finance_packets(rows: Sequence[Mapping[str, Any]], today: date) -> l
     return packets
 
 
-def prepare_story_packets(rows: Sequence[Mapping[str, Any]], today: date) -> list[Packet]:
+def prepare_story_packets(rows: Sequence[Mapping[str, Any]], today: date, *, enforce_window: bool = True) -> list[Packet]:
     groups: dict[tuple[str, str], list[Mapping[str, Any]]] = defaultdict(list)
     seen = set()
     for row in rows:
         day = dated(row.get("meeting_date"))
         url = official_url(row.get("agenda_url"))
-        if not day or not today - timedelta(days=14) <= day <= today + timedelta(days=21) or not url:
+        if not day or not url or (enforce_window and not today - timedelta(days=14) <= day <= today + timedelta(days=21)):
             continue
         if row.get("source_cancelled_at") or row.get("agenda_source_retired_at") or row.get("body_type") != "city_council":
             continue
@@ -296,6 +297,81 @@ def read_inputs(conn: Any, section: str, today: date) -> tuple[list[dict], list[
     return finance, agendas
 
 
+def read_story_invalidations(conn: Any, today: date) -> list[dict[str, Any]]:
+    """Recheck all open source identities, not only today's discovery window.
+
+    Absence is usable evidence only after the entire bounded query succeeds.
+    Retired/cancelled rows are deliberately fetched; qualification uses the same
+    source/title rules as creation. Merely aging out is not source withdrawal.
+    """
+    from psycopg2.extras import RealDictCursor
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute("""SELECT d.id,d.entity_id,d.review_version,d.target_brief_id,d.target_content_version,c.subject_key
+            FROM pending_decisions d JOIN civic_brief_candidates c ON c.id=d.target_brief_id
+            WHERE d.source=%s AND d.entity_type='civic_packet' AND d.action_kind='publish_brief'
+              AND d.status IN ('pending','deferred') AND c.status='draft' AND c.kind='story_update'
+              AND c.subject_key=ANY(%s) ORDER BY d.id LIMIT %s""", (PRODUCER, sorted(SUBJECTS), MAX_OPEN_STORY_PACKETS + 1))
+        opened = [dict(row) for row in cur.fetchall()]
+        if len(opened) > MAX_OPEN_STORY_PACKETS:
+            raise ValueError("Open story proposals exceed the bounded source recheck; no partial scan will be applied")
+        identities = set()
+        for row in opened:
+            prefix = f"story-agenda:{row['subject_key']}:"
+            if not str(row["entity_id"]).startswith(prefix) or not row["entity_id"][len(prefix):]:
+                raise ValueError("Open story proposal has an unrecognized source identity")
+            identities.add(row["entity_id"][len(prefix):])
+        if not identities:
+            return []
+        cur.execute("""SELECT a.meeting_id,a.item_number,a.title,a.agenda_source_retired_at,
+            m.meeting_date,m.agenda_url,m.source_meeting_guid,m.source_cancelled_at,b.body_type
+            FROM agenda_items a JOIN meetings m ON m.id=a.meeting_id JOIN bodies b ON b.id=m.body_id
+            WHERE m.source_meeting_guid=ANY(%s)
+               OR (NULLIF(m.source_meeting_guid,'') IS NULL AND m.agenda_url=ANY(%s))
+            ORDER BY m.meeting_date DESC,m.id,a.item_number LIMIT %s""",
+                    (sorted(identities), sorted(identities), MAX_AGENDA_ROWS + 1))
+        rows = [dict(row) for row in cur.fetchall()]
+        if len(rows) > MAX_AGENDA_ROWS:
+            raise ValueError("Open story source recheck exceeds the bounded agenda scan; no partial scan will be applied")
+    supported = {packet.identity for packet in prepare_story_packets(rows, today, enforce_window=False)}
+    return [row for row in opened if row["entity_id"] not in supported]
+
+
+def invalidate_story_packet(conn: Any, observed: Mapping[str, Any]) -> str:
+    """Withdraw only an exact still-open publication proposal, never its public content."""
+    from psycopg2.extras import Json, RealDictCursor
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (PRODUCER + observed["entity_id"],))
+            cur.execute("""SELECT review_version,target_brief_id,target_content_version,evidence
+                FROM pending_decisions WHERE id=%s AND source=%s AND entity_id=%s
+                  AND action_kind='publish_brief' AND status IN ('pending','deferred') FOR UPDATE""",
+                        (observed["id"], PRODUCER, observed["entity_id"]))
+            current = cur.fetchone()
+            if not current or any(current[key] != observed[key] for key in ("review_version", "target_brief_id", "target_content_version")):
+                conn.commit()
+                return "unchanged"
+            cur.execute("SELECT status,content_version FROM civic_brief_candidates WHERE id=%s FOR UPDATE", (current["target_brief_id"],))
+            candidate = cur.fetchone()
+            if not candidate or candidate["status"] != "draft" or candidate["content_version"] != current["target_content_version"]:
+                conn.commit()
+                return "unchanged"
+            evidence = {**(current["evidence"] or {}), "source_invalidation": {
+                "reason": "No qualifying current agenda evidence remains for this story and source meeting.",
+                "previous_draft_id": str(current["target_brief_id"]),
+                "previous_content_version": current["target_content_version"],
+            }, "recommendation": "Close this withdrawn proposal, or defer while the underlying source is checked. Approval of this engineering note does not publish anything."}
+            cur.execute("""UPDATE pending_decisions SET action_kind='resolve_only',review_class='engineering',
+                target_brief_id=NULL,target_content_version=NULL,title=%s,description=%s,evidence=%s WHERE id=%s""",
+                        ("Agenda publication proposal withdrawn after source change",
+                         "The complete source recheck found no eligible council agenda listings for this story. The previous private draft is preserved; it can no longer be approved for publication.",
+                         Json(evidence), observed["id"]))
+        conn.commit()
+        return "invalidated"
+    except Exception:
+        conn.rollback()
+        raise
+
+
 def persist_packet(conn: Any, packet: Packet) -> str:
     """One advisory-locked transaction owns draft + decision creation/refresh.
 
@@ -311,16 +387,25 @@ def persist_packet(conn: Any, packet: Packet) -> str:
             cur.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (PRODUCER + packet.identity,))
             cur.execute("SELECT id,status FROM pending_decisions WHERE source=%s AND dedup_key=%s LIMIT 1", (PRODUCER, packet.dedup_key))
             previous = cur.fetchone()
-            cur.execute("SELECT id,target_brief_id,action_kind FROM pending_decisions WHERE source=%s AND entity_id=%s AND status IN ('pending','deferred') ORDER BY created_at LIMIT 1 FOR UPDATE", (PRODUCER, packet.identity))
+            cur.execute("SELECT id,target_brief_id,action_kind,evidence FROM pending_decisions WHERE source=%s AND entity_id=%s AND status IN ('pending','deferred') ORDER BY created_at LIMIT 1 FOR UPDATE", (PRODUCER, packet.identity))
             active = cur.fetchone()
+            if (previous and active and active["id"] == previous["id"]
+                    and active["action_kind"] == "resolve_only" and (active.get("evidence") or {}).get("source_invalidation")):
+                # A withdrawn, still-unjudged proposal's source became eligible
+                # again. Refresh the exact review version with a new private
+                # candidate; a closed/rejected judgment remains suppressed.
+                previous = None
             if previous:
-                if active and active["id"] != previous["id"]:
+                if (active and active["id"] != previous["id"]
+                        and (active.get("evidence") or {}).get("previous_decision_id") != str(previous["id"])):
                     # Source reverted to an already judged version. Do not
                     # recreate it or leave the intervening proposal publishable.
                     cur.execute("""UPDATE pending_decisions SET action_kind='resolve_only',review_class='engineering',
                         target_brief_id=NULL,target_content_version=NULL,title=%s,description=%s,evidence=%s
                         WHERE id=%s""", ("Source reverted to previously reviewed evidence", "This intervening proposal is superseded. Closing this engineering note does not publish or repair anything.",
                                          Json({"previous_decision_id": str(previous["id"]), "recommendation": "Close the superseded packet; the current source version already has a recorded judgment."}), active["id"]))
+                    conn.commit()
+                    return "refreshed"
                 conn.commit()
                 return "unchanged"
             target_id, target_version = None, None
@@ -366,11 +451,16 @@ def main() -> None:
     from db import get_connection
     conn = get_connection()
     try:
-        conn.set_session(readonly=not args.apply)
+        # Discovery and withdrawal checks must see one source snapshot. A
+        # cancellation between those reads must not withdraw then recreate the
+        # same proposal from the first, older read in a single invocation.
+        conn.set_session(readonly=not args.apply, isolation_level="REPEATABLE READ")
         with conn.cursor() as cur:
             cur.execute("SET statement_timeout='15s'")
         finance, agendas = read_inputs(conn, args.section, args.as_of)
+        invalidations = read_story_invalidations(conn, args.as_of) if args.section in {"all", "stories"} else []
         conn.commit()
+        conn.set_session(isolation_level="READ COMMITTED")
         prepared = prepare_finance_packets(finance, args.as_of) + prepare_story_packets(agendas, args.as_of)
         # Round-robin subjects so a busy filer cannot starve the three stories.
         groups = defaultdict(list)
@@ -381,8 +471,12 @@ def main() -> None:
             for subject in sorted(groups):
                 if groups[subject]:
                     ordered.append(groups[subject].pop(0))
-        counts = {"created": 0, "refreshed": 0, "unchanged": 0}
+        counts = {"created": 0, "refreshed": 0, "unchanged": 0, "invalidated": 0}
         if args.apply:
+            # Safety withdrawals run before the discovery budget: leaving the
+            # seventh unsupported proposal publishable is not an acceptable cap.
+            for observed in invalidations:
+                counts[invalidate_story_packet(conn, observed)] += 1
             for packet in ordered:
                 disposition = persist_packet(conn, packet)
                 counts[disposition] += 1
@@ -391,6 +485,7 @@ def main() -> None:
         summary = {"mode": "apply" if args.apply else "dry_run", "prepared": len(prepared),
                    "engineering": sum(packet.kind is None for packet in prepared),
                    "editorial": sum(packet.kind is not None for packet in prepared), **counts,
+                   "proposed_invalidations": len(invalidations),
                    "max_changed_packets": args.max_packets, "published": 0, "emails_sent": 0}
         print(json.dumps(summary, sort_keys=True))
         if args.report:

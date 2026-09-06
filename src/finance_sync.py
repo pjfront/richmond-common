@@ -80,20 +80,9 @@ def acquire_snapshot(year: int, through: str, *, fetch=fetch_all_transactions, f
 
 
 def save_snapshot(conn, snapshot: dict) -> dict:
-    from db.documents import ingest_document
-    from db.finance import persist_finance_snapshot
-    # Raw JSON includes full original IDs/direction and source amendment metadata.
-    document_ids = {}
-    for filing, pdf in snapshot["documents"].items():
-        document_ids[filing] = ingest_document(conn, "0660620", "netfile_496", pdf, 1,
-            source_url=f"{API_BASE}/public/image/{filing}", source_identifier=filing,
-            mime_type="application/pdf", metadata={"parser": "netfile-496-layout-v1"}, commit=False)
-    for a in snapshot["assertions"]:
-        raw_id = ingest_document(conn, "0660620", "netfile_transaction",
-            json.dumps(a["raw_payload"], sort_keys=True).encode(), 1, source_url=a["source_url"],
-            source_identifier=a["record_key"], mime_type="application/json", commit=False)
-        a["document_id"] = str(document_ids.get(a["filing_id"], raw_id))
-    return persist_finance_snapshot(conn, snapshot["assertions"], snapshot["events"], snapshot["coverage"])
+    from db.finance import persist_finance_documents, persist_finance_snapshot
+    documents = persist_finance_documents(conn, snapshot["assertions"], snapshot["documents"])
+    return {**documents, **persist_finance_snapshot(conn, snapshot["assertions"], snapshot["events"], snapshot["coverage"])}
 
 
 def public_summary(snapshot: dict) -> dict:
