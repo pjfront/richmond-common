@@ -1,47 +1,40 @@
 import type { Metadata } from 'next'
 import SubscribeForm from '@/components/SubscribeForm'
+import { isSubscriptionSubject, SUBSCRIPTION_SUBJECTS, SUBJECT_FOLLOW_ROLLOUT } from '@/lib/subscription-subjects'
 
 export const metadata: Metadata = {
-  title: 'Stay Informed | Richmond Commons',
+  title: 'Email updates',
   description:
-    'Get a weekly briefing on what your Richmond City Council is doing, before and after each meeting. Free, plain-language updates from public records.',
+    'Choose Richmond stories, election updates, or general council emails. Free, plain-language explanations linked to public records.',
 }
 
-export default function SubscribePage() {
+export default async function SubscribePage({ searchParams }: { searchParams: Promise<{ follow?: string | string[] }> }) {
+  const raw = (await searchParams).follow
+  const follow = isSubscriptionSubject(raw) ? raw : undefined
+  const subject = SUBSCRIPTION_SUBJECTS.find(item => item.id === follow)
   return (
     <div className="max-w-lg mx-auto px-4 sm:px-6 py-12">
       <header className="mb-8 text-center">
-        <h1 className="text-3xl font-bold text-civic-navy">Stay informed</h1>
+        <h1 className="text-3xl font-bold text-civic-navy">{subject ? 'Follow this story' : 'Stay informed'}</h1>
         <p className="text-base text-slate-600 mt-3 leading-relaxed">
-          Get a weekly briefing on what your City Council is doing, before and
-          after each meeting. Plain language, sourced from public records.
+          {subject ? subject.label : 'Get general council previews and recaps, with plain-language explanations linked to public records.'}
         </p>
+        <p className="mt-4 text-sm leading-relaxed text-slate-600">{SUBJECT_FOLLOW_ROLLOUT}</p>
       </header>
 
       <div className="bg-white border border-slate-200 rounded-lg p-6 shadow-sm">
-        <SubscribeForm />
+        <SubscribeForm follow={follow} surface={follow === '2026-general' ? 'november_election' : 'subscribe_page'} />
       </div>
 
-      <div className="mt-8 space-y-4 text-sm text-slate-500">
-        <div className="flex gap-3">
-          <span className="text-civic-amber text-lg leading-none">&#9670;</span>
-          <p>
-            <strong className="text-civic-slate">Before the meeting:</strong>{' '}
-            a plain-language preview of what&apos;s on the agenda and why it matters.
-          </p>
-        </div>
-        <div className="flex gap-3">
-          <span className="text-civic-amber text-lg leading-none">&#9670;</span>
-          <p>
-            <strong className="text-civic-slate">After the meeting:</strong>{' '}
-            what happened: who voted, what passed, and what the public said.
-          </p>
-        </div>
+      <div className="mt-6 space-y-3 text-slate-600">
+        {subject && <p>This saves this subject for a weekly email when there are new reviewed updates. General council previews and recaps are off for a new follow-only subscription.</p>}
+        <p>Already subscribed? Use “Manage preferences” in an existing Richmond Commons email to add this follow. Entering an active email address here does not change its saved choices.</p>
+        <p>The welcome email contains your private management link. Keep that link private; it can change your choices or unsubscribe you.</p>
       </div>
 
       <footer className="mt-10 pt-6 border-t border-slate-200 text-center">
         <p className="text-xs text-slate-500">
-          All data sourced from official public records. Richmond Commons is a
+          Explanations link to public records and identified reporting. Richmond Commons is a
           free civic transparency project, not affiliated with the City of
           Richmond.
         </p>

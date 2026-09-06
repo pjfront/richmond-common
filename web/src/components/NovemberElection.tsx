@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import SubscribeForm from '@/components/SubscribeForm'
+import FollowSubject from '@/components/FollowSubject'
 import SuggestCorrectionLink from '@/components/SuggestCorrectionLink'
 import PublishedCivicBriefs from '@/components/PublishedCivicBriefs'
 import { getPublicFinanceSnapshot, candidateMoney, type FinanceEvent, type PublicFinanceSnapshot } from '@/lib/queries/finance-public'
@@ -132,11 +132,7 @@ export default async function NovemberElection() {
       <a className={linkClass} href={election.county}>Información electoral oficial del condado →</a>
     </section>
 
-    <section className="mt-12 max-w-xl border-t border-slate-200 pt-8">
-      <h2 className="text-2xl font-semibold text-civic-navy">Keep up with Richmond</h2>
-      <p className="my-4 leading-relaxed text-slate-700">Subscribe to the existing council briefing for meeting context and public records. Election-specific alerts will be listed here when available.</p>
-      <SubscribeForm surface="november_election" />
-    </section>
+    <FollowSubject subject="2026-general" />
     <footer className="mt-10 text-sm text-slate-600"><SuggestCorrectionLink /><p className="mt-3">Richmond Commons. “Your November decisions.” richmondcommons.org/elections/2026-general. Official guide facts checked September 6, 2026; finance retrieval dates shown with each filing.</p></footer>
   </article>
 }

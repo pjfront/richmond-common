@@ -51,3 +51,4 @@ jobs:
           node tests/operator_review_inbox.integration.mjs "$RUNNER_TEMP/permission-db/node_modules/@electric-sql/pglite/dist/index.js"
           python tests/civic_review_packets.integration.py "$RUNNER_TEMP/permission-db/node_modules/@electric-sql/pglite/dist/index.js"
           node tests/finance_legacy_repair.integration.mjs "$RUNNER_TEMP/permission-db/node_modules/@electric-sql/pglite/dist/index.js"
+          node tests/subscription_subject_follows.integration.mjs "$RUNNER_TEMP/permission-db/node_modules/@electric-sql/pglite/dist/index.js"

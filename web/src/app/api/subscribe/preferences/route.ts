@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseAdmin } from '@/lib/supabase-admin'
 import { RICHMOND_LOCAL_ISSUES } from '@/lib/local-issues'
+import { isSubscriptionSubject } from '@/lib/subscription-subjects'
+import { groupSubscriptionPreferences } from '@/lib/subscription-preferences'
 import { clientKey, enforceRateLimit } from '@/lib/rate-limit'
 import type {
   EmailSubscriber,
@@ -23,9 +25,9 @@ async function authenticateSubscriber(token: string | null) {
   const supabase = getSupabaseAdmin()
   const { data } = await supabase
     .from('email_subscribers')
-    .select('id, name, status')
+    .select('id, name, status, receive_council_updates')
     .eq('unsubscribe_token', token)
-    .single() as { data: Pick<EmailSubscriber, 'id' | 'name' | 'status'> | null; error: unknown }
+    .single() as { data: (Pick<EmailSubscriber, 'id' | 'name' | 'status'> & { receive_council_updates: boolean }) | null; error: unknown }
 
   if (!data) return { subscriber: null, error: 'Invalid or expired link.' }
   if (data.status === 'unsubscribed') return { subscriber: null, error: 'This subscription is no longer active.' }
@@ -34,16 +36,6 @@ async function authenticateSubscriber(token: string | null) {
 }
 
 // ─── Helpers ────────────────────────────────────────────────
-
-function groupPreferences(rows: EmailPreference[]): SubscriptionPreferences {
-  const prefs: SubscriptionPreferences = { topics: [], districts: [], candidates: [] }
-  for (const row of rows) {
-    if (row.preference_type === 'topic') prefs.topics.push(row.preference_value)
-    else if (row.preference_type === 'district') prefs.districts.push(row.preference_value)
-    else if (row.preference_type === 'candidate') prefs.candidates.push(row.preference_value)
-  }
-  return prefs
-}
 
 // ─── GET: Load preferences ──────────────────────────────────
 
@@ -59,13 +51,14 @@ export async function GET(request: NextRequest) {
   }
 
   const supabase = getSupabaseAdmin()
-  const { data: rows } = await supabase
+  const { data: rows, error: preferenceError } = await supabase
     .from('email_preferences')
-    .select('*')
+    .select('preference_type,preference_value')
     .eq('subscriber_id', subscriber.id) as { data: EmailPreference[] | null; error: unknown }
 
+  if (preferenceError) return NextResponse.json({ success: false, error: 'Preferences could not be loaded.' }, { status: 503 })
   return NextResponse.json(
-    { success: true, preferences: groupPreferences(rows ?? []) } satisfies PreferencesResponse,
+    { success: true, preferences: groupSubscriptionPreferences(rows ?? [], subscriber.receive_council_updates) } satisfies PreferencesResponse,
     { status: 200 },
   )
 }
@@ -100,6 +93,11 @@ export async function PATCH(request: NextRequest) {
     const topics = [...new Set(Array.isArray(prefs.topics) ? prefs.topics.filter((t): t is string => typeof t === 'string' && VALID_TOPIC_IDS.has(t)) : [])]
     const districts = [...new Set(Array.isArray(prefs.districts) ? prefs.districts.filter((d): d is string => typeof d === 'string' && VALID_DISTRICTS.has(d)) : [])]
     const candidateIds = [...new Set(Array.isArray(prefs.candidates) ? prefs.candidates.filter((c): c is string => typeof c === 'string' && c.length > 0) : [])]
+    if ((prefs.subjects !== undefined && (!Array.isArray(prefs.subjects) || prefs.subjects.some(value => !isSubscriptionSubject(value))))
+      || (prefs.receiveCouncilUpdates !== undefined && typeof prefs.receiveCouncilUpdates !== 'boolean')) {
+      return NextResponse.json({ success: false, error: 'Choose listed subjects and a council email preference.' } satisfies PreferencesResponse, { status: 400 })
+    }
+    const subjects = prefs.subjects === undefined ? null : [...new Set(prefs.subjects)]
 
     // Validate candidate IDs against database
     const supabase = getSupabaseAdmin()
@@ -114,11 +112,14 @@ export async function PATCH(request: NextRequest) {
       validCandidates = (found ?? []).map((c: { id: string }) => c.id)
     }
 
-    const { error: replaceError } = await supabase.rpc('replace_email_preferences', {
+    const { error: replaceError } = await supabase.rpc('replace_email_preferences_v2', {
       p_subscriber_id: subscriber.id,
+      p_manage_token: token,
       p_topics: topics,
       p_districts: districts,
       p_candidates: validCandidates,
+      p_subjects: subjects,
+      p_receive_council_updates: prefs.receiveCouncilUpdates ?? null,
     })
 
     if (replaceError) {
@@ -129,11 +130,11 @@ export async function PATCH(request: NextRequest) {
       )
     }
 
-    const savedPrefs: SubscriptionPreferences = {
-      topics,
-      districts,
-      candidates: validCandidates,
-    }
+    // Reload omitted categories so an old client cannot falsely report them cleared.
+    const { data: savedRows, error: readError } = await supabase.from('email_preferences')
+      .select('preference_type,preference_value').eq('subscriber_id', subscriber.id)
+    if (readError) return NextResponse.json({ success: false, error: 'Preferences were saved but could not be reloaded.' }, { status: 503 })
+    const savedPrefs = groupSubscriptionPreferences((savedRows ?? []) as EmailPreference[], prefs.receiveCouncilUpdates ?? subscriber.receive_council_updates)
 
     return NextResponse.json(
       { success: true, preferences: savedPrefs } satisfies PreferencesResponse,

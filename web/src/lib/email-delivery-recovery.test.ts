@@ -34,7 +34,7 @@ function recoveryClient(
 ) {
   const queries = new Map<string, QueryMock[]>()
   const from = vi.fn((table: string) => {
-    const response = tableResponses[table]?.shift()
+    const response = tableResponses[table]?.shift() ?? (table === 'civic_brief_candidates' ? { data: [], error: null } : undefined)
     if (!response) throw new Error(`Unexpected query for ${table}`)
     const query = fluentQuery(response)
     const tableQueries = queries.get(table) ?? []
@@ -114,7 +114,7 @@ function recapMeeting(id: string, overrides: Record<string, unknown> = {}) {
 }
 
 async function successfulRpc(name: string): Promise<QueryResponse> {
-  if (name === 'claim_email_delivery') {
+  if (name === 'claim_consented_email_delivery') {
     return {
       data: [{
         delivery_id: 'claimed-delivery',
@@ -131,6 +131,46 @@ async function successfulRpc(name: string): Promise<QueryResponse> {
 }
 
 describe('recap and digest delivery recovery', () => {
+  it('recovers subject-only updates without adding meeting recaps and pins the approved source version', async () => {
+    const brief = { id: '99999999-9999-4999-8999-999999999999', subject_key: '2026-general', title: 'Reviewed November update', body: 'A sourced proposal, not an adopted outcome.', sources: [{ title: 'Official resolution', url: 'https://www.richmondca.gov/Archive.aspx?ADID=17785', source_tier: 1, source_date: null }], content_version: 2, published_at: '2026-08-05T12:00:00Z' }
+    const { client, rpc } = recoveryClient({
+      email_deliveries: [{ data: [dueDelivery('digest', 'week:2026-08-03', { created_at: '2026-08-10T18:00:00Z' })], error: null }],
+      email_subscribers: [{ data: [activeSubscriber('subscriber-1', { receive_council_updates: false })], error: null }],
+      meetings: [{ data: [recapMeeting('11111111-2222-4333-8444-555555555555')], error: null }],
+      email_preferences: [{ data: [{ subscriber_id: 'subscriber-1', preference_type: 'subject', preference_value: '2026-general' }], error: null }],
+      civic_brief_candidates: [{ data: [brief], error: null }],
+    }, successfulRpc)
+    const sender = vi.fn().mockResolvedValue({ success: true, providerId: 'provider-subject' })
+    expect((await retryPendingEmailDeliveries(client, sender)).sent).toBe(1)
+    expect(sender.mock.calls[0][0].text).toContain('Reviewed November update')
+    expect(sender.mock.calls[0][0].text).not.toContain('Minutes-confirmed result')
+    expect(rpc).toHaveBeenCalledWith('claim_consented_email_delivery', expect.objectContaining({ p_brief_versions: [{ id: brief.id, content_version: 2, published_at: brief.published_at }] }))
+  })
+
+  it('cancels pending council mail after council consent is turned off', async () => {
+    const { client, from } = recoveryClient({
+      email_deliveries: [{ data: [dueDelivery('orientation', 'meeting:22222222-2222-4222-8222-222222222222'), dueDelivery('recap', 'meeting:33333333-3333-4333-8333-333333333333')], error: null }],
+      email_subscribers: [{ data: [activeSubscriber('subscriber-1', { receive_council_updates: false })], error: null }],
+    }, successfulRpc)
+    const sender = vi.fn()
+    expect((await retryPendingEmailDeliveries(client, sender)).cancelled).toBe(2)
+    expect(sender).not.toHaveBeenCalled()
+    expect(from).toHaveBeenCalledTimes(2)
+  })
+
+  it('cancels a subject-only digest after its published content is withdrawn', async () => {
+    const { client } = recoveryClient({
+      email_deliveries: [{ data: [dueDelivery('digest', 'week:2026-08-03', { created_at: '2026-08-10T18:00:00Z' })], error: null }],
+      email_subscribers: [{ data: [activeSubscriber('subscriber-1', { receive_council_updates: false })], error: null }],
+      meetings: [{ data: [recapMeeting('11111111-2222-4333-8444-555555555555')], error: null }],
+      email_preferences: [{ data: [{ subscriber_id: 'subscriber-1', preference_type: 'subject', preference_value: '2026-general' }], error: null }],
+      civic_brief_candidates: [{ data: [], error: null }],
+    }, successfulRpc)
+    const sender = vi.fn()
+    expect((await retryPendingEmailDeliveries(client, sender)).cancelled).toBe(1)
+    expect(sender).not.toHaveBeenCalled()
+  })
+
   it('rebuilds a recap from the official-minutes artifact and matching provenance', async () => {
     const meetingId = '22222222-2222-4222-8222-222222222222'
     const { client, rpc } = recoveryClient({
@@ -151,7 +191,7 @@ describe('recap and digest delivery recovery', () => {
       text: expect.stringContaining('official minutes and vote records'),
     }))
     expect(sender.mock.calls[0][0].html).not.toContain('Recording result.')
-    expect(rpc).toHaveBeenCalledWith('claim_email_delivery', expect.objectContaining({
+    expect(rpc).toHaveBeenCalledWith('claim_consented_email_delivery', expect.objectContaining({
       p_delivery_kind: 'recap',
       p_content_key: `meeting:${meetingId}`,
     }))
@@ -211,7 +251,7 @@ describe('recap and digest delivery recovery', () => {
         error: null,
       }],
       email_preferences: [{
-        data: [{ subscriber_id: 'subscriber-1', preference_value: 'housing_development' }],
+        data: [{ subscriber_id: 'subscriber-1', preference_type: 'topic', preference_value: 'housing_development' }],
         error: null,
       }],
       agenda_items: [{
@@ -408,7 +448,7 @@ describe('recap and digest delivery recovery', () => {
   it('preserves payload-hash safety by stopping reconstructed drift for manual review', async () => {
     const meetingId = '99999999-9999-4999-8999-999999999999'
     const manualReviewRpc = async (name: string): Promise<QueryResponse> => {
-      if (name === 'claim_email_delivery') {
+      if (name === 'claim_consented_email_delivery') {
         return {
           data: [{
             delivery_id: 'drifted-delivery',
@@ -435,7 +475,7 @@ describe('recap and digest delivery recovery', () => {
 
     expect(result).toEqual(expect.objectContaining({ manual_review: 1, fully_resolved: false }))
     expect(sender).not.toHaveBeenCalled()
-    expect(rpc).toHaveBeenCalledWith('claim_email_delivery', expect.objectContaining({
+    expect(rpc).toHaveBeenCalledWith('claim_consented_email_delivery', expect.objectContaining({
       p_payload_sha256: expect.stringMatching(/^[0-9a-f]{64}$/),
     }))
   })

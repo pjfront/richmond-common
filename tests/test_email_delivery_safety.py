@@ -131,11 +131,15 @@ def test_activation_history_and_welcome_intent_are_atomic_without_backfill():
     assert "ADD CONSTRAINT email_subscribers_activation_marker_check" in migration
     assert "Reactivation requires a fresh activation marker" in migration
     assert "current_activation_id: activationId" in subscribe_route
-    assert "current_activation_surface: acquisitionSurface" in subscribe_route
+    follow_migration = (ROOT / "src" / "migrations" / "150_subscription_subject_follows.sql").read_text(encoding="utf-8")
+    assert "activate_email_subscription_v2" in subscribe_route
+    assert "p_surface: acquisitionSurface" in subscribe_route
     assert "acquisition_surface:" not in subscribe_route
-    assert "unsubscribe_token: rotatedUnsubscribeToken" in subscribe_route
-    assert "unsubscribeToken = reactivated.unsubscribe_token" in subscribe_route
-    assert "last_orientation_meeting_id: null" in subscribe_route
+    assert "unsubscribe_token = gen_random_uuid()" in follow_migration
+    assert "unsubscribeToken = activation.unsubscribe_token" in subscribe_route
+    assert "last_orientation_meeting_id = NULL" in follow_migration
+    assert "current_activation_id = activation_id" in follow_migration
+    assert "if (receiveCouncilUpdates) await sendNextOrientationToSubscriber" in subscribe_route
     assert "activationScopedContentKey" in delivery
     assert "Delivery identity belongs to another subscription cycle" in delivery
     assert "contentKeyIsPersisted: true" in delivery

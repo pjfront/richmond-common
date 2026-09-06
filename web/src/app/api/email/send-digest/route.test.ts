@@ -40,6 +40,8 @@ function digestMeetingQuery(rows: Record<string, unknown>[]) {
   const result = { data: rows, error: null }
   const chain = {
     select: vi.fn(),
+    in: vi.fn(),
+    or: vi.fn(),
     eq: vi.fn(),
     gte: vi.fn(),
     lte: vi.fn(),
@@ -48,6 +50,8 @@ function digestMeetingQuery(rows: Record<string, unknown>[]) {
     then: (resolve: (value: typeof result) => unknown) => Promise.resolve(resolve(result)),
   }
   chain.select.mockReturnValue(chain)
+  chain.in.mockReturnValue(chain)
+  chain.or.mockReturnValue(chain)
   chain.eq.mockReturnValue(chain)
   chain.gte.mockReturnValue(chain)
   chain.lte.mockReturnValue(chain)
@@ -59,6 +63,7 @@ function digestMeetingQuery(rows: Record<string, unknown>[]) {
 describe('/api/email/send-digest canary control', () => {
   afterEach(() => {
     vi.clearAllMocks()
+    vi.useRealTimers()
     delete process.env.API_SECRET
     delete process.env.SUBSCRIBER_CANARY_EMAIL
   })
@@ -82,7 +87,7 @@ describe('/api/email/send-digest canary control', () => {
   it('sends one provider-idempotent canary without loading subscribers', async () => {
     process.env.API_SECRET = 'test-secret'
     process.env.SUBSCRIBER_CANARY_EMAIL = 'canary@example.test'
-    mocked.from.mockReturnValue(digestMeetingQuery([{
+    mocked.from.mockImplementation(table => table === 'civic_brief_candidates' ? digestMeetingQuery([]) : digestMeetingQuery([{
       id: '11111111-1111-4111-8111-111111111111',
       meeting_date: '2026-08-05',
       meeting_type: 'regular',
@@ -107,19 +112,41 @@ describe('/api/email/send-digest canary control', () => {
       expect.any(Array),
       expect.stringContaining('/subscribe'),
       undefined,
-      { canary: true },
+      { canary: true, briefs: [] },
     )
     expect(mocked.sendEmail).toHaveBeenCalledWith(expect.objectContaining({
       to: 'canary@example.test',
       idempotencyKey: expect.stringMatching(/^rc:digest:canary:week:/),
     }))
-    expect(mocked.from).toHaveBeenCalledTimes(1)
+    expect(mocked.from.mock.calls.map(([table]) => table)).toEqual(['meetings', 'civic_brief_candidates'])
+  })
+
+  it('includes published updates in a brief-only canary without loading subscribers', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-07T12:00:00Z'))
+    process.env.API_SECRET = 'test-secret'
+    process.env.SUBSCRIBER_CANARY_EMAIL = 'canary@example.test'
+    const brief = {
+      id: '11111111-1111-4111-8111-111111111111', subject_key: '2026-general',
+      title: 'An approved update', body: 'The official resolution advances two candidates.',
+      sources: [{ url: 'https://www.richmondca.gov/Archive.aspx?ADID=17785', title: 'Official resolution', source_tier: 1 }],
+      content_version: 2, published_at: '2026-09-01T12:00:00Z',
+    }
+    mocked.from.mockImplementation(table => digestMeetingQuery(table === 'civic_brief_candidates' ? [brief] : []))
+    mocked.sendEmail.mockResolvedValue({ success: true, providerId: 'provider-brief' })
+
+    const response = await POST(request({ mode: 'canary' }))
+
+    expect(response.status).toBe(200)
+    expect(mocked.buildDigestEmail).toHaveBeenCalledWith([], expect.stringContaining('/subscribe'), undefined, { canary: true, briefs: [brief] })
+    expect(mocked.sendEmail).toHaveBeenCalledTimes(1)
+    expect(mocked.from.mock.calls.map(([table]) => table)).toEqual(['meetings', 'civic_brief_candidates'])
   })
 
   it('surfaces an ambiguous provider result so the workflow forbids a rerun', async () => {
     process.env.API_SECRET = 'test-secret'
     process.env.SUBSCRIBER_CANARY_EMAIL = 'canary@example.test'
-    mocked.from.mockReturnValue(digestMeetingQuery([{
+    mocked.from.mockImplementation(table => table === 'civic_brief_candidates' ? digestMeetingQuery([]) : digestMeetingQuery([{
       id: '33333333-3333-4333-8333-333333333333',
       meeting_date: '2026-08-05',
       meeting_type: 'regular',

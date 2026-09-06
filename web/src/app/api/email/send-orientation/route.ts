@@ -108,7 +108,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const subscribers = await loadActiveSubscribers(supabase, RICHMOND_FIPS)
+    const subscribers = await loadActiveSubscribers(supabase, RICHMOND_FIPS, true)
     if (subscribers.length === 0) {
       return NextResponse.json({
         candidates: candidates.length,
