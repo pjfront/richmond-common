@@ -89,7 +89,7 @@ sources:
     sync_key: archive_center
     module: archive_center_discovery.py
     external_api: "https://www.ci.richmond.ca.us/ArchiveCenter/"
-    description: "Council minutes PDFs, resolutions, ordinances (9 AMIDs)"
+    description: "Council minutes, resolutions, ordinances and other Tier 1–2 archives (12 AMIDs). Scan-only documents retain downloaded PDF bytes without model calls, capped at 20 new scans / 32 MiB per run with deferred counts; existing text-hash identities remain unchanged."
     tables_written:
       - documents
     layer: 1

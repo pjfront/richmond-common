@@ -90,8 +90,8 @@ def test_save_to_documents_passes_raw_text():
     assert result["saved"] == 1
 
 
-def test_save_to_documents_empty_text_sets_raw_text_none():
-    """save_to_documents should set raw_text=None for empty text."""
+def test_save_to_documents_empty_text_without_pdf_is_not_fabricated():
+    """Missing evidence must fail before a None or empty hash is persisted."""
     from unittest.mock import MagicMock, patch
 
     mock_conn = MagicMock()
@@ -101,11 +101,11 @@ def test_save_to_documents_empty_text_sets_raw_text_none():
 
     with patch("db.ingest_document_with_status") as mock_ingest:
         mock_ingest.return_value = ("fake-uuid", True)
-        save_to_documents(mock_conn, docs, city_fips="0660620")
+        result = save_to_documents(mock_conn, docs, city_fips="0660620")
 
-    call_kwargs = mock_ingest.call_args[1]
-    assert call_kwargs.get("raw_text") is None
-    assert call_kwargs.get("raw_content") is None
+    mock_ingest.assert_not_called()
+    assert result["errors"] == 1
+    assert result["inserted"] == 0
 
 
 def test_save_to_documents_dedup_hits_dont_count_as_inserted():

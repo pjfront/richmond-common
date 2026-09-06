@@ -73,6 +73,9 @@ def sync_archive_center(
             dest = RAW_DIR / f"AMID_{amid}"
             filepath = download_document(session, doc["adid"], dest)
             if filepath:
+                # Retain the actual source even when PyMuPDF finds no text.
+                # Pass a path, not every PDF's bytes held in one large list.
+                doc["pdf_path"] = str(filepath)
                 doc["text"] = extract_text(filepath)
             all_docs.append(doc)
 
@@ -90,6 +93,18 @@ def sync_archive_center(
         "records_new": stats["inserted"],
         "records_deduplicated": stats["deduplicated"],
         "records_errors": stats["errors"],
+        "records_deferred": stats["scans_deferred"],
+        "scan_documents_retained_without_text": stats["scans_retained"],
+        "scan_documents_inserted": stats["scans_inserted"],
+        "scan_bytes_inserted": stats["scan_bytes_inserted"],
+        # A bounded backlog is expected continuation, not a retry loop or an
+        # extraction failure. Actual missing/invalid evidence must surface.
+        "continuation_required": stats["scans_deferred"] > 0,
+        "required_source_incomplete": stats["errors"] > 0,
+        "incomplete_reasons": (
+            [f"{stats['errors']} Archive Center records failed persistence"]
+            if stats["errors"] else []
+        ),
         "records_updated": 0,
         "amids_scanned": len(target_modules),
     }
