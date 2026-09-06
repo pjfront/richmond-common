@@ -31,7 +31,8 @@ describe('one weekly digest selection contract', () => {
       expect(text).toContain('version 1')
       expect(text).toContain('#brief-11111111-1111-4111-8111-111111111111-v1')
       expect(text).toContain(brief.sources[0].url)
-      expect(text).toContain('operator-reviewed')
+      expect(text).toContain('AI-written; checked against linked sources')
+      expect(text).not.toMatch(/operator-reviewed|human-reviewed/)
     }
     const fingerprint = (version: number) => createHash('sha256').update(JSON.stringify(buildDigestEmail([], '/unsubscribe', '/manage', { briefs: [{ ...brief, content_version: version }] }))).digest('hex')
     expect(fingerprint(1)).not.toBe(fingerprint(2))

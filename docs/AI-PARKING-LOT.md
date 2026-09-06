@@ -10,6 +10,10 @@ _Convention: Every session adds observations here. Items stay until promoted to 
 
 - The first successful SQL read and ACTIVE_HEALTHY status can precede an automatic PostgreSQL restart. Before the first baseline write, require a 60-second-old exact branch and two healthy read-only samples of the same postmaster with at least 30 seconds of uptime. Restart/unhealthy samples reset readiness, polling is capped at 180 seconds, and schema writes remain single-attempt. This reduces the observed early-startup race; it cannot guarantee that a remote database will never restart later.
 
+## 2026-09-06 subscriber access boundary
+
+- Migration 151 removes API-role table privileges from subscriber records and preferences while preserving existing service grants, row policies, and subscription RPCs. The standard disposable PostgreSQL gate now starts these tables with broad hosted-style defaults, including PUBLIC and TRUNCATE, and verifies effective denial plus service-backed subscribe, preference, unsubscribe, and delivery behavior. Keep this fixture when changing subscription schema; RLS-only fixtures miss table-level privileges.
+
 ## 2026-09-06 production CLI output contract
 
 - Deployment now requests explicit JSON and parses only CLI59.1.4's documented object/agent envelope or narrow legacy URL forms. The lost September6 stdout cannot establish its exact failure format; installed official CLI code confirms agent detection can change stdout from a bare URL to JSON. Authenticated project/SHA/ref/alias proof stays separate from locator parsing. Future format failures emit only redacted structural diagnostics.
