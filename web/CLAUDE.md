@@ -1,5 +1,7 @@
 # web/CLAUDE.md — Frontend Conventions
 
+**Active plan:** The [September 6 implementation delegation](../docs/CURRENT-PLAN.md) supersedes the historical S29 and repeated human-approval requirements below within its accepted scope. Retain technical release and source-quality checks.
+
 ## Stack
 
 Next.js 16 (app router), React 19, TypeScript (strict, no `any`), Tailwind CSS v4, Supabase client. Deployed on Vercel with ISR (1hr revalidation).

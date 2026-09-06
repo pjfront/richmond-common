@@ -1,0 +1,29 @@
+# Richmond Commons: current implementation plan
+
+Updated September 6, 2026. This is the active plan; earlier sprint experiments remain historical context.
+
+## Authority and boundaries
+
+The operator accepted the September 6 project review and instructed: “Spot on! Let's do it all! … otherwise I am happy to completely delegate this to you.” This authorizes implementing, testing, merging, applying bounded migrations, and deploying the reviewed Richmond resident, election, finance, and operator-workflow improvements. It supersedes the S29 baseline/treatment publication dependency and repetitive per-label, per-commit-message, and exact-SHA human approval rituals for this work. Do not request those approvals again. Keep the technical exact-source, CI, target, provenance, budget, and rollback-compatibility checks.
+
+Human judgment remains appropriate for unresolved identity conflicts, consequential unsupported claims, disputed corrections, a material new editorial position, payment-account or billing choices, and work outside the accepted scope. No outreach or messages to other people are authorized. Evidence must precede publication; automated extraction is not independent confirmation. Migration 134 remains prohibited.
+
+## Delivery order
+
+1. Restrict private operator tables and public reference-table writes; verify effective anonymous permissions in an executable database test.
+2. Preserve finance source assertions, correct contributions-made direction, replace destructive fuzzy deduplication with explicit reconciliation, and discover local independent-expenditure reports and amendment lineage.
+3. Ship a useful November municipal guide, an explanation-led home, three continuing issue histories, exact agenda-item links, and a versioned operator review inbox.
+4. Connect validated changes to public briefs and existing subscriptions. Show source coverage and uncertainty instead of guessed completeness. Add a simple passive support route; keep civic facts free.
+5. Build sponsor lookup and follow-through views on the same evidence model. Defer broad archive regeneration, generalized chat, other cities, and paid membership infrastructure until usage justifies them.
+
+Use the existing Python, PostgreSQL/Supabase, Next.js, and GitHub Actions stack. Fetch and parse outside short persistence transactions. Cache compact public projections. Reconcile changed source cohorts, preserve raw artifacts, and bound retries and model spending.
+
+## Release record
+
+Before each release, record the exact source SHA, the previous production deployment, included commits, required database changes, CI proof, and public verification. A successful merge is not a deployment; a successful build is not a verified data repair. Never expose operator evidence or credentials in a public release note.
+
+Initial production observed September 6: `0ff9fd50443d8d13e15a4d83845b2997cfc1054a`, deployment `dpl_3Fit9sx7D97BgAbA3iqsRfbjSfUp`. Remote main was `dff3099d8420da236248640eca3f6aee5ef35ac6`. These are observations, not permanently current state.
+
+## Success measures
+
+A resident can identify the next relevant decision and find its source; money totals reconcile to explicitly covered source reports; new filings and revised agendas produce useful updates; corrections remain replayable. Measure weekly operator attention and development spending separately from hosting and production inference. Initial election-pilot attention target: 15–30 minutes weekly, to be measured rather than promised.
