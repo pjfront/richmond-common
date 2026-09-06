@@ -67,6 +67,15 @@ immutable UUID/ref until the authoritative `preview_project_status` is
 health. Replacement, timeout, or an unsafe record fails closed and invokes
 exact hard cleanup before Vercel state is written.
 
+A fresh database can restart after its first successful `SELECT 1`. Subsequent
+Management API read-only queries retry only the API's explicit connection
+termination message or leading PostgreSQL `FATAL` codes `57P01` and `57P03`.
+They use at most four requests with 2/4/8-second delays, and no retry starts
+after 30 seconds. An in-flight HTTP request retains its existing 120-second
+timeout. Writes, permission/syntax errors, malformed responses, and unrelated
+transport failures are not retried. Exhaustion preserves the original error
+and enters the existing exact-branch cleanup path.
+
 A trusted-main scheduled sweep runs every five minutes and hard-deletes only
 exact non-persistent, non-default `pr-<N>-preview` branches at least 90 minutes
 old. Independently, `Supabase Preview Watchdog` starts only from a completed
