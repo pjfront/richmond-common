@@ -306,20 +306,11 @@ def sync_paper_filing_reconciliation(
     sync_type: str = "incremental",
     sync_log_id=None,
 ) -> dict:
-    """Synthesize Form 460 cover-total reconciliation rows.
+    """Record only explicit, reconciled Form 460 unitemized amounts.
 
-    For every Form 460 paper filing whose form_summary block is present,
-    compute (form_total_this_period - DB_total_in_period) and insert a
-    single synthetic row with the gap as `Unitemized contributions`.
-    This makes DB cycle totals match the candidate's own legal claim on
-    Form 460 cover Line 5 — the canonical ground truth.
-
-    Runs AFTER donor_employer_merge and donor_dedup so the DB period
-    total reflects post-cleanup state. Idempotent: existing UNI rows
-    are deleted and re-inserted with current correct amounts.
-
-    See load_paper_filings.reconcile_paper_filings_to_forms for the
-    actual reconciliation logic.
+    Missing itemized extraction and legacy UNI discrepancies remain
+    incomplete obligations. Routine runs preserve existing rows rather
+    than silently repairing them or calling every deficit a small donation.
     """
     from load_paper_filings import (
         FormSummaryCacheDurabilityError,
@@ -389,11 +380,24 @@ def sync_paper_filing_reconciliation(
             "incomplete_reasons": incomplete_reasons[:10],
         }
 
-    inner = reconcile_paper_filings_to_forms(
-        conn,
-        city_fips=city_fips,
-        form_summary_cache=form_summary_cache,
-    )
+    try:
+        inner = reconcile_paper_filings_to_forms(
+            conn,
+            city_fips=city_fips,
+            form_summary_cache=form_summary_cache,
+        )
+    except FormSummaryCacheDurabilityError as exc:
+        return {
+            "records_fetched": 0, "records_new": 0, "records_updated": 0,
+            "dollars_synthesized": 0.0, "filings_already_matched": 0,
+            "filings_over_form": 0, "over_filings_detail": [],
+            "form460_summaries_pending": 0, "durable_cache_ready": True,
+            "cache_complete_for_reconciliation": False,
+            "retryable_incomplete": True, "incomplete_count": 1,
+            "incomplete_reasons": [str(exc)],
+        }
+    reconciliation_incomplete = inner.get("incomplete_count", 0)
+    incomplete_reasons.extend(inner.get("incomplete_reasons", []))
     return {
         "records_fetched": inner["filings_examined"],
         "records_new": inner["rows_synthesized"],
@@ -404,10 +408,11 @@ def sync_paper_filing_reconciliation(
         "over_filings_detail": inner.get("over_filings", []),
         "form460_summaries_pending": len(summary_failures),
         "durable_cache_ready": True,
-        "cache_complete_for_reconciliation": True,
-        "retryable_incomplete": bool(summary_failures),
-        "incomplete_count": len(summary_failures),
+        "cache_complete_for_reconciliation": not reconciliation_incomplete,
+        "retryable_incomplete": bool(summary_failures) or bool(reconciliation_incomplete),
+        "incomplete_count": len(summary_failures) + reconciliation_incomplete,
         "incomplete_reasons": incomplete_reasons[:10],
+        "reconciliation_issues": inner.get("reconciliation_issues", [])[:40],
     }
 
 

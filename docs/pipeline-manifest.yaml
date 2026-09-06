@@ -37,7 +37,8 @@ sources:
       - paper_filing_zero_results
     paper_filings:
       discovery: "RSS feed at /public/list/filing/rss/{shortcut}/campaign.xml"
-      candidate_coverage: "Anderson FPPC1481105: Next.js hourly server cache reads the official portal byFiler metadata for verified portal ID214395297 and cross-checks the latest460 through Connect2 info. Two GETs, 2.5s each, 100 rows/256KiB response cap, dated fallback. No PDF/model calls or database writes; metadata inventory is not transaction completeness."
+      candidate_coverage: "Anderson FPPC 1481105: Next.js hourly server cache reads official byFiler metadata for portal ID 214395297 and cross-checks the latest 460 through Connect2 info. Two GETs, 2.5s each, 100 rows/256 KiB cap, dated fallback. AndersonFinanceSummary and the dedicated money page separately read anderson-reported-finance.json through lib/anderson-finance.ts: source-hash/page-pinned amounts, nonoverlapping reported periods and later receipt-date disclosures, with source discrepancies explicit. Metadata never replaces these amounts."
+      source_review: "paper_finance_review.py runs in the existing daily finance job without model credentials. All pinned sources and 2026-relevant periodic reports (including intermediate reports and newly filed older-period amendments), plus later-filed 497s, use bounded official inventory and independent metadata. Up to 100 sources; each run permits 16 PDF reads, four preparations and 32 MiB, with explicit deferred backlog and oldest-check ordering. Exact PDF/metadata hashes gate review reuse. New/changed PDFs retain exact bytes and local Tesseract candidates in private netfile_transaction documents; resolve-only engineering packets require an evidence-checked JSON PR before numeric publication. Unchanged polls skip OCR/PDF reads, with weekly PDF rechecks. No contribution or finance projection writes."
       documents: "/public/image/{filingId} returns PDF"
       data_dir: "src/data/paper_filings/*.json"
       extractor: "netfile_paper_extractor.py (PyMuPDF + DeepSeek tool calling, optional Kimi vision; durable idempotency via contributions + paper_filing_zero_results)"
@@ -1225,11 +1226,11 @@ enrichments:
 
   paper_filing_reconciliation:
     module: load_paper_filings.py  # implemented as sync_paper_filing_reconciliation wrapping reconcile_paper_filings_to_forms
-    description: "Synthesize one 'Unitemized contributions' row per Form 460 filing whose form_summary indicates a gap between the candidate's reported cover-page total and our extracted itemized rows. Makes DB cycle-to-date totals match Form 460 cover Line 5 — the canonical ground truth (the candidate's own legal certification of what they raised). Runs AFTER donor_dedup so the DB period totals reflect post-cleanup state."
+    description: "Insert only explicitly reported unitemized monetary amounts whose itemized source total, current itemized rows and monetary form total reconcile. Missing extracted donors are an unresolved gap, never presumed small donations. Runs after donor_dedup and preserves existing rows for separately guarded repair."
     reads_from: [contributions, donors, committees, form_summary_cache]
     writes_to: [contributions]
     depends_on: [donor_dedup]
-    notes: "Idempotent — drops all entity_code='UNI' rows for the city before inserting new ones. Reads form_summary_cache (DB-backed since migration 114; was file-only at src/data/form_summaries.json and silently broke on ephemeral cloud runners after Form 460s aged out of the 15-day RSS window — see D50 in AI-PARKING-LOT for the 2026-05-16 incident). If DB period total exceeds form total, no synthesis (logs a warning — possible OCR over-extraction or cross-filing duplication that donor_dedup missed)."
+    notes: "No global UNI deletion or automatic rewrite of legacy rows. Incomplete, contradictory or overlapping extraction remains unresolved and propagates through the wrapper's incomplete diagnostics. Existing form_summary_cache lacks PDF hashes and can contain semantically mislabeled extraction; it is not the public Anderson snapshot or proof of donor completeness."
 
   donor_classification:
     module: donor_classifier.py
@@ -1410,8 +1411,8 @@ queries:
   getAndersonFilingCoverage:
     file: queries/candidate-filing-coverage.ts
     tables: []
-    used_by: ["/elections/2026-general"]
-    description: "Exact-filer official metadata cached hourly, with dated paper-filing fallback and explicit source unavailability; no amounts or receipt assertions."
+    used_by: ["/elections/2026-general", "/elections/2026-general/money/ahmad-anderson"]
+    description: "Exact-filer official metadata cached hourly with explicit staleness/unavailability. The metadata query has no monetary values; its consumers separately use the checked source-pinned JSON via lib/anderson-finance.ts, retaining amounts when the metadata refresh fails and flagging newly detected sources."
   acquireAndersonFilingCoverage: {file: queries/candidate-filing-coverage.ts, tables: [], used_by: []}
   # ── Meetings ────────────────────────────────────────────────
   getMeetings:
@@ -1985,6 +1986,9 @@ pages:
   "/elections/2026-general/money":
     queries: [getPublicFinanceSnapshot]
     description: "Search reported legal names/FPPC identifiers and read/download source-linked public events."
+  "/elections/2026-general/money/ahmad-anderson":
+    queries: [getAndersonFilingCoverage]
+    description: "Anderson's source-checked reported period amounts, latest-period spending/cash, and separately dated rapid receipts from anderson-reported-finance.json; source inconsistencies and unverified donor completeness remain explicit. No monetary database query."
   "/support":
     queries: []
     description: "Existing voluntary support link and free civic research tools."
@@ -2723,6 +2727,15 @@ field_map:
     "reported donor, recipient, spender, activity and original source":
       query: getPublicFinanceSnapshot
       column: finance_events.source_url
+      sources: [netfile]
+  "/elections/2026-general/money/ahmad-anderson":
+    "reported amounts, source pages and period boundaries":
+      column: "web/src/data/anderson-reported-finance.json"
+      sources: [netfile]
+      note: "lib/anderson-finance.ts validates adjacent nonoverlapping 2026 periods before summing monetary receipts. Form497 receipt dates determine separate later disclosures; filing dates do not. Printed cumulative columns, loans, noncash and disputed donor attachments are never silently added."
+    "new official filings and dated coverage":
+      query: getAndersonFilingCoverage
+      column: "official NetFile byFiler inventory + Connect2 metadata"
       sources: [netfile]
   "/support":
     "support destination":
