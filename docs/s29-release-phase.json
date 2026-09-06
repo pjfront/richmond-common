@@ -1,20 +1,38 @@
 {
-  "schema_version": 1,
-  "release_id": "s29-november-demand-test",
-  "phase": "baseline",
-  "production_anchor_sha": "0ff9fd50443d8d13e15a4d83845b2997cfc1054a",
-  "public_treatment_enabled": false,
-  "held_merges": [
-    {
-      "pull_request": 110,
-      "merge_sha": "c5dbcc7d61d9de4b08f161282c2541bd62184bec",
-      "scope": "rolling_24_month_agenda_item_sitemap"
-    },
-    {
-      "pull_request": 119,
-      "merge_sha": "8b5e2f8d83cbc7814bcea4deb91305ce18c02fe6",
-      "scope": "public_seo_json_ld_and_expanded_sitemap"
-    }
+  "schema_version": 2,
+  "release_id": "2026-09-06-resident-release",
+  "phase": "resident_release",
+  "public_treatment_enabled": true,
+  "authorization": {
+    "date": "2026-09-06",
+    "plan": "docs/CURRENT-PLAN.md",
+    "decision": "operator_approved_resident_plan",
+    "supersedes": "s29_baseline_treatment_publication_dependency"
+  },
+  "scope": [
+    "rolling_24_month_agenda_item_sitemap",
+    "public_seo_json_ld_and_expanded_sitemap",
+    "source_checked_resident_stories"
   ],
-  "treatment_flip_condition": "After 14 complete UTC baseline days are frozen and the exact treatment SHA is approved"
+  "note": "This records source-controlled release authorization, not proof of production deployment or completion of the superseded baseline experiment.",
+  "historical_baseline": {
+    "schema_version": 1,
+    "release_id": "s29-november-demand-test",
+    "phase": "baseline",
+    "production_anchor_sha": "0ff9fd50443d8d13e15a4d83845b2997cfc1054a",
+    "public_treatment_enabled": false,
+    "held_merges": [
+      {
+        "pull_request": 110,
+        "merge_sha": "c5dbcc7d61d9de4b08f161282c2541bd62184bec",
+        "scope": "rolling_24_month_agenda_item_sitemap"
+      },
+      {
+        "pull_request": 119,
+        "merge_sha": "8b5e2f8d83cbc7814bcea4deb91305ce18c02fe6",
+        "scope": "public_seo_json_ld_and_expanded_sitemap"
+      }
+    ],
+    "treatment_flip_condition": "After 14 complete UTC baseline days are frozen and the exact treatment SHA is approved"
+  }
 }

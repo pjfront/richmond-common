@@ -4,8 +4,10 @@ import SuggestCorrectionLink from '@/components/SuggestCorrectionLink'
 import PublishedCivicBriefs from '@/components/PublishedCivicBriefs'
 import { getPublicFinanceSnapshot, candidateMoney, type FinanceEvent, type PublicFinanceSnapshot } from '@/lib/queries/finance-public'
 import { NOVEMBER_CANDIDATES, NOVEMBER_DATES, NOVEMBER_ELECTION as election, formatCivicDate } from '@/lib/november-election'
+import { financeEventLabel, isFinanceAdjustment } from '@/lib/finance-ledger'
 
-const money = (amount: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(amount)
+const money = (amount: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount)
+const signedMoney = (amount: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', signDisplay: 'always' }).format(amount)
 const linkClass = 'inline-flex min-h-11 items-center text-civic-navy underline underline-offset-4'
 
 function OfficialSource({ href, children }: { href: string; children: React.ReactNode }) {
@@ -15,12 +17,15 @@ function OfficialSource({ href, children }: { href: string; children: React.Reac
 function EventList({ events }: { events: FinanceEvent[] }) {
   return <ul className="divide-y divide-slate-200">
     {events.map(event => <li key={event.event_key} className="py-4">
-      <p className="font-medium text-civic-navy">{money(event.amount)} · {event.event_kind === 'independent_expenditure' ? event.reporting_filer_name : event.donor_name ?? 'Contributor name unavailable'}</p>
+      <p className="text-sm font-semibold text-slate-600">{financeEventLabel(event)}</p>
+      <p className="font-medium text-civic-navy">{money(event.amount)} · {event.event_kind === 'independent_expenditure' ? event.reporting_filer_name : event.donor_name ?? 'Reported counterparty unavailable'}</p>
       <p className="mt-1 text-slate-700">{event.event_kind === 'independent_expenditure'
         ? `Independent spending${event.support_oppose === 'S' ? ' supporting' : event.support_oppose === 'O' ? ' opposing' : ' mentioning'} ${event.candidate_name ?? event.measure_name ?? 'a ballot choice'}`
         : `Reported to ${event.recipient_name ?? 'a committee'}`}</p>
       <p className="mt-1 text-sm text-slate-600">Activity: {formatCivicDate(event.activity_date)} · {event.election_date ? `Election: ${formatCivicDate(event.election_date)}` : 'Election not identified in this record'}</p>
-      <p className="text-sm text-slate-600">Official filing · retrieved {formatCivicDate(event.extracted_at)} · <a className={linkClass} href={event.source_url}>Read filing {event.filing_ids[0] ?? ''}</a></p>
+      {isFinanceAdjustment(event) && <p className="mt-1 text-sm text-slate-600">A signed correction; this record alone does not establish a cash refund.</p>}
+      {event.event_kind === 'loan' && <p className="mt-1 text-sm text-slate-600">A reported loan value may describe a balance or activity, rather than a new loan.</p>}
+      <p className="text-sm text-slate-600">Official filing · retrieved {formatCivicDate(event.extracted_at)} · <a className={linkClass} href={event.source_url}>Read source filing</a></p>
     </li>)}
   </ul>
 }
@@ -67,29 +72,34 @@ export default async function NovemberElection() {
     <section id="money" className="mt-12 scroll-mt-24 border-t border-slate-200 pt-8">
       <h2 className="text-2xl font-semibold text-civic-navy">Follow the money</h2>
       <p className="mt-3 max-w-3xl leading-relaxed text-slate-700">A donation goes to a campaign. Independent spending pays for activity supporting or opposing a candidate outside that campaign. Transfers between committees can fund later spending, so adding all three together would count some money twice.</p>
-      <p className="mt-3 max-w-3xl text-slate-600">These are subtotals of the source reports indexed here, not complete fundraising totals. Cash gifts cover reported activity in 2026. The outside-spending columns require an explicitly identified November 3 election and support or opposition. Earlier or unidentified-election activity appears separately below.</p>
+      <p className="mt-3 max-w-3xl text-slate-600">These are subtotals of the source reports indexed here, not complete fundraising totals. Gross cash receipts and signed adjustments are shown separately; their sum is net reported receipts. A negative adjustment does not by itself establish a refund. These figures cover reported activity in 2026. Outside-spending figures require an explicitly identified November 3 election and support or opposition. Recent earlier or unidentified-election activity appears separately below.</p>
       {!snapshot ? <p role="status" className="mt-5 rounded-lg border border-amber-300 bg-amber-50 p-5 text-slate-800">Campaign records are temporarily unavailable here. This is a source-loading problem, not a finding of no donations or outside spending. The election guide and original sources remain available.</p> : <>
         {snapshot.truncated && <p role="status" className="mt-4 text-slate-700">This view reached its record limit; totals are withheld until the complete set can be read.</p>}
         <div className="mt-6 grid gap-5 md:grid-cols-2">
           {NOVEMBER_CANDIDATES.map(candidate => {
             const totals = candidateMoney(snapshot.events, candidate.committeeId, candidate.name)
+            const unavailableSubtotal = snapshot.truncated ? 'Subtotal withheld (record limit)' : 'Not established'
+            const hasReceipts = totals.receipts.length > 0 && !snapshot.truncated
             return <article key={candidate.committeeId} className="rounded-xl border border-slate-200 p-5">
               <h3 className="text-xl font-semibold text-civic-navy">{candidate.name}</h3>
               <p className="mt-1 text-sm text-slate-600">Candidate committee · FPPC {candidate.committeeId}</p>
               <dl className="mt-5 space-y-4">
-                <div><dt className="text-slate-600">Indexed 2026 cash gifts</dt><dd className="mt-1 text-3xl font-semibold text-civic-navy">{totals.receipts.length && !snapshot.truncated ? money(totals.receiptsTotal) : 'Not established'}</dd></div>
-                <div><dt className="text-slate-600">Independent November support</dt><dd className="font-semibold text-civic-navy">{totals.support.length && !snapshot.truncated ? money(totals.supportTotal) : 'No published matching records'}</dd></div>
-                <div><dt className="text-slate-600">Independent November opposition</dt><dd className="font-semibold text-civic-navy">{totals.opposition.length && !snapshot.truncated ? money(totals.oppositionTotal) : 'No published matching records'}</dd></div>
+                <div><dt className="text-slate-600">Gross cash receipts indexed · 2026</dt><dd className="mt-1 text-3xl font-semibold text-civic-navy">{hasReceipts ? money(totals.grossReceiptsTotal) : unavailableSubtotal}</dd></div>
+                <div><dt className="text-slate-600">Signed adjustments to receipts</dt><dd className="font-semibold text-civic-navy">{hasReceipts ? totals.receiptAdjustments.length ? signedMoney(totals.receiptAdjustmentsTotal) : 'No indexed adjustments' : unavailableSubtotal}</dd></div>
+                <div><dt className="text-slate-600">Net reported receipts indexed · 2026</dt><dd className="font-semibold text-civic-navy">{hasReceipts ? money(totals.netReceiptsTotal) : unavailableSubtotal}</dd></div>
+                <div><dt className="text-slate-600">Independent November support</dt><dd className="font-semibold text-civic-navy">{snapshot.truncated ? unavailableSubtotal : totals.support.length ? money(totals.supportTotal) : 'No published matching records'}</dd></div>
+                <div><dt className="text-slate-600">Independent November opposition</dt><dd className="font-semibold text-civic-navy">{snapshot.truncated ? unavailableSubtotal : totals.opposition.length ? money(totals.oppositionTotal) : 'No published matching records'}</dd></div>
               </dl>
-              <p className="mt-4 text-sm leading-relaxed text-slate-600">Loans, noncash gifts, refunds, and outgoing transfers are separate from cash gifts. Missing records do not mean zero activity.</p>
+              <p className="mt-4 text-sm leading-relaxed text-slate-600">Loan values, noncash contributions, separately reported refunds, and outgoing transfers are excluded from these receipt subtotals. Missing records do not mean zero activity.</p>
               <Link className={linkClass} href={`/elections/2026-general/money?committee=${candidate.committeeId}`}>Read this committee&apos;s indexed records →</Link>
             </article>
           })}
         </div>
         <div className="mt-7">
           <h3 className="text-lg font-semibold text-civic-navy">What the source coverage includes</h3>
+          <p className="mt-3 text-sm leading-relaxed text-slate-600">Richmond, California · calendar-year 2026 records. The dates below describe the activity window searched, not the period covered by every filing.</p>
           {snapshot.coverage.length ? <ul className="mt-3 space-y-3">{snapshot.coverage.slice(0, 8).map(row => <li key={`${row.source}:${row.form_type}:${row.scope_key}`} className="text-sm leading-relaxed text-slate-600">
-            <a href={row.source_url} className={linkClass}>{row.source} · {row.form_type}</a>: {row.status.replaceAll('_', ' ')} · checked {formatCivicDate(row.checked_at)}{row.activity_through ? ` · reported activity through ${formatCivicDate(row.activity_through)}` : ''}. {row.limitations.join(' ')}
+            <a href={row.source_url} className={linkClass}>{row.source} · {row.form_type}</a>: {row.status.replaceAll('_', ' ')} · checked {formatCivicDate(row.checked_at)}{row.activity_from || row.activity_through ? ' · activity window searched' : ''}{row.activity_from ? ` from ${formatCivicDate(row.activity_from)}` : ''}{row.activity_through ? ` through ${formatCivicDate(row.activity_through)}` : ''}. {row.limitations.join(' ')}
           </li>)}</ul> : <p className="mt-3 text-slate-600">A complete source-coverage check has not yet been published. Treat the indexed records as a partial set.</p>}
         </div>
       </>}
