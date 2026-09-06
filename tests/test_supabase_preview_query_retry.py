@@ -52,6 +52,9 @@ def clock(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     "Failed to run sql query: FATAL:  57P03: the database system is shutting down\n",
     "Failed to run sql query: FATAL:  57P03: the database system is starting up\n",
     "Failed to run sql query: FATAL:  57P01: terminating connection due to administrator command\n",
+    "Failed to run sql query: connect ECONNREFUSED 2600:1f1c:c19:4900:83dc:f22c:1b4f:3a5f:5432",
+    "Failed to run sql query: connect ECONNREFUSED 192.0.2.1:5432",
+    "Failed to run sql query: connect ECONNREFUSED [2001:db8::1]:5432",
 ])
 def test_catalog_read_recovers_after_readiness(
     message: str, clock: dict[str, Any],
@@ -117,6 +120,14 @@ def test_delayed_sleep_does_not_start_retry_after_deadline(
     ("Failed to run sql query: statement timeout", 504),
     ("Project must be active and healthy.", 400),
     ("Internal server error", 500),
+    ("Failed to run sql query: connect ECONNREFUSED 192.0.2.1:443", 400),
+    ("Failed to run sql query: connect ECONNREFUSED 2001:db8::1:6543", 400),
+    ("Failed to run sql query: connect ECONNREFUSED db.example.com:5432", 400),
+    ("Failed to run sql query: connect ECONNREFUSED 999.1.2.3:5432", 400),
+    ("Failed to run sql query: connect ECONNREFUSED deadbeef:5432", 400),
+    ("Failed to run sql query: connect ECONNREFUSED [192.0.2.1]:5432", 400),
+    ("Failed to run sql query: connect ECONNREFUSED [2001:db8::1:5432", 400),
+    ("Failed to run sql query: connect ECONNREFUSED 192.0.2.1:5432 extra text", 400),
 ])
 def test_unrelated_read_errors_are_not_retried(
     message: str, status: int | None, clock: dict[str, Any],
@@ -140,8 +151,9 @@ def test_malformed_error_envelopes_are_not_retried(body: str, clock: dict[str, A
 
 
 @pytest.mark.parametrize("status", [400, 500, None])
-def test_writes_never_retry_even_recognized_restart_errors(status: int | None, clock: dict[str, Any]) -> None:
-    api = QueryApi(api_error(TRANSIENT, status))
+@pytest.mark.parametrize("message", [TRANSIENT, "Failed to run sql query: connect ECONNREFUSED 192.0.2.1:5432"])
+def test_writes_never_retry_even_recognized_restart_errors(status: int | None, message: str, clock: dict[str, Any]) -> None:
+    api = QueryApi(api_error(message, status))
     with pytest.raises(preview.ApiError):
         preview.SupabaseManagementClient("token", api=api).query(PROJECT_REF, "create table example(id int)", read_only=False)
     assert len(api.requests) == 1
