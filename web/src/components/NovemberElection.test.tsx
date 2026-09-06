@@ -19,8 +19,8 @@ import MoneyLedger from '@/app/elections/2026-general/money/page'
 
 const event = (overrides: Partial<FinanceEvent> = {}): FinanceEvent => ({
   event_key: 'receipt', scope_key: '0660620:calendar-2026', event_kind: 'receipt',
-  donor_name: 'Example donor', donor_fppc_id: null, recipient_name: 'Example committee', recipient_fppc_id: '1481105',
-  reporting_filer_name: 'Example committee', reporting_filer_fppc_id: '1481105',
+  donor_name: 'Example donor', donor_fppc_id: null, recipient_name: 'Example committee', recipient_fppc_id: '1488504',
+  reporting_filer_name: 'Example committee', reporting_filer_fppc_id: '1488504',
   amount: 100.25, amount_kind: 'monetary', activity_date: '2026-09-01', support_oppose: null,
   candidate_name: null, measure_name: null, election_date: null,
   filing_ids: ['111', '999'], source_urls: ['https://netfile.com/filing/999', 'https://netfile.com/filing/111'],
@@ -49,7 +49,7 @@ describe('resident campaign money presentation', () => {
     expect(html).not.toContain('Cash gifts')
   })
 
-  it('withholds every candidate subtotal at the record limit instead of claiming there are no matches', async () => {
+  it('withholds limited ledger subtotals while retaining separately verified campaign reports', async () => {
     mocks.snapshot.mockResolvedValue(snapshot([event(), event({
       event_key: 'ie-support', event_kind: 'independent_expenditure', candidate_name: 'Ahmad Anderson',
       election_date: '2026-11-03', support_oppose: 'S', amount: 50,
@@ -58,7 +58,8 @@ describe('resident campaign money presentation', () => {
       election_date: '2026-11-03', support_oppose: 'O', amount: 75,
     })], true))
     const html = renderToStaticMarkup(await NovemberElection())
-    expect(html.match(/Subtotal withheld \(record limit\)/g)).toHaveLength(10)
+    expect(html.match(/Subtotal withheld \(record limit\)/g)).toHaveLength(7)
+    expect(html).toContain('$54,303')
     expect(html).not.toContain('No published matching records')
     expect(html).toContain('Recent indexed activity (3)')
   })
@@ -90,21 +91,22 @@ describe('resident campaign money presentation', () => {
     expect(html).toContain('does not by itself establish a cash refund')
   })
 
-  it('explains Anderson paper coverage beside the missing subtotal without adding unverified money', async () => {
+  it('replaces Anderson missing subtotals with source-checked period totals and a useful money detail page', async () => {
     mocks.snapshot.mockResolvedValue(snapshot([]))
     const html = renderToStaticMarkup(await NovemberElection())
-    expect(html).toContain('Paper filings are outside this receipt index')
-    expect(html).toContain('Paper reports not indexed')
+    expect(html).toContain('$54,303')
+    expect(html).toContain('$13,423')
+    expect(html).toContain('Cash donations reported · Jan 1–Jun 30, 2026')
+    expect(html).not.toContain('Paper reports not indexed')
     expect(html).toContain('FPPC 1481105')
-    for (const filing of ['217094857', '217352920', '217332630', '217243030', '217243444']) {
+    for (const filing of ['217352920', '217332630']) {
       expect(html).toContain(`https://netfile.com/Connect2/api/public/image/${filing}`)
     }
-    expect(html).toContain('Jun 30, 2026')
-    expect(html).toContain('Sep 3, 2026')
-    expect(html).toContain('Aug 31, 2026')
-    expect(html).toContain('Filing dates are not contribution dates.')
+    expect(html).toContain('Thomas K. Butt')
+    expect(html).toContain('Davillier Sloan Inc')
+    expect(html).toContain('/elections/2026-general/money/ahmad-anderson')
     expect(html).not.toContain('73,300')
-    expect(html.match(/Paper filings are outside this receipt index/g)).toHaveLength(1)
+    expect(html.match(/Anderson campaign finances/g)).toHaveLength(1)
   })
 
   it('keeps original paper filing sources visible when the electronic ledger query fails', async () => {
@@ -113,8 +115,8 @@ describe('resident campaign money presentation', () => {
     try {
       const html = renderToStaticMarkup(await NovemberElection())
       expect(html).toContain('Campaign records are temporarily unavailable')
-      expect(html).toContain('https://netfile.com/Connect2/api/public/image/217094857')
-      expect(html).toContain('Anderson paper filing coverage')
+      expect(html).toContain('$54,303')
+      expect(html).toContain('Anderson campaign finances')
     } finally { log.mockRestore() }
   })
 })
