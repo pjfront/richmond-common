@@ -318,7 +318,7 @@ tables:
       sources: [netfile]
       enrichments: []
     read_by:
-      enrichments: []
+      enrichments: [civic_review_packet_generation]
       queries: []
   finance_events:
     layer: 2
@@ -369,7 +369,7 @@ tables:
       sources: [escribemeetings, minutes_extraction]
       enrichments: [orientation_generation]
     read_by:
-      enrichments: [conflict_scanning, orientation_generation, transcript_vote_extraction]
+      enrichments: [conflict_scanning, orientation_generation, transcript_vote_extraction, civic_review_packet_generation]
       queries: [getMeetings, getMeetingsWithCounts, getMeeting, getMeetingStats,
                 getMeetingsWithFlags, getMeetingForReport, getCoalitionData,
                 getCrossMeetingPatterns, getCommissionMeetings]
@@ -413,7 +413,7 @@ tables:
       sources: [escribemeetings, minutes_extraction]
       enrichments: [summary_generation]
     read_by:
-      enrichments: [conflict_scanning, orientation_generation, summary_generation]
+      enrichments: [conflict_scanning, orientation_generation, summary_generation, civic_review_packet_generation]
       queries: [getMeeting, getMeetingStats, getMeetingForReport,
                 getCategoryStats, getControversialItems]
 
@@ -730,7 +730,7 @@ tables:
       sources: []
       enrichments: [commission_seeding]
     read_by:
-      enrichments: [orientation_generation]
+      enrichments: [orientation_generation, civic_review_packet_generation]
       queries: [getCommissionMeetings]
 
   neighborhood_councils:
@@ -942,9 +942,16 @@ tables:
   civic_brief_candidates:
     layer: operational
     description: "Versioned story, meeting, and finance drafts; only approved versions are public, with sources attached to the exact reviewed text."
-    written_by: {sources: [], enrichments: []}
+    written_by: {sources: [], enrichments: [civic_review_packet_generation]}
     read_by: {enrichments: [], queries: [getPublishedCivicBriefs]}
     provenance: "Composite editorial artifact: sources[] carries each URL, title, source_tier and source_date; published_at/content_version identify the exact reviewed publication. No standalone confidence probability is claimed."
+    api_routes: ["/api/operator/decisions"]
+
+  pending_decisions:
+    layer: operational
+    description: "Private operator judgments with source fingerprints, exact proposed changes, and versioned publication targets."
+    written_by: {sources: [], enrichments: [civic_review_packet_generation]}
+    read_by: {enrichments: [civic_review_packet_generation], queries: []}
     api_routes: ["/api/operator/decisions"]
 
   operator_decision_events:
@@ -1098,6 +1105,15 @@ tables:
 # ══════════════════════════════════════════════════════════════
 
 enrichments:
+  civic_review_packet_generation:
+    module: civic_review_packets.py
+    description: "Bounded deterministic finance comparisons and source-title/receipt publication drafts; no models, automatic publication, or email."
+    reads_from: [finance_assertions, meetings, bodies, agenda_items, pending_decisions, civic_brief_candidates]
+    writes_to: [pending_decisions, civic_brief_candidates]
+    depends_on: []
+    cascade_enabled: false  # Run the bounded CLI after the daily ledger ingest.
+    notes: "Migration148+149 prerequisite. CLI defaults read-only; --apply creates or refreshes at most6 private packets per run. All-status fingerprint dedup suppresses unchanged/rejected evidence. Workflow integration follows the daily finance ledger ingest; source updates use a14-day lookback and21-day forward agenda window."
+
   minutes_extraction:
     module: batch_extract.py
     description: "AI extraction of structured meeting data from raw PDFs"
