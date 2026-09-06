@@ -41,3 +41,38 @@ The import writes document evidence, assertions, projection and coverage in one 
 Validation: 110 targeted Python tests pass, covering source direction, repeated gifts, exact and ambiguous matching, explicit amendment amount changes, negative/noncash/loan distinctions, PDF stance verification, incomplete acquisition, original source identity, November dates and manifest contracts. A separate PGlite run executes actual PostgreSQL DDL twice and passes 41 access, replay, immutable-evidence and public-projection assertions. It begins with broad Supabase-style default grants and checks anon/authenticated cannot mutate or truncate any finance table. Production checks were read-only and printed no personal donor/address fields.
 
 November activity/deadline pairs are July 1–September 19 / September 24, September 20–October 17 / October 22, and October 18–December 31 / February 1, 2027. Rapid reporting runs August 5–November 3. [FPPC official local candidate schedule](https://www.fppc.ca.gov/siteassets/documents/tad/filing_schedules/2026/2026_local_nov_01_cand_final.pdf).
+
+## Bounded compatibility repair and daily refresh
+
+`repair_2026_part2.py` covers exactly twelve identified, unamended Form 497 Part 2 transactions. It requires the retained source ledger first. The read-only production simulation found 11 reversed legacy rows, one missing recipient-backed May 18 receipt, and one exact committee identity update from `Pending` to 1490887. Safe Richmond Neighborhoods already exists under its exact reported name; its identifier needs correction. The script uses both the source FPPC ID and exact committee name where historical cycles share an identifier (Bana's 2022 and 2026 committee records are an example).
+
+The source-evidence proof hash, computed from sorted `(record_key, content_hash)` pairs for the twelve original assertions, is:
+
+`33357d66c6995b1e419e489ca40efb29e8cbc526200a7a2735b29ba7230f6fbb`
+
+After migration and the bounded finance import, run a fresh preview against the persisted ledger. Its `source_evidence_hash` should match that proof; its `state_hash` additionally includes actual database UUIDs, all relevant legacy values and proposed actions. The local simulation used placeholder assertion UUIDs, so its state hash must not be used to apply a live repair.
+
+```sh
+python src/repair_2026_part2.py --report tmp/finance/part2-preview.json
+python src/repair_2026_part2.py --apply --expected-state-hash <state_hash-from-that-preview> --report tmp/finance/part2-applied.json
+python src/repair_2026_part2.py --report tmp/finance/part2-after.json
+```
+
+Expected first preview: 11 reversed projections, 1 missing receipt, 1 committee identifier update. Expected post-repair preview: zero remaining changes. Apply holds a serializable transaction, source advisory lock and legacy-table write locks. Original legacy rows and the committee identity are archived into immutable private `finance_assertions` before their projections change. An altered source, ambiguous identity, changed preview or database constraint failure aborts the transaction. Outgoing-only and pending reports stay in the dedicated ledger; they do not become additional candidate receipts. The regular legacy loader rejects Form 497 Part 2 to prevent recurrence.
+
+These are the precise changes to **legacy 2026 row sums**, not newly certified campaign totals:
+
+| Committee | Before | Change | After |
+|---|---:|---:|---:|
+| Safe Richmond Neighborhoods | $305,000 | +$30,000 | $335,000 |
+| Richmond Police Officers Association PAC | $220,675 | −$102,500 | $118,175 |
+| Independent PAC Local 188 IAFF | $10,000 | −$7,500 | $2,500 |
+| United Teachers of Richmond PAC | $116,500 | −$2,500 | $114,000 |
+
+Candidate committee row sums remain unchanged. Other legacy defects, paper-summary adjustments and historical reconciliation are outside this twelve-record repair. The three source-verified RPOA-to-Safe-Richmond gifts total $90,000 after restoration.
+
+The final electronic snapshot produced 1,178 public events and 12 pending assertions: nine ambiguous cross-report multiplicity cases and three date disagreements. Source-verified 2026 Form 496 activity totals $155,000 supporting Ahmad Anderson from Safe Richmond Neighborhoods, $92,456.14 supporting Claudia Jimenez from East Bay Working Families, and $36,712.90 supporting Doria Robinson from that same committee. These are rapid-report activity sums, not November-attributed or complete independent-spending totals.
+
+`Data Sync` now includes an independent daily finance ledger job on the existing daily schedule. It receives only the database credential, calls no model provider, logs metadata/PDF request counts and byte volume, and preserves prior coverage on failure. Initial acquisition downloads 13 PDFs; content hashes deduplicate stored evidence. Cross-run HTTP caching is a later optimization, not a correctness dependency. API responses that lack valid pagination metadata, include superseded reports, or return incomplete pages cannot replace a snapshot. Neither an incomplete form set nor an earlier coverage cutoff can replace a current calendar projection.
+
+The guarded repair has five focused Python tests plus a second isolated PostgreSQL test that executes the Python writer's actual parameterized SQL. It verifies all 11 removals, the one restoration, all 12 immutable before-state backups, the identifier update, and complete rollback when the final receipt insertion is forced to fail a foreign key constraint. Nothing in this worktree has applied the repair or migration to production.
