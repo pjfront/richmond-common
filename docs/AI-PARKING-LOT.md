@@ -6,6 +6,10 @@ _Convention: Every session adds observations here. Items stay until promoted to 
 
 ---
 
+## 2026-09-06 production CLI output contract
+
+- Deployment now requests explicit JSON and parses only CLI59.1.4's documented object/agent envelope or narrow legacy URL forms. The lost September6 stdout cannot establish its exact failure format; installed official CLI code confirms agent detection can change stdout from a bare URL to JSON. Authenticated project/SHA/ref/alias proof stays separate from locator parsing. Future format failures emit only redacted structural diagnostics.
+
 ## 2026-09-06 review inbox follow-through
 
 - Generic engineering decisions record a judgment; they do not claim to run a fix. Future automatic repair executors need their own small allowlist and validation contract.
