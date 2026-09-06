@@ -3510,7 +3510,39 @@ def test_bootstrap_never_active_hard_deletes_before_vercel(tmp_path: Path):
 
     assert supabase.scheduled_refs == []
     assert supabase.deleted_refs == [BRANCH_REF]
+    assert supabase.write_queries == []
     assert vercel.rows == []
+
+
+def test_bootstrap_waits_for_authoritative_health_before_first_branch_query(tmp_path: Path):
+    baseline = _migration(tmp_path, "20260807013300", "baseline")
+    snapshot = _baseline(tmp_path, [baseline])
+
+    class StartingSupabase(FakeSupabase):
+        startup_reads = 0
+
+        def list_branches(self, parent_ref: str) -> list[preview.BranchRecord]:
+            if self.branches:
+                self.startup_reads += 1
+                status = "COMING_UP" if self.startup_reads < 4 else "ACTIVE_HEALTHY"
+                self.branches = [replace(branch, preview_project_status=status) for branch in self.branches]
+            return super().list_branches(parent_ref)
+
+        def query(self, project_ref: str, sql: str, *, read_only: bool) -> Any:
+            if project_ref == BRANCH_REF:
+                assert self.startup_reads >= 4
+                assert self.branches[0].preview_project_status == "ACTIVE_HEALTHY"
+            return super().query(project_ref, sql, read_only=read_only)
+
+    supabase = StartingSupabase(snapshot)
+    result = preview.bootstrap_preview(
+        supabase, FakeVercel(), parent_ref=PARENT_REF, pr_number=82,
+        git_branch=GIT_BRANCH, baseline=snapshot, migrations=[baseline],
+        trusted_migrations=[baseline], source_head_sha=SOURCE_HEAD_SHA,
+        replace=False, timeout_seconds=0.1, interval_seconds=0,
+    )
+    assert result.branch.project_ref == BRANCH_REF
+    assert len(supabase.write_queries) == 1
 
 
 def test_vercel_scope_mismatch_fails_instead_of_deleting_production():
