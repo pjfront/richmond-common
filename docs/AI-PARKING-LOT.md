@@ -6,6 +6,12 @@ _Convention: Every session adds observations here. Items stay until promoted to 
 
 ---
 
+## 2026-09-06 access verification follow-up
+
+- Keep private operator state behind database grants and role-scoped policies as well as route authentication. The prepared migration 147 has a disposable PostgreSQL role-access verifier covering public denial, service access, registry public reads, and idempotent replay.
+- Add that executable permission check to the standard isolated integration gate; policy-name and source-text checks alone do not prove effective access.
+- Lock the Python runtime dependencies so a scheduled run uses the same dependency versions as its tested commit.
+
 ## Sprint Number Mapping (2026-04-08)
 
 > **Roadmap reorganization:** S21.5 promoted to S22. Old S22/S24/S25 renumbered to S25/S26/S27. See `docs/PARKING-LOT.md` Sprint Number Mapping table for full details. Historical references in this file use original numbers.

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { getSupabaseAdmin } from '@/lib/supabase-admin'
 import { withOperatorAuth } from '@/lib/operator-auth'
 import type {
   PendingDecision,
@@ -20,6 +20,8 @@ const SEVERITY_RANK: Record<DecisionSeverity, number> = {
 
 export const GET = withOperatorAuth(async () => {
   try {
+    // Instantiate privileged access only after withOperatorAuth validates the session.
+    const supabase = getSupabaseAdmin()
     // Run pending and resolved queries in parallel
     const [pendingResult, resolvedResult] = await Promise.all([
       supabase
