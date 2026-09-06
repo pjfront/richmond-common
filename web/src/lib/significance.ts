@@ -4,14 +4,16 @@
  * Client-side classification of agenda items by objective signals.
  * Determines visual treatment (card sizing, prominence) in the topic board.
  *
- * All criteria are objective and AI-delegable — no editorial judgment.
+ * Signals describe the records available here, not citywide opinion or an
+ * overall item outcome. Each motion retains its own result and purpose.
  */
 
 import type { AgendaItemWithMotions, ConflictFlag } from './types'
+import { formalMotionResult, motionKindLabel, recordedVoteCounts } from './vote-records'
 
 export type Significance =
   | 'hero'       // Selected as meeting hero (split vote by closest margin)
-  | 'split'      // Any split vote (nays > 0)
+  | 'split'      // A recorded motion has both ayes and nays
   | 'pulled'     // Pulled from consent calendar
   | 'financial'  // Has campaign finance records flagged
   | 'standard'   // Regular item, no special signals
@@ -38,30 +40,29 @@ export function isProcedural(item: AgendaItemWithMotions): boolean {
 
 /** Check if any motion on this item had a split vote */
 export function hasSplitVote(item: AgendaItemWithMotions): boolean {
-  return item.motions.some(m => {
-    if (m.votes.length === 0) return false
-    const choices = new Set(m.votes.map(v => v.vote_choice.toLowerCase()))
-    return choices.has('nay')
+  return item.motions.some(motion => {
+    const counts = recordedVoteCounts(motion.votes)
+    return counts.aye > 0 && counts.nay > 0
   })
+}
+
+export function getClosestSplitMotion(item: AgendaItemWithMotions) {
+  return item.motions.filter(motion => {
+    const counts = recordedVoteCounts(motion.votes)
+    return counts.aye > 0 && counts.nay > 0
+  }).sort((a, b) => {
+    const aVotes = recordedVoteCounts(a.votes)
+    const bVotes = recordedVoteCounts(b.votes)
+    return Math.abs(aVotes.aye - aVotes.nay) - Math.abs(bVotes.aye - bVotes.nay) || a.sequence_number - b.sequence_number
+  })[0] ?? null
 }
 
 /** Get the closest split vote margin for hero selection ranking */
 export function getSplitVoteMargin(item: AgendaItemWithMotions): number | null {
-  let closestMargin: number | null = null
-
-  for (const motion of item.motions) {
-    if (motion.votes.length === 0) continue
-    const ayes = motion.votes.filter(v => v.vote_choice.toLowerCase() === 'aye').length
-    const nays = motion.votes.filter(v => v.vote_choice.toLowerCase() === 'nay').length
-    if (nays === 0) continue
-
-    const margin = Math.abs(ayes - nays)
-    if (closestMargin === null || margin < closestMargin) {
-      closestMargin = margin
-    }
-  }
-
-  return closestMargin
+  const motion = getClosestSplitMotion(item)
+  if (!motion) return null
+  const counts = recordedVoteCounts(motion.votes)
+  return Math.abs(counts.aye - counts.nay)
 }
 
 /** Determine significance level for an agenda item */
@@ -70,8 +71,8 @@ export function getSignificance(
   flags: ConflictFlag[],
 ): Significance {
   if (isProcedural(item)) return 'procedural'
-  if (item.is_consent_calendar && !item.was_pulled_from_consent) return 'consent'
   if (hasSplitVote(item)) return 'split'
+  if (item.is_consent_calendar && !item.was_pulled_from_consent) return 'consent'
   if (item.was_pulled_from_consent) return 'pulled'
   if (flags.some(f => f.agenda_item_id === item.id)) return 'financial'
   return 'standard'
@@ -79,47 +80,41 @@ export function getSignificance(
 
 /** Get the vote tally summary for display (e.g., "4-3") */
 export function getVoteTallySummary(item: AgendaItemWithMotions): string | null {
-  for (const motion of item.motions) {
-    if (motion.votes.length === 0) continue
-    const ayes = motion.votes.filter(v => v.vote_choice.toLowerCase() === 'aye').length
-    const nays = motion.votes.filter(v => v.vote_choice.toLowerCase() === 'nay').length
-    if (nays > 0) return `${ayes}-${nays}`
-  }
-  return null
+  const motion = getClosestSplitMotion(item)
+  if (!motion) return null
+  const counts = recordedVoteCounts(motion.votes)
+  return `${counts.aye}-${counts.nay}`
 }
 
-/** Did the split vote pass (ayes > nays)? */
-export function didSplitVotePass(item: AgendaItemWithMotions): boolean {
-  for (const motion of item.motions) {
-    if (motion.votes.length === 0) continue
-    const ayes = motion.votes.filter(v => v.vote_choice.toLowerCase() === 'aye').length
-    const nays = motion.votes.filter(v => v.vote_choice.toLowerCase() === 'nay').length
-    if (nays > 0) return ayes > nays
-  }
-  return true
+/** Formal outcome of the exact motion whose split tally is displayed. */
+export function didSplitVotePass(item: AgendaItemWithMotions): boolean | null {
+  const motion = getClosestSplitMotion(item)
+  if (!motion) return null
+  const result = formalMotionResult(motion)
+  return result === 'unknown' ? null : result === 'passed'
 }
 
-/** Overall result across all motions with recorded votes */
-export type OverallResult = 'passed' | 'failed' | 'mixed' | 'none'
+/** Legacy name: only a single motion can supply a compact result. Multiple
+ * motions must be read individually; chronology alone does not settle an item. */
+export type OverallResult = 'passed' | 'failed' | 'mixed' | 'unknown' | 'none'
 
 export function getOverallResult(item: AgendaItemWithMotions): OverallResult {
-  const voted = item.motions.filter(m => m.votes.length > 0)
-  if (voted.length === 0) return 'none'
-  const results = voted.map(m => m.result?.toLowerCase().trim() ?? '')
-  const allPassed = results.every(r => r === 'passed' || r === 'approved')
-  const anyFailed = results.some(r => r === 'failed' || r === 'denied')
-  if (allPassed) return 'passed'
-  if (anyFailed) return 'failed'
-  return 'mixed'
+  if (item.motions.length === 0) return 'none'
+  if (item.motions.length > 1) return 'mixed'
+  return formalMotionResult(item.motions[0])
+}
+
+export function getItemResultLabel(item: AgendaItemWithMotions): string | null {
+  if (item.motions.length === 0) return null
+  if (item.motions.length > 1) return `${item.motions.length} motions · see outcomes`
+  const motion = item.motions[0]
+  const result = formalMotionResult(motion)
+  return result === 'unknown' ? `${motionKindLabel(motion)} · outcome unverified` : `${motionKindLabel(motion)} ${result}`
 }
 
 /** Compact tally string for display (e.g., "7-0" or "3-4") */
 export function getCompactTally(item: AgendaItemWithMotions): string | null {
-  for (const motion of item.motions) {
-    if (motion.votes.length === 0) continue
-    const ayes = motion.votes.filter(v => v.vote_choice.toLowerCase() === 'aye').length
-    const nays = motion.votes.filter(v => v.vote_choice.toLowerCase() === 'nay').length
-    return `${ayes}-${nays}`
-  }
-  return null
+  if (item.motions.length !== 1) return null
+  const counts = recordedVoteCounts(item.motions[0].votes)
+  return counts.aye + counts.nay > 0 ? `${counts.aye}-${counts.nay}` : null
 }
