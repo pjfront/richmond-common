@@ -943,7 +943,7 @@ tables:
     layer: operational
     description: "Versioned story, meeting, and finance drafts; only approved versions are public, with sources attached to the exact reviewed text."
     written_by: {sources: [], enrichments: [civic_review_packet_generation]}
-    read_by: {enrichments: [], queries: [getPublishedCivicBriefs]}
+    read_by: {enrichments: [], queries: [getPublishedCivicBriefs, getPublishedCivicBriefVersion]}
     provenance: "Composite editorial artifact: sources[] carries each URL, title, source_tier and source_date; published_at/content_version identify the exact reviewed publication. No standalone confidence probability is claimed."
     api_routes: ["/api/operator/decisions"]
 
@@ -1395,6 +1395,11 @@ queries:
     tables: [civic_brief_candidates]
     used_by: ["/stories/[slug]", "/elections/2026-general"]
     description: "Only source-linked published briefs, public RLS plus explicit status predicate; private draft evidence never enters page props."
+  getPublishedCivicBriefVersion:
+    file: queries/civic-briefs.ts
+    tables: [civic_brief_candidates]
+    used_by: ["/updates/[id]"]
+    description: "Uncached single-publication lookup for email links, matched by ID, content version and exact PostgreSQL publication timestamp under public RLS and published status. Withdrawn or replaced publications are not substituted."
 
   getPublicFinanceSnapshot:
     file: queries/finance-public.ts
@@ -1964,6 +1969,9 @@ pages:
   "/stories/[slug]":
     queries: [getResidentSnapshot, getPublishedCivicBriefs]
     description: "Formal source chronology, proposed agenda entries, and exactly reviewed public updates."
+  "/updates/[id]":
+    queries: [getPublishedCivicBriefVersion]
+    description: "Noindex email destination for one exact reviewed publication, independent of the short story feed; source-read failures and withdrawn/replaced versions have distinct unavailable notices."
   "/elections/2026-general":
     queries: [getPublicFinanceSnapshot, getPublishedCivicBriefs]
     description: "Source-checked municipal choices, separate money meanings and explicit coverage, voting and filing dates."
@@ -2673,6 +2681,27 @@ field_map:
       column: civic_brief_candidates.body
       sources: []
       note: "Exact operator-approved text with its own sources[] provenance and publication version."
+  "/updates/[id]":
+    "reviewed title and explanation":
+      query: getPublishedCivicBriefVersion
+      column: civic_brief_candidates.body
+      sources: []
+      note: "Exact operator-approved title and body for the publication identified by the email URL; current text cannot replace a withdrawn or superseded version."
+    "source links, titles, tiers and dates":
+      query: getPublishedCivicBriefVersion
+      column: civic_brief_candidates.sources
+      sources: []
+      note: "Per-source provenance attached to the reviewed publication, with missing source dates shown explicitly."
+    "publication version":
+      query: getPublishedCivicBriefVersion
+      column: civic_brief_candidates.content_version
+      sources: []
+      note: "Version selected explicitly by the email link; no inferred adoption, source quality probability, or historical-version reconstruction."
+    "publication date":
+      query: getPublishedCivicBriefVersion
+      column: civic_brief_candidates.published_at
+      sources: []
+      note: "Publication identity preserves PostgreSQL timestamp precision; this is not an agenda, filing, or underlying activity date."
   "/elections/2026-general":
     "reported cash gifts and independently attributed election spending":
       query: getPublicFinanceSnapshot
