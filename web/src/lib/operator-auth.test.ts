@@ -1,5 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { NextRequest } from 'next/server'
+
+const mocks = vi.hoisted(() => ({
+  getIronSession: vi.fn(),
+}))
 
 // Mock next/headers so getIronSession can be wired through the
 // fake cookie store.
@@ -11,15 +15,10 @@ vi.mock('next/headers', () => ({
 // Mock iron-session so the session value is fully under test control.
 let mockSession: { isOperator?: boolean } = {}
 vi.mock('iron-session', () => ({
-  getIronSession: async () => mockSession,
+  getIronSession: mocks.getIronSession,
 }))
 
-// Mock operator-session to avoid the env-var requirement.
-vi.mock('./operator-session', () => ({
-  getOperatorSessionOptions: () => ({ password: 'x'.repeat(32), cookieName: 'test' }),
-}))
-
-import { withOperatorAuth } from './operator-auth'
+import { isOperatorAuthenticated, withOperatorAuth } from './operator-auth'
 
 function fakeNextRequest(): NextRequest {
   return {
@@ -32,7 +31,34 @@ function fakeNextRequest(): NextRequest {
 describe('withOperatorAuth', () => {
   beforeEach(() => {
     mockSession = {}
+    mocks.getIronSession.mockReset()
+    mocks.getIronSession.mockImplementation(async () => mockSession)
     cookieStore.clear()
+  })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  it('treats a deliberately secretless Vercel Preview as anonymous', async () => {
+    vi.stubEnv('VERCEL_ENV', 'preview')
+    vi.stubEnv('IRON_SESSION_PASSWORD', '')
+    mockSession = { isOperator: true }
+
+    await expect(isOperatorAuthenticated()).resolves.toBe(false)
+    expect(mocks.getIronSession).not.toHaveBeenCalled()
+  })
+
+  it('fails closed when the session secret is missing outside a Vercel Preview', async () => {
+    vi.stubEnv('VERCEL_ENV', 'production')
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('IRON_SESSION_PASSWORD', '')
+    mockSession = { isOperator: true }
+
+    await expect(isOperatorAuthenticated()).rejects.toThrow(
+      'IRON_SESSION_PASSWORD is required in production',
+    )
+    expect(mocks.getIronSession).not.toHaveBeenCalled()
   })
 
   it('returns 401 when session has no isOperator flag', async () => {

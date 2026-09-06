@@ -9,6 +9,17 @@ export async function getOperatorSession(): Promise<IronSession<OperatorSession>
 }
 
 export async function isOperatorAuthenticated(): Promise<boolean> {
+  // Data-less Vercel Previews deliberately do not receive the production
+  // session secret. Treat that exact platform boundary as anonymous so public
+  // pages, the session probe, and operator-gated 404s remain testable without
+  // copying a production credential into a Preview. Every other production
+  // environment still reaches getOperatorSessionOptions(), which fails closed
+  // when the required secret is missing.
+  if (
+    process.env.VERCEL_ENV === 'preview'
+    && !process.env.IRON_SESSION_PASSWORD
+  ) return false
+
   const session = await getOperatorSession()
   return session.isOperator === true
 }
