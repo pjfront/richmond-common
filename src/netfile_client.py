@@ -255,9 +255,15 @@ def fetch_all_transactions(
         city_fips=city_fips,
     )
 
-    total = data.get("totalMatchingCount", 0)
-    total_pages = data.get("totalMatchingPages", 0)
-    results = data.get("results", [])
+    total = data.get("totalMatchingCount")
+    total_pages = data.get("totalMatchingPages")
+    results = data.get("results")
+    if (type(total) is not int or total < 0 or type(total_pages) is not int
+            or total_pages < 0 or not isinstance(results, list)
+            or (total > 0 and total_pages < 1)):
+        raise NetFileAPIError("Malformed transaction response cannot prove empty source coverage")
+    if data.get("searchParameters", {}).get("showSuperceded") is True:
+        raise NetFileAPIError("Source did not honor exclusion of superseded reports")
     all_results.extend(results)
 
     type_label = ALL_TYPES.get(transaction_type, "all") if transaction_type is not None else "all"

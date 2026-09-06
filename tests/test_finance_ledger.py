@@ -133,3 +133,26 @@ def test_legacy_direction_repair_requires_full_source_match():
                donor_name=SAFE, recipient_fppc_id="951606", recipient_name=RPOA)
     assert direction_status(tx, [row])[0] == "reversed_source_direction"
     assert direction_status(tx, [dict(row, donor_name="Different committee")])[0] == "source_assertion_missing_from_legacy"
+
+
+@pytest.mark.parametrize("payload", [{}, {"error": "upstream unavailable"},
+    {"totalMatchingCount": 1, "totalMatchingPages": 0, "results": []},
+    {"totalMatchingCount": 0, "totalMatchingPages": 0, "results": [], "searchParameters": {"showSuperceded": True}}])
+def test_malformed_api_success_is_not_an_empty_finance_snapshot(monkeypatch, payload):
+    import netfile_client
+    monkeypatch.setattr(netfile_client, "search_transactions", lambda **kwargs: payload)
+    with pytest.raises(NetFileAPIError):
+        netfile_client.fetch_all_transactions(transaction_type=19)
+
+
+def test_an_earlier_cutoff_cannot_remove_current_source_rows():
+    from datetime import date
+    from unittest.mock import MagicMock
+    from finance_ledger import FORMS
+    conn = MagicMock()
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.fetchone.return_value = (date(2026,9,7),)
+    coverage = [dict(snapshot_complete=True,form_type=form,scope_key="0660620:calendar-2026",activity_through="2026-09-06") for form in FORMS.values()]
+    with pytest.raises(ValueError, match="earlier cutoff"):
+        persist_finance_snapshot(conn, [], [], coverage)
+    assert all(str(call.args[0]).startswith("SELECT") for call in cur.execute.call_args_list)
