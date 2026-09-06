@@ -28,19 +28,22 @@ vi.mock('@/lib/email-delivery', async (importOriginal) => {
 })
 
 import { GET, POST } from './route'
+import { broadcastTrackedEmail, loadActiveSubscribers } from '@/lib/email-delivery'
 
-function request(body: Record<string, unknown> = {}) {
+function request(body: Record<string, unknown> = {}, authorized = true) {
   return {
-    headers: new Headers({ authorization: 'Bearer test-secret' }),
+    headers: new Headers(authorized ? { authorization: 'Bearer test-secret' } : {}),
     json: vi.fn(async () => body),
   } as unknown as NextRequest
 }
 
-function digestMeetingQuery(rows: Record<string, unknown>[]) {
-  const result = { data: rows, error: null }
+function digestMeetingQuery(rows: Record<string, unknown>[], error: unknown = null) {
+  const result = { data: rows, error }
   const chain = {
     select: vi.fn(),
     in: vi.fn(),
+    is: vi.fn(),
+    not: vi.fn(),
     or: vi.fn(),
     eq: vi.fn(),
     gte: vi.fn(),
@@ -51,6 +54,8 @@ function digestMeetingQuery(rows: Record<string, unknown>[]) {
   }
   chain.select.mockReturnValue(chain)
   chain.in.mockReturnValue(chain)
+  chain.is.mockReturnValue(chain)
+  chain.not.mockReturnValue(chain)
   chain.or.mockReturnValue(chain)
   chain.eq.mockReturnValue(chain)
   chain.gte.mockReturnValue(chain)
@@ -60,7 +65,7 @@ function digestMeetingQuery(rows: Record<string, unknown>[]) {
   return chain
 }
 
-describe('/api/email/send-digest canary control', () => {
+describe('/api/email/send-digest canary and activated weekly delivery', () => {
   afterEach(() => {
     vi.clearAllMocks()
     vi.useRealTimers()
@@ -79,7 +84,7 @@ describe('/api/email/send-digest canary control', () => {
     expect(body).toEqual({
       capability: 'subscriber-weekly-digest-v1',
       canary_ready: true,
-      broadcast_ready: false,
+      broadcast_ready: true,
     })
     expect(JSON.stringify(body)).not.toContain('canary@example.test')
   })
@@ -217,16 +222,99 @@ describe('/api/email/send-digest canary control', () => {
     expect(mocked.sendEmail).not.toHaveBeenCalled()
   })
 
-  it('refuses broadcast in code before the post-canary activation release', async () => {
+  it.each(['broadcast', 'canary'])('requires authentication for %s before any query or delivery', async (mode) => {
     process.env.API_SECRET = 'test-secret'
+
+    const response = await POST(request({ mode }, false))
+
+    expect(response.status).toBe(401)
+    expect(mocked.from).not.toHaveBeenCalled()
+    expect(mocked.sendEmail).not.toHaveBeenCalled()
+    expect(loadActiveSubscribers).not.toHaveBeenCalled()
+    expect(broadcastTrackedEmail).not.toHaveBeenCalled()
+  })
+
+  it('sends nothing and does not load subscribers when the completed week has no eligible content', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-07T16:30:00Z'))
+    process.env.API_SECRET = 'test-secret'
+    mocked.from.mockReturnValue(digestMeetingQuery([]))
 
     const response = await POST(request({ mode: 'broadcast' }))
 
-    expect(response.status).toBe(409)
+    expect(response.status).toBe(200)
     await expect(response.json()).resolves.toEqual({
-      error: 'Subscriber digest broadcast is not activated',
+      mode: 'broadcast', sent: 0,
+      period: { start: '2026-08-31', end: '2026-09-06', contentKey: 'week:2026-08-31' },
+      reason: 'no recaps or reviewed updates in completed week',
     })
-    expect(mocked.from).not.toHaveBeenCalled()
+    expect(loadActiveSubscribers).not.toHaveBeenCalled()
+    expect(broadcastTrackedEmail).not.toHaveBeenCalled()
+    expect(mocked.sendEmail).not.toHaveBeenCalled()
+  })
+
+  it('fails source loading before subscriber selection or delivery rather than treating it as an empty week', async () => {
+    process.env.API_SECRET = 'test-secret'
+    mocked.from.mockImplementation(table => digestMeetingQuery([], table === 'civic_brief_candidates' ? { code: 'timeout' } : null))
+
+    const response = await POST(request({ mode: 'broadcast' }))
+
+    expect(response.status).toBe(503)
+    expect(loadActiveSubscribers).not.toHaveBeenCalled()
+    expect(broadcastTrackedEmail).not.toHaveBeenCalled()
+    expect(mocked.sendEmail).not.toHaveBeenCalled()
+  })
+
+  it('identifies a broadcast with no active subscribers without attempting delivery', async () => {
+    process.env.API_SECRET = 'test-secret'
+    mocked.from.mockImplementation(table => digestMeetingQuery(table === 'meetings' ? [{
+      id: '44444444-4444-4444-8444-444444444444', meeting_date: '2026-09-01',
+      meeting_type: 'regular', meeting_recap: 'A persisted council recap.',
+      meeting_recap_provenance: null, minutes_url: null,
+    }] : []))
+    vi.mocked(loadActiveSubscribers).mockResolvedValue([])
+
+    const response = await POST(request({ mode: 'broadcast' }))
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual(expect.objectContaining({ mode: 'broadcast', sent: 0, reason: 'no active subscribers' }))
+    expect(broadcastTrackedEmail).not.toHaveBeenCalled()
+    expect(mocked.sendEmail).not.toHaveBeenCalled()
+  })
+
+  it('routes only a matching subject follow through tracked delivery with exact publication versions', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-07T16:30:00Z'))
+    process.env.API_SECRET = 'test-secret'
+    const followed = { id: '11111111-1111-4111-8111-111111111111', email: 'followed@example.test', unsubscribe_token: 'private-followed', receive_council_updates: false }
+    const unrelated = { id: '22222222-2222-4222-8222-222222222222', email: 'unrelated@example.test', unsubscribe_token: 'private-unrelated', receive_council_updates: false }
+    const brief = {
+      id: '33333333-3333-4333-8333-333333333333', subject_key: '2026-general',
+      title: 'A published election update', body: 'This is the exact source-checked publication.',
+      sources: [{ url: 'https://www.richmondca.gov/Archive.aspx?ADID=17785', title: 'Official resolution', source_tier: 1, source_date: '2026-07-21' }],
+      content_version: 2, published_at: '2026-09-06T12:00:00.123456+00:00',
+    }
+    const preferences = [
+      { subscriber_id: followed.id, preference_type: 'subject', preference_value: '2026-general' },
+      { subscriber_id: unrelated.id, preference_type: 'subject', preference_value: 'fire-stations-and-emergency-response' },
+    ]
+    mocked.from.mockImplementation(table => digestMeetingQuery(
+      table === 'civic_brief_candidates' ? [brief] : table === 'email_preferences' ? preferences : [],
+    ))
+    vi.mocked(loadActiveSubscribers).mockResolvedValue([followed, unrelated])
+    vi.mocked(broadcastTrackedEmail).mockResolvedValue({ sent: 1, failed: 0, already_sent: 0, deferred: 0, manual_review: 0, total_subscribers: 1, fully_delivered: true })
+
+    const response = await POST(request({ mode: 'broadcast' }))
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual(expect.objectContaining({ mode: 'broadcast', sent: 1, reviewed_update_count: 1, preference_filtered_out: 1 }))
+    expect(broadcastTrackedEmail).toHaveBeenCalledTimes(1)
+    const delivery = vi.mocked(broadcastTrackedEmail).mock.calls[0][0]
+    expect(delivery).toEqual(expect.objectContaining({ kind: 'digest', contentKey: 'week:2026-08-31', subscribers: [followed] }))
+    expect(delivery.briefVersions?.(followed)).toEqual([{ id: brief.id, content_version: 2, published_at: brief.published_at }])
+    expect(delivery.containsCouncilContent?.(followed)).toBe(false)
+    await delivery.build(followed, { unsubscribeUrl: '/unsubscribe/private', manageUrl: '/manage/private' })
+    expect(mocked.buildDigestEmail).toHaveBeenCalledWith([], '/unsubscribe/private', '/manage/private', { briefs: [brief] })
     expect(mocked.sendEmail).not.toHaveBeenCalled()
   })
 })
