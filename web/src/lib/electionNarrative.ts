@@ -13,6 +13,7 @@ import type { CandidateFundraisingDetail } from './types'
 export function buildRaceNarrative(
   office: string,
   candidates: CandidateFundraisingDetail[],
+  { includeFundraising = true }: { includeFundraising?: boolean } = {},
 ): string | null {
   if (candidates.length === 0) return null
 
@@ -20,14 +21,16 @@ export function buildRaceNarrative(
   const sorted = [...candidates].sort(
     (a, b) => b.total_raised - a.total_raised,
   )
-  const withFunding = sorted.filter((c) => c.total_raised > 0)
+  // A race with unresolved coverage cannot support a fundraising comparison.
+  // Keep its candidate/incumbent narrative without treating withheld as zero.
+  const withFunding = includeFundraising ? sorted.filter((c) => c.total_raised > 0) : []
 
   // Single candidate (unopposed)
   if (candidates.length === 1) {
     const c = candidates[0]
     const label = c.is_incumbent ? `${c.candidate_name} (incumbent)` : c.candidate_name
     const fundraising =
-      c.total_raised > 0
+      includeFundraising && c.total_raised > 0
         ? ` Committee has raised $${fmtNum(c.total_raised)} from ${c.donor_count} donor${c.donor_count !== 1 ? 's' : ''}.`
         : ''
     return `${label} is running unopposed.${fundraising}`

@@ -150,7 +150,7 @@ gates:
 
   - id: candidate-detail-link
     file: web/src/components/CandidateCard.tsx
-    line: 50
+    line: 61
     category: pending_graduation
     gated_at: '2026-08-23'
     view_at: /elections/2026-primary

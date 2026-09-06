@@ -118,4 +118,26 @@ describe('CandidateCard detail link containment', () => {
     expect(markup).toContain('inline-flex min-h-11 items-center')
     expect(markup).toContain('Claudia Jimenez')
   })
+
+  it.each([false, true])('replaces disputed statistics with the scoped summary (operator: %s)', (isOperator) => {
+    operatorState.isOperator = isOperator
+    const markup = renderToStaticMarkup(
+      <CandidateCard
+        candidate={{ ...candidate, candidate_name: 'Ahmad J. Anderson', total_raised: 73300,
+          donor_count: 161, contribution_count: 198, avg_contribution: 370,
+          largest_contribution: 9140, lifetime_raised: 73300, bucket_grid_consistent: false }}
+        electionSlug="2026-primary"
+        financeCoverage={{ kind: 'source-checked-summary',
+          href: '/elections/2026-general/money/ahmad-anderson',
+          scopeNote: 'Includes reports after this primary; not primary-only totals.' }}
+      />,
+    )
+    expect(markup).toContain('Ahmad J. Anderson')
+    expect(markup).toContain('reported donations, cash balance and spending')
+    expect(markup).toContain('not primary-only totals')
+    expect(markup).toContain('href="/elections/2026-general/money/ahmad-anderson"')
+    for (const invalidClaim of ['73,300', '161', '198 contributions', '370', '9,140', 'Usually', 'No campaign finance']) {
+      expect(markup).not.toContain(invalidClaim)
+    }
+  })
 })

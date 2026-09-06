@@ -22,6 +22,12 @@ The representative canary must use the completed August 31–September 6 UTC pub
 
 Use the existing Python, PostgreSQL/Supabase, Next.js, and GitHub Actions stack. Fetch and parse outside short persistence transactions. Cache compact public projections. Reconcile changed source cohorts, preserve raw artifacts, and bound retries and model spending.
 
+### Anderson's campaign reports
+
+The operator specifically requested useful financial information in place of “Paper reports not indexed.” The September 6 source review recovered four distinct 2026 period totals totaling $54,303 through June 30, a $13,423 June 30 cash balance, 14 payments and four later-filed donation notices. Two of those notices concern May receipts. The printed $73,300 running total includes $18,997 reported for 2025. Publish the dated reported figures and their original sources with these distinctions; unresolved donor attachments do not support a complete donor ledger or small-donor percentage.
+
+Use a versioned public snapshot, preserve exact original PDFs privately, and check for changed sources in the existing daily finance job. Prepare source pages and bounded financial candidates for the operator inbox. Generic queue approval records a judgment; publishing revised amounts still requires a source-checked snapshot change and release. This avoids a new database service or paid OCR dependency. Stop the legacy importer from treating unread donor rows as verified small donations. See [source audit](research/2026-09-06-anderson-source-audit.md) and [review runbook](paper-finance-review.md).
+
 ## Release record
 
 Before each release, record the exact source SHA, the previous production deployment, included commits, required database changes, CI proof, and public verification. A successful merge is not a deployment; a successful build is not a verified data repair. Never expose operator evidence or credentials in a public release note.

@@ -299,7 +299,9 @@ def test_paper_filing_dbtotal_matches_form_460_cover():
 
     This is the rigorous integrity check — Form 460 is the candidate's
     own legal certification, and `paper_filing_reconciliation`
-    enrichment ensures DB matches it via synthesized unitemized rows.
+    enrichment may add only the form's explicit unitemized amount after
+    itemized extraction matches. Missing extraction must not be synthesized
+    into a donor category merely to force this assertion to pass.
     Failure here means the enrichment didn't run, the form_summary is
     missing/wrong, or there's an OCR over-extraction.
     """
@@ -335,9 +337,9 @@ def test_paper_filing_dbtotal_matches_form_460_cover():
                     f"{committee} filing {filing_id}: DB total ${db_total:,.2f} "
                     f"!= Form 460 Line 5 ${form_total:,.2f} (gap ${gap:,.2f}). "
                     f"Period {p_start} -> {p_end}. "
-                    f"Run `python src/data_sync.py --source paper_filing_reconciliation` "
-                    f"to synthesize the unitemized adjustment row, or check that "
-                    f"netfile_paper_extractor extracted the form_summary correctly."
+                    f"Check source-backed itemized extraction, cross-report duplicates, "
+                    f"and the form's explicit unitemized amount. Do not label the gap "
+                    f"as unitemized donations to force the total to match."
                 )
     finally:
         conn.close()
