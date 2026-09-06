@@ -34,7 +34,8 @@ describe('email recap provenance disclosures', () => {
 
     for (const content of [html, text]) {
       const normalized = content.replace(/\s+/g, ' ')
-      expect(normalized).toContain('before regular City Council meetings')
+      expect(normalized).toContain('only when general council emails are enabled')
+      expect(normalized).toContain('has not started')
       expect(normalized).not.toContain('Before and after each')
       expect(normalized).not.toContain('weekly recap')
       expect(normalized).toContain('where available')

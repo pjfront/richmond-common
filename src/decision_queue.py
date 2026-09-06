@@ -81,6 +81,10 @@ def create_decision(
     entity_id: str = None,
     link: str = None,
     dedup_key: str = None,
+    review_class: str = None,
+    action_kind: str = "resolve_only",
+    target_brief_id: str = None,
+    target_content_version: int = None,
 ) -> Optional[uuid.UUID]:
     """Create a pending decision. Returns UUID, or None if deduplicated.
 
@@ -98,6 +102,15 @@ def create_decision(
             f"Must be one of: {', '.join(sorted(VALID_SEVERITIES))}"
         )
 
+    review_class = review_class or ("editorial" if decision_type in {"tier_graduation", "conflict_review"} or action_kind == "publish_brief" else "engineering")
+    if review_class not in {"engineering", "editorial"}:
+        raise ValueError("review_class must be engineering or editorial")
+    if action_kind not in {"resolve_only", "publish_brief"}:
+        raise ValueError("Unsupported review action_kind")
+    if action_kind == "publish_brief" and (review_class != "editorial" or not target_brief_id or not target_content_version or target_content_version < 1):
+        raise ValueError("Publication review requires an editorial target and content version")
+    if action_kind == "resolve_only" and (target_brief_id is not None or target_content_version is not None):
+        raise ValueError("Generic reviews cannot name a publication target")
     return insert_pending_decision(
         conn,
         city_fips=city_fips,
@@ -111,6 +124,10 @@ def create_decision(
         entity_id=entity_id,
         link=link,
         dedup_key=dedup_key,
+        review_class=review_class,
+        action_kind=action_kind,
+        target_brief_id=target_brief_id,
+        target_content_version=target_content_version,
     )
 
 
@@ -120,6 +137,8 @@ def resolve_decision(
     verdict: str,
     resolved_by: str = "operator",
     note: str = None,
+    expected_version: int = None,
+    idempotency_key: str | uuid.UUID = None,
 ) -> bool:
     """Resolve a pending decision. Returns True if updated.
 
@@ -134,12 +153,18 @@ def resolve_decision(
     if isinstance(decision_id, str):
         decision_id = uuid.UUID(decision_id)
 
+    guard_args = {}
+    if expected_version is not None:
+        guard_args["expected_version"] = expected_version
+    if idempotency_key is not None:
+        guard_args["idempotency_key"] = idempotency_key
     return update_decision_status(
         conn,
         decision_id=decision_id,
         status=verdict,
         resolved_by=resolved_by,
         resolution_note=note,
+        **guard_args,
     )
 
 

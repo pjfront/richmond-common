@@ -37,6 +37,7 @@ Run scripts from `src/` directory. Use `python-dotenv` with `load_dotenv(Path(__
 - Richmond adopted NetFile January 2018. **Council candidates file HERE, not CAL-ACCESS.**
 - **Transaction search:** `POST /public/campaign/search/transaction/query?format=json` with `{"Agency": 163, "TransactionType": 0, "PageSize": 1000, "CurrentPageIndex": 0, "SortOrder": 1}`
 - **FPPC types:** F460A (type 0) = Monetary, F460C (type 1) = Non-Monetary, F460E (type 6) = Payments, F497P1 (type 20) = Late Contributions
+- **Form 497 Part 2 direction:** Type 21 reports contributions made: `filerName` is the donor and `name` / `transactionFppcId` identify the recipient. `normalize_transaction` converts this to donor -> recipient; `filer_*` fields continue to identify the recipient for the loader, while `reporting_filer_*` preserve the actual filer for paper discovery. Source-backed regression: filing 216841017 (RPOA PAC -> Safe Richmond Neighborhoods, May 29, 2026). This normalization fix does not repair existing reversed rows or the separate near-date dedup rule; do not treat a full reimport as a repair plan.
 - **CRITICAL:** API intermittently returns HTTP 500. Implement retry with exponential backoff. Types 6 and 20 especially unreliable.
 - **Deduplication needed:** Amended filings create duplicates. Dedup by (contributor_name, amount, date, committee), keep highest filing_id
 - 22,143 unique contributions, $5.79M total. Top local donors: Chevron ($635K), SEIU ($607K combined), Richmond POA ($831K combined)

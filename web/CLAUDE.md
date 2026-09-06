@@ -1,5 +1,7 @@
 # web/CLAUDE.md — Frontend Conventions
 
+**Active plan:** The [September 6 implementation delegation](../docs/CURRENT-PLAN.md) supersedes the historical S29 and repeated human-approval requirements below within its accepted scope. Retain technical release and source-quality checks.
+
 ## Stack
 
 Next.js 16 (app router), React 19, TypeScript (strict, no `any`), Tailwind CSS v4, Supabase client. Deployed on Vercel with ISR (1hr revalidation).
@@ -33,6 +35,8 @@ Why: this is the production-side companion to T0.4's data-anomaly hold. CI's `ne
 6. Captures the exact current READY production deployment before mutation, then repeats CI and checkout checks and makes one final canonical-main query immediately before the pinned Vercel invocation
 7. Deploys only the immutable artifact with explicit approved-SHA/ref metadata, then requires the returned deployment to be READY production at that SHA and `main`, and requires `richmondcommons.org` to resolve to that exact deployment ID
 8. Prints a literal `ACTION:` smoke check plus the captured prior deployment ID. It never auto-rolls back
+
+The deploy invocation explicitly requests `--format=json`. Vercel CLI59.1.4 can emit either its deployment JSON object or an agent-mode `{status: "ok", deployment: ...}` envelope. `parse-deploy-output.mjs` accepts those explicit shapes and narrowly bounded legacy bare-URL/Production-label forms, including display-only ANSI around tokens. It rejects duplicate locator fields, multiple text URLs, custom domains, credentials, ports and URL paths. The parser only obtains a locator: authenticated deployment metadata and production alias proofs remain mandatory. Format failures report byte/line counts, ANSI presence and a fixed reason code, never raw stdout or credential-bearing notices. The September6 failed wrapper output was not retained; visible Production labels alone do not establish what stdout contained, and a failed attestation is not evidence that deployment failed.
 
 **Boundary split** (per `.claude/rules/judgment-boundaries.md`):
 - **AI-delegable:** running `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\web\scripts\deploy-prod.ps1 <full-sha>` after exact-SHA operator approval. The launcher selects `C:\Program Files\Git\bin\bash.exe` explicitly; do not substitute bare `bash`, which resolves to unconfigured WSL on the operator machine. The mechanics — prove Git/CI, construct the immutable artifact, invoke `vercel --prod`, confirm — are mechanical. Passing a SHA to the script is not itself evidence of approval.

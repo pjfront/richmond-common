@@ -1,42 +1,9 @@
-"""Cross-filing contribution deduplication.
+"""Retired near-date contribution heuristic, retained for read-only diagnosis.
 
-California campaign finance reporting double-counts contributions when
-both parties file: a $2,500 PAC donation appears once on the donor PAC's
-Form 497 Part 2 (outgoing) and again on the recipient candidate's Form
-497 Part 1 (incoming). Both filings carry slightly different transaction
-dates (the date the donor sent vs the date the recipient cleared) and
-get extracted into our `contributions` table as two separate rows that
-slip past the standard `(donor_id, amount, contribution_date,
-committee_id)` ON CONFLICT key.
-
-This module finds those near-date cross-filing duplicates and collapses
-them, preferring the row from the higher filing_id (typically the
-recipient's later filing — the canonical one from the receiving
-committee's own accounting view).
-
-Match rule:
-  same donor_id
-  AND same committee_id (recipient)
-  AND same amount
-  AND filing_id differs
-  AND contribution_date within ±14 days
-
-This is conservative on purpose. A donor genuinely giving the same
-amount twice within a single 460 filing won't have different filing_ids
-(they're rows in the same form), so they're safe. Two $50 monthly
-gifts from the same person across separate filings of the same form
-also won't trigger because they share the form's filing_id.
-
-Reads from `contributions` directly. Writes only the rows being deleted.
-Source-closest: `contributions` is the source of truth here — paper-
-filing JSONs feed into it via load_paper_filings, and after that the DB
-is canonical.
-
-Usage::
-
-    python src/dedup_contributions.py            # dry run
-    python src/dedup_contributions.py --apply    # write changes
-    python src/dedup_contributions.py --committee-id <uuid>  # one committee only
+Equal amounts on different dates/filings do not prove a duplicate. The prior
+heuristic erased a distinct May 18, 2026 $30,000 RPOA-to-Safe-Richmond gift.
+No write path is allowed here. Use finance_repair_audit.py for a source-linked
+read-only packet, and finance_ledger.py for explicit amendment reconciliation.
 """
 from __future__ import annotations
 
@@ -200,63 +167,29 @@ def apply_cross_filing_dedup(
     city_fips: str = CITY_FIPS,
     committee_id: str | None = None,
 ) -> dict:
-    """Delete the duplicate (drop) row from each pair found.
-
-    Returns counts. Idempotent — re-running on a deduped DB is a no-op.
-    """
-    pairs = find_cross_filing_duplicates(conn, city_fips, committee_id)
-    if not pairs:
-        return {"dropped": 0, "pairs_seen": 0}
-
-    drop_ids = [p["drop_id"] for p in pairs]
-    with conn.cursor() as cur:
-        cur.execute(
-            "DELETE FROM contributions WHERE id::text = ANY(%s)",
-            (drop_ids,),
-        )
-        dropped = cur.rowcount
-    conn.commit()
-    return {"dropped": dropped, "pairs_seen": len(pairs)}
+    """Reject the retired destructive heuristic, including legacy callers."""
+    raise RuntimeError(
+        "Near-date equality does not prove duplicate contributions. "
+        "Use the read-only finance repair audit and retained source assertions."
+    )
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    parser.add_argument("--apply", action="store_true",
-                        help="Write changes (default is dry-run preview)")
-    parser.add_argument("--committee-id", default=None,
-                        help="Limit to one recipient committee (UUID)")
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--apply", action="store_true", help="Retired; always rejected")
+    parser.add_argument("--committee-id", default=None)
     parser.add_argument("--city-fips", default=CITY_FIPS)
     args = parser.parse_args()
-
+    if args.apply:
+        parser.error("Destructive near-date dedup is retired; use finance_repair_audit.py")
     conn = psycopg2.connect(os.getenv("DATABASE_URL"))
-    conn.autocommit = False
-
-    pairs = find_cross_filing_duplicates(conn, args.city_fips, args.committee_id)
-    if not pairs:
-        print("No cross-filing duplicates found.")
+    conn.set_session(readonly=True)
+    try:
+        pairs = find_cross_filing_duplicates(conn, args.city_fips, args.committee_id)
+        print(f"{len(pairs)} near-date candidate pairs. Similarity does not prove duplication.")
+        print("Use finance_repair_audit.py for all cohorts and source evidence; no rows changed.")
+    finally:
         conn.close()
-        return
-
-    print(f"Found {len(pairs)} cross-filing duplicate pair(s):\n")
-    total_drop_amount = 0.0
-    for p in pairs:
-        total_drop_amount += p["amount"]
-        print(
-            f"  {p['donor_name'][:45]:45s} ${p['amount']:>10,.2f}\n"
-            f"    keep: {p['keep_date']} fid={p['keep_filing_id']}\n"
-            f"    drop: {p['drop_date']} fid={p['drop_filing_id']} "
-            f"(gap {p['day_gap']}d)"
-        )
-    print(f"\nTotal duplicate dollars to drop: ${total_drop_amount:,.2f}")
-
-    if not args.apply:
-        print("\n(Dry run — pass --apply to execute.)")
-        conn.close()
-        return
-
-    stats = apply_cross_filing_dedup(conn, args.city_fips, args.committee_id)
-    print(f"\nDone. Dropped {stats['dropped']} row(s).")
-    conn.close()
 
 
 if __name__ == "__main__":

@@ -44,3 +44,16 @@ body {
 a {
   transition: color 0.15s ease;
 }
+
+/* Keyboard focus stays visible on both the light reading surface and dark nav. */
+:where(a, button, input, summary):focus-visible {
+  outline: 3px solid #d97706;
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

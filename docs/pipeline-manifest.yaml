@@ -26,8 +26,11 @@ sources:
     sync_key: netfile
     module: netfile_client.py
     external_api: "https://netfile.com/Connect2/api"
-    description: "Local campaign finance — e-filed (Connect2 API) + paper-filed (PDF extraction via public portal)"
+    description: "Local campaign finance — electronic and paper. Separate finance_sync.py CLI preserves current-year electronic assertions, explicit amendments and local 496 PDFs without model calls; legacy paper extraction remains separately covered."
     tables_written:
+      - finance_assertions
+      - finance_events
+      - finance_source_coverage
       - contributions
       - donors
       - committees
@@ -86,7 +89,7 @@ sources:
     sync_key: archive_center
     module: archive_center_discovery.py
     external_api: "https://www.ci.richmond.ca.us/ArchiveCenter/"
-    description: "Council minutes PDFs, resolutions, ordinances (9 AMIDs)"
+    description: "Council minutes, resolutions, ordinances and other Tier 1–2 archives (12 AMIDs). Scan-only documents retain downloaded PDF bytes without model calls, capped at 20 new scans / 32 MiB per run with deferred counts; existing text-hash identities remain unchanged."
     tables_written:
       - documents
     layer: 1
@@ -308,6 +311,33 @@ sources:
 # ══════════════════════════════════════════════════════════════
 
 tables:
+  finance_assertions:
+    layer: 1
+    description: "Immutable original transactions and amendment metadata; private raw evidence."
+    written_by:
+      sources: [netfile]
+      enrichments: []
+    read_by:
+      enrichments: [civic_review_packet_generation]
+      queries: []
+  finance_events:
+    layer: 2
+    description: "One selected event per conservative reconciliation group; ambiguous evidence held for review."
+    written_by:
+      sources: [netfile]
+      enrichments: []
+    read_by:
+      enrichments: []
+      queries: []
+  finance_source_coverage:
+    layer: 2
+    description: "Acquisition timestamps, covered activity dates and explicit source gaps."
+    written_by:
+      sources: [netfile]
+      enrichments: []
+    read_by:
+      enrichments: []
+      queries: []
   # ── Layer 1: Document Lake ──────────────────────────────────
 
   documents:
@@ -339,7 +369,7 @@ tables:
       sources: [escribemeetings, minutes_extraction]
       enrichments: [orientation_generation]
     read_by:
-      enrichments: [conflict_scanning, orientation_generation, transcript_vote_extraction]
+      enrichments: [conflict_scanning, orientation_generation, transcript_vote_extraction, civic_review_packet_generation]
       queries: [getMeetings, getMeetingsWithCounts, getMeeting, getMeetingStats,
                 getMeetingsWithFlags, getMeetingForReport, getCoalitionData,
                 getCrossMeetingPatterns, getCommissionMeetings]
@@ -383,7 +413,7 @@ tables:
       sources: [escribemeetings, minutes_extraction]
       enrichments: [summary_generation]
     read_by:
-      enrichments: [conflict_scanning, orientation_generation, summary_generation]
+      enrichments: [conflict_scanning, orientation_generation, summary_generation, civic_review_packet_generation]
       queries: [getMeeting, getMeetingStats, getMeetingForReport,
                 getCategoryStats, getControversialItems]
 
@@ -700,7 +730,7 @@ tables:
       sources: []
       enrichments: [commission_seeding]
     read_by:
-      enrichments: [orientation_generation]
+      enrichments: [orientation_generation, civic_review_packet_generation]
       queries: [getCommissionMeetings]
 
   neighborhood_councils:
@@ -909,6 +939,28 @@ tables:
 
   # ── Operational Tables ──────────────────────────────────────
 
+  civic_brief_candidates:
+    layer: operational
+    description: "Versioned story, meeting, and finance drafts; only approved versions are public, with sources attached to the exact reviewed text."
+    written_by: {sources: [], enrichments: [civic_review_packet_generation]}
+    read_by: {enrichments: [], queries: [getPublishedCivicBriefs, getPublishedCivicBriefVersion]}
+    provenance: "Composite editorial artifact: sources[] carries each URL, title, source_tier and source_date; published_at/content_version identify the exact reviewed publication. No standalone confidence probability is claimed."
+    api_routes: ["/api/operator/decisions"]
+
+  pending_decisions:
+    layer: operational
+    description: "Private operator judgments with source fingerprints, exact proposed changes, and versioned publication targets."
+    written_by: {sources: [], enrichments: [civic_review_packet_generation]}
+    read_by: {enrichments: [civic_review_packet_generation], queries: []}
+    api_routes: ["/api/operator/decisions"]
+
+  operator_decision_events:
+    layer: operational
+    description: "Private review snapshots and idempotent action results written atomically by review_decision."
+    written_by: {sources: [], enrichments: []}
+    read_by: {enrichments: [], queries: []}
+    api_routes: ["/api/operator/decisions"]
+
   data_sync_log:
     layer: operational
     description: "Per-source sync execution log (freshness tracking)"
@@ -1053,6 +1105,15 @@ tables:
 # ══════════════════════════════════════════════════════════════
 
 enrichments:
+  civic_review_packet_generation:
+    module: civic_review_packets.py
+    description: "Bounded deterministic finance comparisons and source-title/receipt publication drafts; no models, automatic publication, or email."
+    reads_from: [finance_assertions, meetings, bodies, agenda_items, pending_decisions, civic_brief_candidates]
+    writes_to: [pending_decisions, civic_brief_candidates]
+    depends_on: []
+    cascade_enabled: false  # Run the bounded CLI after the daily ledger ingest.
+    notes: "Migration148+149 prerequisite. CLI defaults read-only; --apply creates or refreshes at most6 private packets per run. All-status fingerprint dedup suppresses unchanged/rejected evidence. Complete source rechecks first withdraw unsupported open story publication proposals (max100), preserving private drafts and published content. Failed or truncated source reads abort before writes. Workflow integration follows the daily finance ledger ingest; new source updates use a14-day lookback and21-day forward agenda window."
+
   minutes_extraction:
     module: batch_extract.py
     description: "AI extraction of structured meeting data from raw PDFs"
@@ -1315,6 +1376,36 @@ enrichments:
 # ══════════════════════════════════════════════════════════════
 
 queries:
+  getResidentSnapshot:
+    file: queries/civic-stories.ts
+    tables: [meetings, agenda_items, bodies]
+    used_by: ["/", "/stories", "/stories/[slug]"]
+    description: "Bounded recent/upcoming council agenda discovery; exact item links, source-alias deduplication, and an explicit unavailable state."
+  COLS_RESIDENT_MEETING: {file: queries/civic-stories.ts, tables: [], used_by: []}
+  COLS_RESIDENT_AGENDA_ITEM: {file: queries/civic-stories.ts, tables: [], used_by: []}
+  STORY_AGENDA_LIMIT: {file: queries/civic-stories.ts, tables: [], used_by: []}
+  RECENT_COUNCIL_LIMIT: {file: queries/civic-stories.ts, tables: [], used_by: []}
+  UPCOMING_COUNCIL_LIMIT: {file: queries/civic-stories.ts, tables: [], used_by: []}
+  groupStoryAgendaEntries: {file: queries/civic-stories.ts, tables: [], used_by: []}
+  uniqueResidentMeetings: {file: queries/civic-stories.ts, tables: [], used_by: []}
+  richmondDate: {file: queries/civic-stories.ts, tables: [], used_by: []}
+  candidateMoney: {file: queries/finance-public.ts, tables: [], used_by: []}
+  getPublishedCivicBriefs:
+    file: queries/civic-briefs.ts
+    tables: [civic_brief_candidates]
+    used_by: ["/stories/[slug]", "/elections/2026-general"]
+    description: "Only source-linked published briefs, public RLS plus explicit status predicate; private draft evidence never enters page props."
+  getPublishedCivicBriefVersion:
+    file: queries/civic-briefs.ts
+    tables: [civic_brief_candidates]
+    used_by: ["/updates/[id]"]
+    description: "Uncached single-publication lookup for email links, matched by ID, content version and exact PostgreSQL publication timestamp under public RLS and published status. Withdrawn or replaced publications are not substituted."
+
+  getPublicFinanceSnapshot:
+    file: queries/finance-public.ts
+    tables: [finance_events, finance_source_coverage]
+    used_by: ["/elections/2026-general", "/elections/2026-general/money"]
+    description: "Bounded cached public projections with explicit source coverage; read errors are not cached as no activity."
   # ── Meetings ────────────────────────────────────────────────
   getMeetings:
     file: queries.ts
@@ -1410,11 +1501,6 @@ queries:
     file: queries.ts
     tables: [conflict_flags, meetings, agenda_items]
     used_by: ["/reports"]
-
-  getMeetingFlagCounts:
-    file: queries.ts
-    tables: [conflict_flags]
-    used_by: ["/meetings"]
 
   getAgendaItemsByCategory:
     file: queries.ts
@@ -1877,6 +1963,24 @@ queries:
 # ══════════════════════════════════════════════════════════════
 
 pages:
+  "/stories":
+    queries: [getResidentSnapshot]
+    description: "Three source-checked continuing Richmond issue histories with recent agenda entries."
+  "/stories/[slug]":
+    queries: [getResidentSnapshot, getPublishedCivicBriefs]
+    description: "Formal source chronology, proposed agenda entries, and exactly reviewed public updates."
+  "/updates/[id]":
+    queries: [getPublishedCivicBriefVersion]
+    description: "Noindex email destination for one exact reviewed publication, independent of the short story feed; source-read failures and withdrawn/replaced versions have distinct unavailable notices."
+  "/elections/2026-general":
+    queries: [getPublicFinanceSnapshot, getPublishedCivicBriefs]
+    description: "Source-checked municipal choices, separate money meanings and explicit coverage, voting and filing dates."
+  "/elections/2026-general/money":
+    queries: [getPublicFinanceSnapshot]
+    description: "Search reported legal names/FPPC identifiers and read/download source-linked public events."
+  "/support":
+    queries: []
+    description: "Existing voluntary support link and free civic research tools."
   "/sitemap.xml":
     description: "Daily, bounded inventory of canonical public routes; operator/noindex, candidate, retired mayor-funding, campaign-directory, management, API, and heavy detail routes are excluded"
     queries: [getSitemapMeetings, getRecentAgendaItemSlugs,
@@ -1889,8 +1993,8 @@ pages:
     queries: [getMeetingsWithCounts]
 
   "/meetings":
-    description: "Meeting discovery — month-grouped list, mini-calendar, calendar grid toggle"
-    queries: [getMeetingsWithCounts, getMeetingFlagCounts]
+    description: "Meeting discovery — month-grouped list and mini-calendar; no scanner aggregation on the public path"
+    queries: [getMeetingsWithCounts]
 
   "/meetings/[id]":
     description: "Meeting detail — agenda items, votes, attendance"
@@ -2076,7 +2180,7 @@ pages:
     queries: []  # Static content
 
   "/operator/decisions":
-    description: "Operator decision queue (operator-only)"
+    description: "Operator decision queue; session-authenticated server read using the service-role client"
     queries: []
     api_routes: ["/api/operator/decisions"]
 
@@ -2325,8 +2429,8 @@ rpcs:
     migration: "053"
     reads_from: [conflict_flags, agenda_items, meetings]
     returns: "{meeting_id, flags_total, flags_published, items_scanned}"
-    used_by_queries: [getMeetingFlagCounts]
-    notes: "Server-side aggregation to avoid 17K+ JSONB rows hitting anon's 3s timeout. Filters government-entity vendor/employer matches. See src/migrations/053_flag_count_rpc.sql."
+    used_by_queries: []
+    notes: "Retained database RPC; removed from the public meetings page on September 6 after a production build timeout. Scanner review belongs in operator workflows, not public calendar rendering."
 
 
 # ══════════════════════════════════════════════════════════════
@@ -2334,6 +2438,13 @@ rpcs:
 # ══════════════════════════════════════════════════════════════
 
 api_routes:
+  "/api/finance/export":
+    file: "web/src/app/api/finance/export/route.ts"
+    method: GET
+    tables_read: [finance_events, finance_source_coverage]
+    tables_written: []
+    description: "Bounded public ledger CSV, formula-neutralized with original sources, no private payloads or street addresses."
+    used_by_pages: ["/elections/2026-general/money"]
   "/api/health":
     file: "web/src/app/api/health/route.ts"
     method: GET
@@ -2389,9 +2500,10 @@ api_routes:
 
   "/api/operator/decisions":
     file: "web/src/app/api/operator/decisions/route.ts"
-    method: GET
-    tables_read: [pending_decisions]
-    description: "Operator decision queue (operator-only)"
+    method: "GET, POST"
+    tables_read: [pending_decisions, civic_brief_candidates, operator_decision_events]
+    rpcs_called: [review_decision]
+    description: "Authenticated same-origin review inbox; optimistic, idempotent status decisions and source-backed brief publication with atomic audit history."
     used_by_pages: ["/operator/decisions"]
 
   "/api/operator/logout":
@@ -2551,6 +2663,65 @@ api_routes:
 # ══════════════════════════════════════════════════════════════
 
 field_map:
+  "/stories":
+    "recent and upcoming agenda entries":
+      query: getResidentSnapshot
+      column: agenda_items.title
+      sources: [escribemeetings]
+    "source-checked issue context":
+      column: "web/src/data/civic-stories.ts"
+      sources: [archive_center]
+  "/stories/[slug]":
+    "agenda entry and exact item link":
+      query: getResidentSnapshot
+      column: agenda_items.title
+      sources: [escribemeetings]
+    "reviewed update":
+      query: getPublishedCivicBriefs
+      column: civic_brief_candidates.body
+      sources: []
+      note: "Exact operator-approved text with its own sources[] provenance and publication version."
+  "/updates/[id]":
+    "reviewed title and explanation":
+      query: getPublishedCivicBriefVersion
+      column: civic_brief_candidates.body
+      sources: []
+      note: "Exact operator-approved title and body for the publication identified by the email URL; current text cannot replace a withdrawn or superseded version."
+    "source links, titles, tiers and dates":
+      query: getPublishedCivicBriefVersion
+      column: civic_brief_candidates.sources
+      sources: []
+      note: "Per-source provenance attached to the reviewed publication, with missing source dates shown explicitly."
+    "publication version":
+      query: getPublishedCivicBriefVersion
+      column: civic_brief_candidates.content_version
+      sources: []
+      note: "Version selected explicitly by the email link; no inferred adoption, source quality probability, or historical-version reconstruction."
+    "publication date":
+      query: getPublishedCivicBriefVersion
+      column: civic_brief_candidates.published_at
+      sources: []
+      note: "Publication identity preserves PostgreSQL timestamp precision; this is not an agenda, filing, or underlying activity date."
+  "/elections/2026-general":
+    "reported cash gifts and independently attributed election spending":
+      query: getPublicFinanceSnapshot
+      column: finance_events.amount
+      sources: [netfile]
+    "reviewed election update":
+      query: getPublishedCivicBriefs
+      column: civic_brief_candidates.body
+      sources: []
+      note: "Exact operator-approved text with its own sources[] provenance and publication version."
+  "/elections/2026-general/money":
+    "reported donor, recipient, spender, activity and original source":
+      query: getPublicFinanceSnapshot
+      column: finance_events.source_url
+      sources: [netfile]
+  "/support":
+    "support destination":
+      column: ".github/FUNDING.yml"
+      sources: []
+      note: "Existing repository funding configuration; no payment or billing integration is created."
 
   # ── Public sitemap (/sitemap.xml) ────────────────────────────
 
@@ -2686,12 +2857,6 @@ field_map:
       rpc: get_meeting_counts
       column: "COUNT(agenda_items.meeting_id)"
       sources: [escribemeetings, minutes_extraction]
-
-    "per-meeting flag counts":
-      query: getMeetingFlagCounts
-      column: "COUNT(conflict_flags) GROUP BY meeting_id"
-      sources: []
-      enrichment: conflict_scanning
 
   # ── Meeting Detail (/meetings/[id]) ─────────────────────────
 

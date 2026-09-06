@@ -176,6 +176,11 @@ def load_contributions_to_db(
 
     with conn.cursor() as cur:
         for record in records:
+            if record.get("transaction_type") == "F497P2":
+                # The finance ledger retains outgoing assertions and reconciles
+                # them against receipts. They are not additional cash receipts.
+                stats["skipped"] += 1
+                continue
             # ── Extract fields (handle both formats) ──
             raw_donor_name = sanitize_text((record.get("contributor_name") or record.get("name") or "").strip())
             donor_name = canonicalize_donor_name(raw_donor_name)
@@ -340,25 +345,9 @@ def load_contributions_to_db(
     if commit:
         conn.commit()
 
-    # Cross-filing dedup pass (I124 item 2). The standard ON CONFLICT
-    # key catches same-(donor, amount, date, committee) duplicates, but
-    # the same legal contribution can appear under DIFFERENT filing_ids
-    # with slightly-different dates when both the donor PAC and the
-    # recipient committee file 497s. dedup_contributions handles that
-    # case explicitly. Cheap (one query); idempotent.
-    try:
-        if not commit:
-            # Transaction-owning callers (notably Form 460 reconciliation)
-            # must be able to replace derived rows atomically. The normal
-            # loader path retains the historical post-load dedup behavior.
-            return stats
-        from dedup_contributions import apply_cross_filing_dedup
-        dedup_stats = apply_cross_filing_dedup(conn, city_fips)
-        if dedup_stats["dropped"]:
-            stats["dedup_dropped"] = dedup_stats["dropped"]
-    except Exception as exc:
-        # Soft-fail — dedup is best-effort and a sync should not abort
-        # because of it. Log and move on.
-        print(f"[load_contributions_to_db] cross-filing dedup skipped: {exc}")
-
+    # Equal amounts within 14 days do not establish a duplicate. Three
+    # separate RPOA $30,000 reports in May 2026 demonstrate why a routine
+    # loader must never delete those rows. Source-backed reconciliation
+    # lives in the finance assertion ledger; legacy near-date cohorts are
+    # read-only review candidates, not instructions to remove records.
     return stats

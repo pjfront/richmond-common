@@ -6,6 +6,29 @@ _Convention: Every session adds observations here. Items stay until promoted to 
 
 ---
 
+## 2026-09-06 subscriber access boundary
+
+- Migration 151 removes API-role table privileges from subscriber records and preferences while preserving existing service grants, row policies, and subscription RPCs. The standard disposable PostgreSQL gate now starts these tables with broad hosted-style defaults, including PUBLIC and TRUNCATE, and verifies effective denial plus service-backed subscribe, preference, unsubscribe, and delivery behavior. Keep this fixture when changing subscription schema; RLS-only fixtures miss table-level privileges.
+
+## 2026-09-06 production CLI output contract
+
+- Deployment now requests explicit JSON and parses only CLI59.1.4's documented object/agent envelope or narrow legacy URL forms. The lost September6 stdout cannot establish its exact failure format; installed official CLI code confirms agent detection can change stdout from a bare URL to JSON. Authenticated project/SHA/ref/alias proof stays separate from locator parsing. Future format failures emit only redacted structural diagnostics.
+
+## 2026-09-06 review inbox follow-through
+
+- Generic engineering decisions record a judgment; they do not claim to run a fix. Future automatic repair executors need their own small allowlist and validation contract.
+- Publication producers create draft civic briefs and editorial decisions pinned to a content version. Re-extraction must refresh the packet before approval.
+- `civic_review_packets.py` now prepares bounded finance comparisons and source-backed agenda/receipt drafts without model calls. Fingerprints suppress unchanged and rejected inputs, and draft refresh invalidates stale browser review versions. The real Python writer passes disposable PostgreSQL integration checks.
+- Source rechecks now convert open story publication proposals into versioned engineering closure notes when cancelled/retired/removed agenda evidence no longer qualifies. The old private draft and evidence remain, public content is untouched, and failed/truncated reads cannot trigger withdrawal. Upstream source fetchers must retain last successful state on fetch failure.
+- Story/election follows need delivery integration, not just stored checkboxes: current digest/retry paths filter only topic preferences and orientation ignores preferences. `docs/civic-review-packets.md` identifies the exact small extension; migration150 remains unused.
+- Move the standalone PostgreSQL publication/role verifier into the standard integration gate after this release.
+
+## 2026-09-06 access verification follow-up
+
+- Keep private operator state behind database grants and role-scoped policies as well as route authentication. The prepared migration 147 has a disposable PostgreSQL role-access verifier covering public denial, service access, registry public reads, and idempotent replay.
+- Add that executable permission check to the standard isolated integration gate; policy-name and source-text checks alone do not prove effective access.
+- Lock the Python runtime dependencies so a scheduled run uses the same dependency versions as its tested commit.
+
 ## Sprint Number Mapping (2026-04-08)
 
 > **Roadmap reorganization:** S21.5 promoted to S22. Old S22/S24/S25 renumbered to S25/S26/S27. See `docs/PARKING-LOT.md` Sprint Number Mapping table for full details. Historical references in this file use original numbers.
@@ -42,6 +65,22 @@ _Items from this parking lot that have been promoted to Phase 3 sprints. Kept he
 ---
 
 ## Research Topics
+
+### Preview startup read recovery (2026-09-06)
+
+PR165 bootstrap runs 34040435644 and 34040596425 exposed a database restart
+between readiness and the first catalog read. The controller now bounds retries
+for only recognized startup failures on enforced read-only queries; writes keep
+their single-attempt/reconciliation contract. Both failed branches were confirmed
+absent by the trusted watchdog. Local regression checks pass; the next trusted
+bootstrap is the live verification of the repair.
+
+Follow-up run34041869373 returned the API's PostgreSQL `ECONNREFUSED` response
+with a literal IPv6 address on port5432. Bootstrap now waits for authoritative
+branch health before catalog access, while the same bounded read retry accepts
+only that exact IP/port error envelope. It still rejects hostnames, other ports,
+client transport errors, and all writes. Local lifecycle regression checks pass;
+live verification remains with the trusted controller rollout.
 
 ### R1. Entity Extraction for Civic Text ➜ Promoted to S9.5
 Gazetteer-based matching replaced noisy `extract_entity_names()`. Uses `city_expenditures.normalized_vendor` directly.

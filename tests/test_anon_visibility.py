@@ -64,6 +64,8 @@ pytestmark = pytest.mark.skipif(
 # commissions and projects commission_id instead of id. Both previously
 # gave false negatives reading column-name 400s as RLS regressions.
 _ANON_SELECT_COLUMN: dict[str, str] = {
+    "finance_public_events": "event_key",
+    "finance_public_coverage": "scope_key",
     "form_summary_cache": "filing_id",
     "v_commission_staleness": "commission_id",
 }
@@ -161,6 +163,9 @@ PUBLIC_TABLES = [
 # see (e.g., once a filing_period_briefing is promoted to public tier),
 # move it to PUBLIC_TABLES so the stricter check applies.
 PUBLIC_TABLES_CONDITIONAL = [
+    "civic_brief_candidates",  # Only reviewed, published versions are visible.
+    "finance_public_events",  # Published only after source assertions reconcile.
+    "finance_public_coverage",  # Empty until the first bounded snapshot succeeds.
     # filing_period_briefings: policy is
     #   USING (publication_tier = 'public' AND is_current)
     # As of 2026-05-18, all 92 rows are at `graduated` tier; anon sees 0.

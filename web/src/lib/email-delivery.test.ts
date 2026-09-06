@@ -288,7 +288,7 @@ describe('deliverTrackedEmail', () => {
       p_claim_token: 'claim-1',
       p_provider_message_id: 'provider-1',
     })
-    expect(rpc).toHaveBeenNthCalledWith(1, 'claim_email_delivery', expect.objectContaining({
+    expect(rpc).toHaveBeenNthCalledWith(1, 'claim_consented_email_delivery', expect.objectContaining({
       p_content_key: `week:2026-08-03:activation:${subscriber.current_activation_id}`,
       p_payload_sha256: expect.stringMatching(/^[0-9a-f]{64}$/),
       p_max_attempts: MAX_DELIVERY_ATTEMPTS,
@@ -536,7 +536,7 @@ describe('bounded email delivery recovery', () => {
       }),
     }
     const rpc = vi.fn().mockImplementation(async (name: string) => {
-      if (name === 'claim_email_delivery') {
+      if (name === 'claim_consented_email_delivery') {
         return {
           data: [{
             delivery_id: 'orientation-delivery',
@@ -565,7 +565,7 @@ describe('bounded email delivery recovery', () => {
     expect(meetingQuery.select).toHaveBeenCalledWith(
       expect.stringContaining('bodies(body_type)'),
     )
-    expect(rpc).toHaveBeenCalledWith('claim_email_delivery', expect.objectContaining({
+    expect(rpc).toHaveBeenCalledWith('claim_consented_email_delivery', expect.objectContaining({
       p_delivery_kind: 'orientation',
       p_content_key: `meeting:${meetingId}`,
       p_payload_sha256: expect.stringMatching(/^[0-9a-f]{64}$/),

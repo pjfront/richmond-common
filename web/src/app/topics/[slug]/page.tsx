@@ -2,6 +2,7 @@ import { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { getPromotedTopics, getTopicItems } from '@/lib/queries'
+import { agendaItemPath } from '@/lib/format'
 
 interface Props {
   params: Promise<{ slug: string }>
@@ -70,7 +71,7 @@ export default async function TopicDetailPage({ params }: Props) {
                   {dateItems.map((item) => (
                     <Link
                       key={item.id}
-                      href={`/meetings/${item.meeting_id}`}
+                      href={agendaItemPath(item.meeting_id, item.item_number)}
                       className="block border border-slate-200 rounded-lg p-4 hover:border-civic-navy-light hover:bg-slate-50/50 transition-colors"
                     >
                       <div className="flex items-start justify-between gap-3">

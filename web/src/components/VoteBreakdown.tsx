@@ -1,22 +1,21 @@
 import type { MotionWithVotes } from '@/lib/types'
 import VoteBadge from './VoteBadge'
 import ReportErrorLink from './ReportErrorLink'
+import { formalMotionResult, motionKindLabel, motionTallyLabel } from '@/lib/vote-records'
 
 /**
  * Compute vote tally from individual vote records rather than the stored
  * vote_tally text, which can incorrectly count absent/abstain as nay votes.
  */
 function computeTally(votes: MotionWithVotes['votes']): string | null {
-  if (votes.length === 0) return null
-  const ayes = votes.filter(v => v.vote_choice === 'aye').length
-  const nays = votes.filter(v => v.vote_choice === 'nay').length
-  return `${ayes} to ${nays}`
+  return motionTallyLabel(votes)
 }
 
 export default function VoteBreakdown({ motion }: { motion: MotionWithVotes }) {
-  const resultColor = motion.result === 'passed'
+  const result = formalMotionResult(motion)
+  const resultColor = result === 'passed'
     ? 'text-vote-aye'
-    : motion.result === 'failed'
+    : result === 'failed'
     ? 'text-vote-nay'
     : 'text-slate-600'
 
@@ -26,15 +25,16 @@ export default function VoteBreakdown({ motion }: { motion: MotionWithVotes }) {
     <div className="border-t border-slate-200 pt-3 mt-4 first:mt-1">
       <div className="flex items-start justify-between gap-2 sm:gap-4">
         <div className="flex-1 min-w-0">
+          <p className="mb-1 text-sm font-medium text-slate-600">{motionKindLabel(motion)} · {motion.source === 'minutes' ? 'Official minutes' : 'Tentative record'}</p>
           <p className="text-sm text-slate-700 break-words">{motion.motion_text}</p>
           <div className="flex gap-3 mt-1 text-xs text-slate-500">
             {motion.moved_by && <span>Moved by: {motion.moved_by}</span>}
             {motion.seconded_by && <span>Seconded by: {motion.seconded_by}</span>}
           </div>
         </div>
-        <div className="text-right shrink-0">
+        <div className="max-w-[45%] text-right shrink-0">
           <span className={`font-semibold text-sm ${resultColor}`}>
-            {motion.result.charAt(0).toUpperCase() + motion.result.slice(1)}
+            {result === 'unknown' ? 'Outcome unverified' : result.charAt(0).toUpperCase() + result.slice(1)}
           </span>
           {tally && (
             <p className="text-xs text-slate-500 mt-0.5">{tally}</p>
@@ -53,14 +53,14 @@ export default function VoteBreakdown({ motion }: { motion: MotionWithVotes }) {
         </div>
       )}
 
-      {motion.vote_explainer && (
+      {motion.vote_explainer && result !== 'unknown' && (
         <div className="bg-blue-50 border border-blue-100 rounded-md p-3 mt-3">
           <p className="text-xs font-medium text-blue-600 mb-1">Why This Vote Matters</p>
           <p className="text-sm text-slate-700 leading-relaxed">
             {motion.vote_explainer}
           </p>
           <p className="text-[10px] text-slate-400 mt-2">
-            Auto-generated context. Source: official meeting records.
+            Auto-generated context based on {motion.source === 'minutes' ? 'official minutes' : 'a tentative transcript record'}.
           </p>
         </div>
       )}

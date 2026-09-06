@@ -84,6 +84,10 @@ export const COLS_MEETING_LIST = 'id, city_fips, document_id, body_id, meeting_d
 /** Meeting columns for banner/CTA — minimal */
 export const COLS_MEETING_BANNER = 'id, meeting_date, meeting_type, body_id, agenda_url'
 
+/** Bounded resident story discovery; excludes generated summaries and financial claims. */
+export const COLS_RESIDENT_MEETING = 'id, meeting_date, meeting_type, agenda_url, source_meeting_guid, bodies!inner(body_type)'
+export const COLS_RESIDENT_AGENDA_ITEM = 'id, meeting_id, item_number, title, topic_label'
+
 /** Election columns shared by the navigation and upcoming-election CTAs. */
 export const COLS_UPCOMING_ELECTION = 'id, election_date, election_type, election_name'
 

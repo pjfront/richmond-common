@@ -1,5 +1,7 @@
 import { Resend } from 'resend'
 import type { Provenance } from './types'
+import { digestBriefHref, type DigestBrief } from './digest-selection'
+import { SUBJECT_FOLLOW_ROLLOUT } from './subscription-subjects'
 import {
   recapAttributionText,
   orientationAttributionText,
@@ -63,6 +65,7 @@ export async function sendEmail({ to, subject, html, text, idempotencyKey }: Sen
 /** Welcome email sent on new subscription. */
 export function buildWelcomeEmail(name: string | null, unsubscribeUrl: string, manageUrl?: string): { subject: string; html: string; text: string } {
   const greeting = name ? `Hi ${name},` : 'Hi,'
+  const welcomeSummary = `Your choices are saved. Council previews and recaps are sent only when general council emails are enabled. Use your private management link to review your selections. ${SUBJECT_FOLLOW_ROLLOUT}`
   const subject = 'Welcome to Richmond Commons'
 
   const html = `
@@ -71,12 +74,10 @@ export function buildWelcomeEmail(name: string | null, unsubscribeUrl: string, m
         <h1 style="color: #1e3a5f; font-size: 22px; margin: 0;">Richmond Commons</h1>
       </div>
 
-      <p style="font-size: 16px; line-height: 1.6;">${greeting}</p>
+      <p style="font-size: 16px; line-height: 1.6;">${escapeEmailHtml(greeting)}</p>
 
       <p style="font-size: 16px; line-height: 1.6;">
-        You're signed up for updates from Richmond Commons. We send plain-language previews before
-        regular City Council meetings, with links to the source agenda. You can choose which topics
-        you want to follow.
+        ${welcomeSummary}
       </p>
 
       <p style="font-size: 16px; line-height: 1.6;">
@@ -112,7 +113,7 @@ export function buildWelcomeEmail(name: string | null, unsubscribeUrl: string, m
 
   const text = `${greeting}
 
-You're signed up for updates from Richmond Commons. We send plain-language previews before regular City Council meetings, with links to the source agenda. You can choose which topics you want to follow.
+${welcomeSummary}
 
 Browse meeting records going back to 2005, including agendas, votes, and public comments where available.
 
@@ -297,16 +298,29 @@ export function buildRecapEmail(
 
 // ─── Weekly Digest Email ────────────────────────────────────
 
+function escapeEmailHtml(value: string): string {
+  return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;')
+}
+
 /** Build a weekly digest email summarizing recent meetings. */
 export function buildDigestEmail(
   meetings: RecapMeeting[],
   unsubscribeUrl: string,
   manageUrl?: string,
-  options?: { canary?: boolean },
+  options?: { canary?: boolean; briefs?: DigestBrief[] },
 ): { subject: string; html: string; text: string } {
   const count = meetings.length
+  const briefs = options?.briefs ?? []
   const canary = options?.canary === true
-  const subject = `${canary ? '[CANARY] ' : ''}This week in Richmond: ${count} meeting${count === 1 ? '' : 's'}`
+  const subject = `${canary ? '[CANARY] ' : ''}This week in Richmond: ${briefs.length ? `${briefs.length} reviewed update${briefs.length === 1 ? '' : 's'}${count ? ` and ${count} meeting${count === 1 ? '' : 's'}` : ''}` : `${count} meeting${count === 1 ? '' : 's'}`}`
+
+  const briefSections = briefs.map(brief => `<div style="margin-bottom:28px;padding-bottom:24px;border-bottom:1px solid #e2e8f0;">
+    <h2 style="color:#1e3a5f;font-size:17px;">${escapeEmailHtml(brief.title)}</h2>
+    <p>AI-written; checked against linked sources. Published ${escapeEmailHtml(brief.published_at)} · version ${brief.content_version}.</p>
+    <p style="white-space:pre-line;">${escapeEmailHtml(brief.body)}</p>
+    <a href="${escapeEmailHtml(digestBriefHref(brief))}">Read this update and its continuing story</a>
+    <ul>${brief.sources.map(source => `<li><a href="${escapeEmailHtml(source.url)}">${escapeEmailHtml(source.title)}</a> · ${source.source_tier === 1 ? 'Official record' : 'Independent journalism'}${source.source_date ? ` · ${escapeEmailHtml(source.source_date)}` : ' · source date not supplied'}</li>`).join('')}</ul>
+  </div>`).join('\n')
 
   const sectionsHtml = meetings.map((m) => {
     const date = new Date(m.meeting_date + 'T12:00:00')
@@ -327,8 +341,8 @@ export function buildDigestEmail(
   // Preserve missing values so one unknown source cannot be hidden by the
   // known sources elsewhere in the same digest.
   const provenances = meetings.map((m) => m.meeting_recap_provenance ?? null)
-  const footerNote = digestAttributionText(provenances)
-  const html = emailLayout(sectionsHtml, footerNote, unsubscribeUrl, manageUrl, canary)
+  const footerNote = [count ? digestAttributionText(provenances) : '', briefs.length ? 'Reviewed updates are AI-written explanations approved against the linked sources. The version and publication date identify the reviewed text.' : ''].filter(Boolean).join(' ')
+  const html = emailLayout(briefSections + sectionsHtml, footerNote, unsubscribeUrl, manageUrl, canary)
 
   const textSections = meetings.map((m) => {
     const date = new Date(m.meeting_date + 'T12:00:00')
@@ -341,7 +355,8 @@ export function buildDigestEmail(
   const deliveryFooter = canary
     ? 'CANARY TEST — this message was sent only to the operator-approved test address. No subscriber delivery was recorded.'
     : `You're receiving this because you subscribed at richmondcommons.org.\n${manageUrl ? `Manage preferences: ${manageUrl}\n` : ''}Unsubscribe: ${unsubscribeUrl}`
-  const text = `${subject}\n\n${textSections}\n\n---\n${footerNote}\n${deliveryFooter}`
+  const briefText = briefs.map(brief => `${brief.title}\nAI-written; checked against linked sources. Published ${brief.published_at} · version ${brief.content_version}.\n\n${brief.body}\n\nRead this update: ${digestBriefHref(brief)}\n${brief.sources.map(source => `${source.title} (${source.source_tier === 1 ? 'Official record' : 'Independent journalism'}; ${source.source_date ?? 'source date not supplied'}): ${source.url}`).join('\n')}`).join('\n\n---\n\n')
+  const text = `${subject}\n\n${[briefText, textSections].filter(Boolean).join('\n\n---\n\n')}\n\n---\n${footerNote}\n${deliveryFooter}`
 
   return { subject, html, text }
 }

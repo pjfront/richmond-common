@@ -1573,7 +1573,7 @@ export interface SubscribeResponse {
 
 // ─── Email Preferences ──────────────────────────────────
 
-export type PreferenceType = 'topic' | 'district' | 'candidate'
+export type PreferenceType = 'topic' | 'district' | 'candidate' | 'subject'
 
 // Anchored to generated `email_preferences` Row. Narrows preference_type
 // string column to literal union.
@@ -1585,6 +1585,8 @@ export interface EmailPreference extends Omit<
 }
 
 export interface SubscriptionPreferences {
+  subjects: string[]
+  receiveCouncilUpdates: boolean
   topics: string[]
   districts: string[]
   candidates: string[]

@@ -4,7 +4,6 @@ import { buildDigestEmail, sendEmail } from '@/lib/email'
 import {
   broadcastTrackedEmail,
   completedDigestWeek,
-  filterMeetingsForTopicPreferences,
   loadActiveSubscribers,
   MAX_DIGEST_MEETINGS_PER_WEEK,
   MAX_DIGEST_PREFERENCE_ROWS,
@@ -18,6 +17,7 @@ import {
   type SelectedPersistedRecap,
 } from '@/lib/email-content-source'
 import { RICHMOND_LOCAL_ISSUES } from '@/lib/local-issues'
+import { loadPublishedDigestBriefs, selectSubscriberDigest, type DigestPreferenceRow, type DigestBrief } from '@/lib/digest-selection'
 
 const RICHMOND_FIPS = '0660620'
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://richmondcommons.org'
@@ -117,16 +117,11 @@ export async function POST(request: NextRequest) {
   const meetings = (meetingRows ?? [])
     .map((meeting) => selectPersistedRecap(meeting as unknown as PersistedRecapSource))
     .filter((meeting): meeting is SelectedPersistedRecap => Boolean(meeting))
-  if (meetings.length === 0) {
-    return NextResponse.json({
-      mode,
-      sent: 0,
-      period,
-      reason: 'no recaps in completed week',
-    })
-  }
-
   try {
+    const briefs = (await loadPublishedDigestBriefs(supabase, [period])).get(period.contentKey) ?? []
+    if (meetings.length === 0 && briefs.length === 0) {
+      return NextResponse.json({ mode, sent: 0, period, reason: 'no recaps or reviewed updates in completed week' })
+    }
     if (mode === 'canary') {
       if (canaryEmail === null) {
         throw new Error('Canary recipient validation invariant failed')
@@ -135,7 +130,7 @@ export async function POST(request: NextRequest) {
         meetings,
         `${SITE_URL}/subscribe`,
         undefined,
-        { canary: true },
+        { canary: true, briefs },
       )
       const result = await sendEmail({
         to: canaryEmail,
@@ -163,8 +158,8 @@ export async function POST(request: NextRequest) {
     const [preferencesResult, topicsResult] = await Promise.all([
       supabase
         .from('email_preferences')
-        .select('subscriber_id, preference_value')
-        .eq('preference_type', 'topic')
+        .select('subscriber_id, preference_type, preference_value')
+        .in('preference_type', ['topic', 'subject'])
         .in('subscriber_id', subscriberIds)
         .limit(MAX_DIGEST_PREFERENCE_ROWS + 1),
       supabase
@@ -192,12 +187,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const preferencesBySubscriber = new Map<string, string[]>()
-    for (const row of preferencesResult.data ?? []) {
-      const values = preferencesBySubscriber.get(row.subscriber_id as string) ?? []
-      values.push(row.preference_value as string)
-      preferencesBySubscriber.set(row.subscriber_id as string, values)
-    }
+    const preferences = (preferencesResult.data ?? []) as DigestPreferenceRow[]
 
     const topicsByMeeting = new Map<string, Set<string>>()
     for (const row of topicsResult.data ?? []) {
@@ -208,17 +198,12 @@ export async function POST(request: NextRequest) {
     const labelsById = new Map(RICHMOND_LOCAL_ISSUES.map((issue) => [issue.id, issue.label]))
 
     const eligibleSubscribers: DeliverySubscriber[] = []
-    const digestBySubscriber = new Map<string, SelectedPersistedRecap[]>()
+    const digestBySubscriber = new Map<string, { meetings: SelectedPersistedRecap[]; briefs: DigestBrief[] }>()
     for (const subscriber of subscribers) {
-      const selectedMeetings = filterMeetingsForTopicPreferences(
-        meetings,
-        preferencesBySubscriber.get(subscriber.id) ?? [],
-        topicsByMeeting,
-        labelsById,
-      )
-      if (selectedMeetings.length > 0) {
+      const selected = selectSubscriberDigest(meetings, briefs, subscriber, preferences, topicsByMeeting, labelsById)
+      if (selected.meetings.length > 0 || selected.briefs.length > 0) {
         eligibleSubscribers.push(subscriber)
-        digestBySubscriber.set(subscriber.id, selectedMeetings)
+        digestBySubscriber.set(subscriber.id, selected)
       }
     }
 
@@ -228,15 +213,20 @@ export async function POST(request: NextRequest) {
       kind: 'digest',
       contentKey: period.contentKey,
       build: (subscriber, { unsubscribeUrl, manageUrl }) => buildDigestEmail(
-        digestBySubscriber.get(subscriber.id) ?? [],
+        digestBySubscriber.get(subscriber.id)?.meetings ?? [],
         unsubscribeUrl,
         manageUrl,
+        { briefs: digestBySubscriber.get(subscriber.id)?.briefs ?? [] },
       ),
+      briefVersions: subscriber => (digestBySubscriber.get(subscriber.id)?.briefs ?? [])
+        .map(({ id, content_version, published_at }) => ({ id, content_version, published_at })),
+      containsCouncilContent: subscriber => Boolean(digestBySubscriber.get(subscriber.id)?.meetings.length),
     })
 
     return NextResponse.json({
       period,
       meeting_count: meetings.length,
+      reviewed_update_count: briefs.length,
       preference_filtered_out: subscribers.length - eligibleSubscribers.length,
       ...result,
     }, { status: result.fully_delivered ? 200 : 503 })
