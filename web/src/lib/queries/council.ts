@@ -11,6 +11,8 @@ import {
   COLS_PUBLIC_RECORD_LIST,
   COLS_FORM700_FILING,
   COLS_OFFICIAL_FULL,
+  COLS_OFFICIAL_CONTRIBUTION_COMMITTEES,
+  COLS_OFFICIAL_CONTRIBUTIONS,
 } from './_shared'
 import RICHMOND_FILERS_DATA from '@/data/netfile-richmond-filers.json'
 import type {
@@ -248,8 +250,6 @@ export async function getOfficialVotingRecord(
   return (data ?? []) as unknown as OfficialVotingRecordRow[]
 }
 
-const COLS_OFFICIAL_CONTRIBUTION_COMMITTEES = 'id, name, filer_id'
-const COLS_OFFICIAL_CONTRIBUTIONS = 'id, committee_id, amount, contribution_date, contribution_type, filing_id, source, donors!inner(name, employer, donor_pattern)'
 const HISTORICAL_CONTRIBUTION_PAGE_SIZE = 1000
 const MAX_HISTORICAL_CONTRIBUTIONS = 10000
 const MAX_HISTORICAL_CONTRIBUTION_PAGES = 20

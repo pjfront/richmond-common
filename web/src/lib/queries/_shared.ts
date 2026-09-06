@@ -109,6 +109,8 @@ export const COLS_PUBLIC_RECORD_LIST = 'id, city_fips, request_number, requester
  *  src/contributor_classifier.py at load time) so the funding panel can
  *  bucket without re-classifying client-side. */
 export const COLS_CONTRIBUTION_PUBLIC = 'id, amount, contribution_date, contribution_type, contributor_type, entity_code, filing_id, donor_id, committee_id, source, created_at'
+export const COLS_OFFICIAL_CONTRIBUTION_COMMITTEES = 'id, name, filer_id'
+export const COLS_OFFICIAL_CONTRIBUTIONS = 'id, committee_id, amount, contribution_date, contribution_type, filing_id, source, donors!inner(name, employer, donor_pattern)'
 
 /** Form 700 filing headers for council economic-interests sections (excludes
  *  metadata JSONB, filer_agency, document_id). Includes the D1 quartet
