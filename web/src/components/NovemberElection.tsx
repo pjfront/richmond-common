@@ -2,6 +2,8 @@ import Link from 'next/link'
 import FollowSubject from '@/components/FollowSubject'
 import SuggestCorrectionLink from '@/components/SuggestCorrectionLink'
 import PublishedCivicBriefs from '@/components/PublishedCivicBriefs'
+import CandidatePaperCoverage from '@/components/CandidatePaperCoverage'
+import { getAndersonFilingCoverage } from '@/lib/queries/candidate-filing-coverage'
 import { getPublicFinanceSnapshot, candidateMoney, type FinanceEvent, type PublicFinanceSnapshot } from '@/lib/queries/finance-public'
 import { NOVEMBER_CANDIDATES, NOVEMBER_DATES, NOVEMBER_ELECTION as election, formatCivicDate } from '@/lib/november-election'
 import { financeEventLabel, isFinanceAdjustment } from '@/lib/finance-ledger'
@@ -31,10 +33,12 @@ function EventList({ events }: { events: FinanceEvent[] }) {
 }
 
 export default async function NovemberElection() {
+  const paperCoveragePromise = getAndersonFilingCoverage()
   let snapshot: PublicFinanceSnapshot | null = null
   try { snapshot = await getPublicFinanceSnapshot() } catch (error) {
     console.error('[November finance]', error instanceof Error ? error.message : 'Unavailable')
   }
+  const paperCoverage = await paperCoveragePromise
   const latest = snapshot?.events.filter(event => event.event_kind === 'independent_expenditure'
     || NOVEMBER_CANDIDATES.some(candidate => event.recipient_fppc_id === candidate.committeeId)).slice(0, 8) ?? []
   return <article className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
@@ -80,17 +84,19 @@ export default async function NovemberElection() {
             const totals = candidateMoney(snapshot.events, candidate.committeeId, candidate.name)
             const unavailableSubtotal = snapshot.truncated ? 'Subtotal withheld (record limit)' : 'Not established'
             const hasReceipts = totals.receipts.length > 0 && !snapshot.truncated
+            const receiptSubtotal = !snapshot.truncated && candidate.committeeId === '1481105' ? 'Paper reports not indexed' : unavailableSubtotal
             return <article key={candidate.committeeId} className="rounded-xl border border-slate-200 p-5">
               <h3 className="text-xl font-semibold text-civic-navy">{candidate.name}</h3>
               <p className="mt-1 text-sm text-slate-600">Candidate committee · FPPC {candidate.committeeId}</p>
               <dl className="mt-5 space-y-4">
-                <div><dt className="text-slate-600">Gross cash receipts indexed · 2026</dt><dd className="mt-1 text-3xl font-semibold text-civic-navy">{hasReceipts ? money(totals.grossReceiptsTotal) : unavailableSubtotal}</dd></div>
-                <div><dt className="text-slate-600">Signed adjustments to receipts</dt><dd className="font-semibold text-civic-navy">{hasReceipts ? totals.receiptAdjustments.length ? signedMoney(totals.receiptAdjustmentsTotal) : 'No indexed adjustments' : unavailableSubtotal}</dd></div>
-                <div><dt className="text-slate-600">Net reported receipts indexed · 2026</dt><dd className="font-semibold text-civic-navy">{hasReceipts ? money(totals.netReceiptsTotal) : unavailableSubtotal}</dd></div>
+                <div><dt className="text-slate-600">Gross cash receipts indexed · 2026</dt><dd className="mt-1 text-3xl font-semibold text-civic-navy">{hasReceipts ? money(totals.grossReceiptsTotal) : receiptSubtotal}</dd></div>
+                <div><dt className="text-slate-600">Signed adjustments to receipts</dt><dd className="font-semibold text-civic-navy">{hasReceipts ? totals.receiptAdjustments.length ? signedMoney(totals.receiptAdjustmentsTotal) : 'No indexed adjustments' : receiptSubtotal}</dd></div>
+                <div><dt className="text-slate-600">Net reported receipts indexed · 2026</dt><dd className="font-semibold text-civic-navy">{hasReceipts ? money(totals.netReceiptsTotal) : receiptSubtotal}</dd></div>
                 <div><dt className="text-slate-600">Independent November support</dt><dd className="font-semibold text-civic-navy">{snapshot.truncated ? unavailableSubtotal : totals.support.length ? money(totals.supportTotal) : 'No published matching records'}</dd></div>
                 <div><dt className="text-slate-600">Independent November opposition</dt><dd className="font-semibold text-civic-navy">{snapshot.truncated ? unavailableSubtotal : totals.opposition.length ? money(totals.oppositionTotal) : 'No published matching records'}</dd></div>
               </dl>
               <p className="mt-4 text-sm leading-relaxed text-slate-600">Loan values, noncash contributions, separately reported refunds, and outgoing transfers are excluded from these receipt subtotals. Missing records do not mean zero activity.</p>
+              {candidate.committeeId === '1481105' && <CandidatePaperCoverage coverage={paperCoverage} />}
               <Link className={linkClass} href={`/elections/2026-general/money?committee=${candidate.committeeId}`}>Read this committee&apos;s indexed records →</Link>
             </article>
           })}
@@ -103,6 +109,7 @@ export default async function NovemberElection() {
           </li>)}</ul> : <p className="mt-3 text-slate-600">A complete source-coverage check has not yet been published. Treat the indexed records as a partial set.</p>}
         </div>
       </>}
+      {!snapshot && <article className="mt-6 max-w-xl"><h3 className="text-xl font-semibold text-civic-navy">Ahmad Anderson · FPPC 1481105</h3><CandidatePaperCoverage coverage={paperCoverage} /></article>}
       <div className="mt-8">
         <h3 className="text-lg font-semibold text-civic-navy">Recent indexed activity ({latest.length})</h3>
         {latest.length ? <EventList events={latest} /> : <p className="mt-3 text-slate-600">No reconciled entries are available in this view yet. That does not establish that no activity occurred.</p>}
