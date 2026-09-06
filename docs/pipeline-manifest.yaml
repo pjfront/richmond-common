@@ -26,8 +26,11 @@ sources:
     sync_key: netfile
     module: netfile_client.py
     external_api: "https://netfile.com/Connect2/api"
-    description: "Local campaign finance — e-filed (Connect2 API; Form 497 Part 2 normalized as filer-to-recipient, reporting filer preserved) + paper-filed (PDF extraction via public portal)"
+    description: "Local campaign finance — electronic and paper. Separate finance_sync.py CLI preserves current-year electronic assertions, explicit amendments and local 496 PDFs without model calls; legacy paper extraction remains separately covered."
     tables_written:
+      - finance_assertions
+      - finance_events
+      - finance_source_coverage
       - contributions
       - donors
       - committees
@@ -308,6 +311,33 @@ sources:
 # ══════════════════════════════════════════════════════════════
 
 tables:
+  finance_assertions:
+    layer: 1
+    description: "Immutable original transactions and amendment metadata; private raw evidence."
+    written_by:
+      sources: [netfile]
+      enrichments: []
+    read_by:
+      enrichments: []
+      queries: []
+  finance_events:
+    layer: 2
+    description: "One selected event per conservative reconciliation group; ambiguous evidence held for review."
+    written_by:
+      sources: [netfile]
+      enrichments: []
+    read_by:
+      enrichments: []
+      queries: []
+  finance_source_coverage:
+    layer: 2
+    description: "Acquisition timestamps, covered activity dates and explicit source gaps."
+    written_by:
+      sources: [netfile]
+      enrichments: []
+    read_by:
+      enrichments: []
+      queries: []
   # ── Layer 1: Document Lake ──────────────────────────────────
 
   documents:

@@ -100,6 +100,7 @@ EXPENDITURE_TYPES = {
 }
 
 ALL_TYPES = {**CONTRIBUTION_TYPES, **EXPENDITURE_TYPES}
+ALL_TYPES.update({4: "F496P3", 12: "F460B1", 19: "S496"})
 
 # Rate limiting
 REQUEST_DELAY = 0.5  # seconds between API calls
@@ -194,6 +195,7 @@ def search_transactions(
     page_index: int = 0,
     sort_order: int = 1,  # DateDescending
     city_fips: Optional[str] = None,
+    show_superseded: bool = False,
 ) -> dict:
     """Search transactions via the Connect2 API.
 
@@ -210,6 +212,9 @@ def search_transactions(
         "PageSize": page_size,
         "CurrentPageIndex": page_index,
         "SortOrder": sort_order,
+        # API spelling is intentional. Its default is true and includes
+        # obsolete amendments; financial totals must explicitly opt out.
+        "ShowSuperceded": show_superseded,
     }
     if transaction_type is not None:
         payload["TransactionType"] = transaction_type
@@ -272,11 +277,27 @@ def fetch_all_transactions(
             city_fips=city_fips,
         )
         results = data.get("results", [])
+        if data.get("totalMatchingCount") != total:
+            raise NetFileAPIError("Source changed during pagination; retry the complete snapshot")
         all_results.extend(results)
         if page % 10 == 0:
             print(f"    Page {page}/{total_pages} ({len(all_results):,} fetched)")
 
+    if len(all_results) != total or len({r.get("id") for r in all_results}) != total:
+        raise NetFileAPIError("Incomplete or repeated transaction pages; snapshot rejected")
     return all_results
+
+
+def get_filing_info(filing_id: str, api_base: str = API_BASE) -> dict:
+    """Read authoritative amends/amendedBy lineage; IDs are opaque source IDs."""
+    response = requests.get(
+        f"{api_base}/public/filing/info/{filing_id}", params={"format": "json"}, timeout=30,
+    )
+    response.raise_for_status()
+    data = response.json()
+    if str(data.get("filingId")) != str(filing_id):
+        raise NetFileAPIError("Filing metadata did not identify the requested filing")
+    return data
 
 
 # --- Data Processing ---
@@ -350,23 +371,17 @@ def normalize_transaction(tx: dict, city_fips: str | None = None) -> dict:
 
 
 def deduplicate_contributions(contributions: list[dict]) -> list[dict]:
-    """Remove duplicate contributions (from amended filings).
+    """Remove repeated source records only; equality is not amendment lineage.
 
-    NetFile may return both original and amended versions. Dedup by
-    (contributor_name, amount, date, committee) tuple, keeping the
-    record from the most recent filing.
+    The API excludes superseded filings. Distinct transaction IDs, including
+    same-day equal gifts, must survive. Missing IDs cannot prove duplication.
     """
     seen = {}
-    for c in contributions:
-        key = (
-            c["contributor_name"].lower(),
-            c["amount"],
-            c["date"],
-            c["committee"].lower(),
-        )
-        existing = seen.get(key)
-        if existing is None or c["filing_id"] > existing["filing_id"]:
-            seen[key] = c
+    for index, c in enumerate(contributions):
+        key = (c.get("filing_id"), c.get("transaction_id")) if c.get("transaction_id") else ("unidentified", index)
+        if key in seen and seen[key] != c:
+            raise NetFileAPIError("Conflicting versions of the same source transaction")
+        seen[key] = c
 
     deduped = list(seen.values())
     if len(contributions) != len(deduped):
