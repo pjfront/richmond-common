@@ -249,7 +249,7 @@ def test_failure_wrapper_exactly_covers_classified_operator_workflows():
     wrapped = _wrapped_workflow_names()
 
     assert scheduled
-    assert main_push == {"Build Check", "TypeScript Check"}
+    assert main_push == {"Build Check", "TypeScript Check", "Tests", "Web Tests"}
     assert set(OPERATOR_CRITICAL_EVENT_WORKFLOW_POLICY) <= available
     assert set(OPERATOR_CRITICAL_EVENT_WORKFLOW_POLICY.values()) == {
         "self-monitoring",

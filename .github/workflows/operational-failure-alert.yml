@@ -21,6 +21,8 @@ on:
       - Supabase Preview
       - Supabase Preview Expiry
       - TypeScript Check
+      - Tests
+      - Web Tests
     types: [completed]
   # Manual channel tests must execute the trusted default-branch workflow.
   # repository_dispatch cannot select a feature-branch workflow definition.
