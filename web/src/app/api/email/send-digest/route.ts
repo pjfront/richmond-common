@@ -137,15 +137,24 @@ export async function POST(request: NextRequest) {
         ...content,
         idempotencyKey: `rc:digest:canary:${period.contentKey}`,
       })
+      // Preserve the exact accepted message identity for read-only provider
+      // verification. A successful transport without an ID is ambiguous and
+      // must never authorize activation or another send.
+      const providerConfirmed = result.success && typeof result.providerId === 'string'
+        && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(result.providerId)
       return NextResponse.json({
         mode,
         period,
         meeting_count: meetings.length,
-        sent: result.success ? 1 : 0,
-        provider_confirmed: result.success,
-        ambiguous: result.ambiguous === true,
-        error: result.success ? undefined : result.error,
-      }, { status: result.success ? 200 : 503 })
+        reviewed_update_count: briefs.length,
+        sent: providerConfirmed ? 1 : 0,
+        provider_confirmed: providerConfirmed,
+        provider_id: providerConfirmed ? result.providerId : undefined,
+        ambiguous: result.ambiguous === true || (result.success && !providerConfirmed),
+        error: providerConfirmed ? undefined : result.success
+          ? 'Email provider acceptance could not be tied to a valid message ID'
+          : result.error,
+      }, { status: providerConfirmed ? 200 : 503 })
     }
 
     const subscribers = await loadActiveSubscribers(supabase, RICHMOND_FIPS)
