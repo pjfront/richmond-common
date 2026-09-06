@@ -11,7 +11,7 @@ python src/civic_review_packets.py --section all --apply --max-packets 6 --repor
 
 The first command is a database-enforced read-only dry run. The report and stdout contain aggregate counts only. `--section finance` requires148+149; `--section stories` requires149 and the current agenda schema. Only2026 is supported by this initial election-focused producer. Dates use Richmond's timezone.
 
-The daily finance job should run the second command only after `finance_sync.py --apply` succeeds. That existing serialized Data Sync workflow can cover the agenda packet scan too; there is no need for another scheduler. Root integration owns this workflow addition. No live packet run was performed during implementation.
+The daily finance job runs the second command only after `finance_sync.py --apply` succeeds. The existing serialized Data Sync workflow also covers the agenda packet scan; no second scheduler is needed. A failure preparing packets does not roll back the completed finance refresh. No live packet run was performed during implementation.
 
 ## What enters the inbox
 
@@ -32,7 +32,7 @@ Stable fingerprints exclude polling/extraction timestamps and generated database
 
 The producer writes only whitelisted draft and decision fields. Evidence cannot name SQL, a callback, or an action executor. If the decision insert fails, its new draft rolls back too. It does not alter migration149 or require migration150.
 
-Validation: `pytest tests/test_civic_review_packets.py`; the real writer also runs through `tests/civic_review_packets.integration.py` against the same disposable PGlite0.5.8 runtime as the permission tests. That executable covers actual service grants, private drafts, refresh versions, stale approvals, publication, rejection suppression and transaction rollback. Add its command to the database-permissions CI job with Python and psycopg2-binary available.
+Validation: `pytest tests/test_civic_review_packets.py`; the real writer also runs through `tests/civic_review_packets.integration.py` against the same disposable PGlite0.5.8 runtime as the permission tests. That executable covers actual service grants, private drafts, refresh versions, stale approvals, publication, rejection suppression and transaction rollback. The database-permissions CI job runs it with Python and psycopg2-binary.
 
 ## Exact follow integration still required
 

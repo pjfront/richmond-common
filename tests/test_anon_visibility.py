@@ -163,6 +163,7 @@ PUBLIC_TABLES = [
 # see (e.g., once a filing_period_briefing is promoted to public tier),
 # move it to PUBLIC_TABLES so the stricter check applies.
 PUBLIC_TABLES_CONDITIONAL = [
+    "civic_brief_candidates",  # Only reviewed, published versions are visible.
     "finance_public_events",  # Published only after source assertions reconcile.
     "finance_public_coverage",  # Empty until the first bounded snapshot succeeds.
     # filing_period_briefings: policy is

@@ -320,6 +320,10 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: python src/finance_sync.py --apply --report tmp/finance/daily-summary.json
+      - name: Prepare changed source records for operator review
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python src/civic_review_packets.py --section all --apply --max-packets 6 --report tmp/finance/review-summary.json
       - name: Record finance acquisition counts
         if: always()
         run: |
