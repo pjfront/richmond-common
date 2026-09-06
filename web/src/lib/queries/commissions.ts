@@ -1,11 +1,13 @@
 import { fetchMeetingCounts, applyMeetingCounts } from './meetings'
 import { readCompleteRecords } from '../complete-record-read'
+import { isInertBuild } from '../read-path-cache'
 import { supabase, RICHMOND_FIPS, warnIfEmpty, COLS_MEETING_LIST, COLS_COMMISSION, COLS_CURRENT_COMMISSION_MEMBER, COLS_COMMISSION_MEMBER } from './_shared'
 import type { Meeting, Commission, CommissionMember, CommissionWithStats, CommissionStaleness, MeetingWithCounts, NeighborhoodCouncil } from '../types'
 
 export async function getCommissions(
   cityFips = RICHMOND_FIPS
 ): Promise<CommissionWithStats[]> {
+  if (isInertBuild()) return []
   const { data: commissions, count, error } = await supabase
     .from('commissions')
     .select(COLS_COMMISSION, { count: 'exact' })

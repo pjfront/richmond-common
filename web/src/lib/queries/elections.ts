@@ -22,7 +22,7 @@ import type {
 } from '../types'
 import { commentSourceToProvenance } from '../provenance'
 import { addToMatrix, emptyMatrix } from '../contributionBuckets'
-import { UPCOMING_ELECTION_CACHE_SECONDS } from '../read-path-cache'
+import { isInertBuild, UPCOMING_ELECTION_CACHE_SECONDS } from '../read-path-cache'
 import { failReadPath, ReadPathUnavailableError } from '../read-path-unavailable'
 
 // ── Election Cycle Tracking (B.24) ────────────────────────
@@ -35,6 +35,7 @@ type UpcomingElection = Pick<
 export async function getElections(
   cityFips = RICHMOND_FIPS,
 ): Promise<Election[]> {
+  if (isInertBuild()) return []
   const { data, error } = await supabase
     .from('elections')
     .select('*')

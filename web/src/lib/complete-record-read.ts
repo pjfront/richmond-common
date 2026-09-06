@@ -1,4 +1,5 @@
 import { failReadPath } from './read-path-unavailable'
+import { isInertBuild } from './read-path-cache'
 
 type RecordPage<T> = { data: T[] | null; error: unknown; count: number | null }
 
@@ -14,6 +15,8 @@ export async function readCompleteRecords<T extends { id: string }>(
     || !Number.isSafeInteger(maxPages) || maxPages < 1 || maxPages > 100) {
     throw new RangeError('Invalid complete record read limits')
   }
+  // Isolated PR builds have no database. Do not attempt or cache a failed read.
+  if (isInertBuild()) return []
   const records: T[] = []
   const seen = new Set<string>()
   let expected: number | null = null

@@ -24,3 +24,12 @@ export const UPCOMING_ELECTION_CACHE_SECONDS = 24 * 60 * 60
 export const SIMILAR_ITEMS_CACHE_SECONDS = 7 * 24 * 60 * 60
 
 export const MAX_SIMILAR_ITEMS = 10
+
+/** Only the isolated PR build's three explicit placeholders may skip reads.
+ * Production errors must still reject, even if one environment setting is wrong.
+ */
+export function isInertBuild(): boolean {
+  return process.env.RICHMOND_BUILD_USES_PRODUCTION_DATA === 'false'
+    && process.env.NEXT_PUBLIC_SUPABASE_URL === 'http://127.0.0.1:9'
+    && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY === 'preview-build-inert-anon-key'
+}
