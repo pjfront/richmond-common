@@ -65,7 +65,7 @@ describe('public sitemap', () => {
     vi.restoreAllMocks()
   })
 
-  it('keeps the production sitemap inventory during the measured baseline', async () => {
+  it('retains the legacy sitemap only through its explicit comparison builder', async () => {
     queryMocks.getMeetings.mockResolvedValue([{
       id: 'meeting-1',
       meeting_date: '2026-08-01',
@@ -77,7 +77,7 @@ describe('public sitemap', () => {
     }])
     queryMocks.getOfficials.mockResolvedValue([{ name: 'Example Member' }])
 
-    const sitemap = await buildSitemap(new Date('2026-08-18T00:00:00Z'))
+    const sitemap = await buildBaselineSitemap()
     const urls = sitemap.map((entry) => entry.url)
 
     expect(urls).toEqual([
@@ -104,6 +104,14 @@ describe('public sitemap', () => {
     expect(queryMocks.getMeetings).toHaveBeenCalledOnce()
     expect(queryMocks.getAgendaItemSlugs).toHaveBeenCalledOnce()
     expect(queryMocks.getOfficials).toHaveBeenCalledOnce()
+  })
+
+  it('ships bounded discovery and the sourced resident stories by default', async () => {
+    const sitemap = await buildSitemap(new Date('2026-09-06T00:00:00Z'))
+    expect(sitemap.map(entry => entry.url)).toContain('https://richmondcommons.org/stories/flock-cameras-and-data-privacy')
+    expect(queryMocks.getRecentAgendaItemSlugs).toHaveBeenCalledWith('2024-09-06')
+    expect(queryMocks.getMeetings).not.toHaveBeenCalled()
+    expect(queryMocks.getAgendaItemSlugs).not.toHaveBeenCalled()
   })
 
   it('includes public indexes and lightweight dynamic public routes', async () => {

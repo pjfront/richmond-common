@@ -7,6 +7,7 @@ import FloatingFeedbackButton from "@/components/FloatingFeedbackButton"
 import { OperatorModeProvider } from "@/components/OperatorModeProvider"
 import { FeedbackModalProvider } from "@/components/FeedbackModal"
 import PrivacyAnalytics from "@/components/PrivacyAnalytics"
+import { CivicLanguageProvider } from "@/components/civic/CivicLanguage"
 import { getUpcomingElection, electionToSlug } from "@/lib/queries"
 import { S29_PUBLIC_TREATMENT_ENABLED } from "@/lib/s29-release-phase"
 import { serializeJsonLd, siteStructuredData } from "@/lib/structured-data"
@@ -91,7 +92,9 @@ export default async function RootLayout({
           <OperatorModeProvider>
             <FeedbackModalProvider>
               <Nav nextElection={nextElection} />
-              <main className="flex-1">{children}</main>
+              <CivicLanguageProvider>
+                <main id="main-content" tabIndex={-1} className="flex-1">{children}</main>
+              </CivicLanguageProvider>
               <Footer />
               <FloatingFeedbackButton />
             </FeedbackModalProvider>

@@ -1,440 +1,72 @@
 'use client'
 
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { usePathname } from 'next/navigation'
+import { useState } from 'react'
+import * as Collapsible from '@radix-ui/react-collapsible'
 import { useOperatorMode } from './OperatorModeProvider'
 
-interface NavItem {
-  href: string
-  label: string
-  operatorOnly?: boolean
-  description?: string
-}
+export interface NextElectionLink { slug: string; label: string; description?: string }
 
-interface NavGroup {
-  label: string
-  items: NavItem[]
-}
-
-const navGroups: NavGroup[] = [
-  {
-    label: 'Meetings',
-    items: [
-      { href: '/meetings', label: 'All Meetings', description: 'Browse council meeting agendas and votes' },
-      { href: '/topics', label: 'Topics', description: 'Browse by local issue' },
-      { href: '/meetings/most-discussed', label: 'Most Discussed', description: 'Items that drew the most public testimony' },
-      { href: '/council/analytics?tab=stats', label: 'Topics & Trends', description: 'Vote categories, controversy scores', operatorOnly: true },
-    ],
-  },
-  {
-    label: 'Council',
-    items: [
-      { href: '/council', label: 'Council Members', description: 'Profiles, voting records, donors' },
-      { href: '/council/analytics', label: 'How the Council Votes', description: 'See where members vote together and where they split' },
-      { href: '/commissions', label: 'Boards & Commissions', description: 'Rosters, vacancies, terms', operatorOnly: true },
-    ],
-  },
-  // Elections group is built dynamically per request — see buildNavGroups()
-  // below. The next-upcoming election (if any) is injected as the first
-  // item; static voter-info routes follow. When no upcoming election
-  // exists, the next-election item is omitted but the helper routes
-  // remain so residents can still find their district year-round.
-  {
-    label: 'Records',
-    items: [
-      { href: '/public-records', label: 'Public Records', description: 'CPRA request compliance tracking', operatorOnly: true },
-      { href: '/data-quality', label: 'Data Quality', description: 'Freshness and completeness monitoring', operatorOnly: true },
-    ],
-  },
-  {
-    label: 'Operator',
-    items: [
-      { href: '/operator/decisions', label: 'Decisions', description: 'Pending operator decisions', operatorOnly: true },
-      { href: '/operator/sync-health', label: 'Sync Health', description: 'Data source freshness monitoring', operatorOnly: true },
-      { href: '/operator/recaps', label: 'Recaps', description: 'Recap coverage across recent meetings', operatorOnly: true },
-      { href: '/operator/settings', label: 'Settings', description: 'AI scoring parameters', operatorOnly: true },
-    ],
-  },
+const moreItems = [
+  { href: '/elections/find-my-district', label: 'Find my district' },
+  { href: '/topics', label: 'Browse topics' },
+  { href: '/meetings/most-discussed', label: 'Most discussed' },
+  { href: '/council/analytics', label: 'How the council votes' },
+  { href: '/about', label: 'About Richmond Commons' },
 ]
-
-/** Public link to the next upcoming election (passed in from server-side). */
-export interface NextElectionLink {
-  slug: string                // e.g. "2026-primary"
-  label: string               // e.g. "2026 Primary"
-  description?: string        // e.g. "Tuesday, June 2 2026 — candidates and fundraising"
-}
-
-/** Voter-info routes that exist regardless of which election is upcoming. */
-const ELECTIONS_HELPER_ITEMS: NavItem[] = [
-  { href: '/elections/find-my-district', label: 'Find My District', description: 'Look up your council district and representatives' },
-  { href: '/elections/districts', label: 'District Map', description: 'Interactive map of Richmond council districts' },
-  { href: '/influence', label: 'Influence Map', description: 'Campaign finance connections by official', operatorOnly: true },
-  { href: '/council/analytics?tab=patterns', label: 'Donor Patterns', description: 'Shared donors, category concentration', operatorOnly: true },
+const operatorItems = [
+  { href: '/operator/decisions', label: 'Review decisions', operatorOnly: true },
+  { href: '/operator/sync-health', label: 'Sync health', operatorOnly: true },
+  { href: '/operator/recaps', label: 'Recaps', operatorOnly: true },
+  { href: '/operator/settings', label: 'Settings', operatorOnly: true },
+  { href: '/data-quality', label: 'Data quality', operatorOnly: true },
+  { href: '/influence', label: 'Influence map', operatorOnly: true },
 ]
+const navLink = 'flex min-h-11 items-center rounded-md px-3 text-sm font-medium text-slate-100 hover:bg-civic-navy-light hover:text-white'
 
-/** Build the Elections nav group with the dynamic next-election item on top. */
-function buildElectionsGroup(nextElection: NextElectionLink | null): NavGroup {
-  const items: NavItem[] = []
-  if (nextElection) {
-    items.push({
-      href: `/elections/${nextElection.slug}`,
-      label: nextElection.label,
-      description: nextElection.description,
-    })
-  }
-  items.push(...ELECTIONS_HELPER_ITEMS)
-  return { label: 'Elections', items }
+function SearchForm({ mobile = false, onNavigate }: { mobile?: boolean; onNavigate?: () => void }) {
+  const id = mobile ? 'mobile-nav-search' : 'desktop-nav-search'
+  return <form action="/search" role="search" className="flex min-w-0 gap-2" onSubmit={onNavigate}>
+    <label htmlFor={id} className="sr-only">Search meeting records by name or topic</label>
+    <input id={id} type="search" name="q" placeholder="Name or topic" required className={`min-h-11 min-w-0 rounded-md border border-slate-400 bg-white px-3 text-base text-slate-900 placeholder:text-slate-600 ${mobile ? 'flex-1' : 'w-48'}`} />
+    <button type="submit" className="min-h-11 rounded-md border border-slate-400 px-3 text-sm font-medium text-white hover:bg-civic-navy-light">Search</button>
+  </form>
 }
 
-/** Insert the dynamic Elections group between Council and Records. */
-function buildNavGroups(nextElection: NextElectionLink | null): NavGroup[] {
-  const out: NavGroup[] = []
-  for (const g of navGroups) {
-    out.push(g)
-    if (g.label === 'Council') {
-      out.push(buildElectionsGroup(nextElection))
-    }
-  }
-  return out
-}
-
-function NavDropdown({ group, isOperator }: { group: NavGroup; isOperator: boolean }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  const visibleItems = group.items.filter(item => !item.operatorOnly || isOperator)
-  if (visibleItems.length === 0) return null
-
-  // If every item is operator-only, use amber styling for the trigger
-  const isOperatorGroup = group.items.every(item => item.operatorOnly)
-
-  // Single item — render as direct link, no dropdown
-  if (visibleItems.length === 1) {
-    return (
-      <Link
-        href={visibleItems[0].href}
-        className="px-3 py-2 rounded text-sm font-medium text-slate-200 hover:text-white hover:bg-civic-navy-light transition-colors"
-      >
-        {group.label}
-      </Link>
-    )
-  }
-
-  const handleMouseEnter = () => {
-    if (timeoutRef.current) clearTimeout(timeoutRef.current)
-    setOpen(true)
-  }
-
-  const handleMouseLeave = () => {
-    timeoutRef.current = setTimeout(() => setOpen(false), 150)
-  }
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault()
-      setOpen(prev => !prev)
-    }
-    if (e.key === 'Escape') {
-      setOpen(false)
-    }
-  }
-
-  return (
-    <div
-      ref={ref}
-      className="relative"
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
-    >
-      <button
-        type="button"
-        className={`px-3 py-2 rounded text-sm font-medium hover:text-white hover:bg-civic-navy-light transition-colors flex items-center gap-1 ${isOperatorGroup ? 'text-civic-amber-light' : 'text-slate-200'}`}
-        aria-expanded={open}
-        aria-haspopup="true"
-        onKeyDown={handleKeyDown}
-        onClick={() => setOpen(prev => !prev)}
-      >
-        {group.label}
-        <svg className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-        </svg>
-      </button>
-
-      {open && (
-        <div
-          className="absolute top-full left-0 mt-1 w-64 bg-white rounded-lg shadow-lg border border-slate-200 py-1 z-50"
-          role="menu"
-        >
-          {visibleItems.map(item => (
-            <Link
-              key={item.href}
-              href={item.href}
-              role="menuitem"
-              className="block px-4 py-2.5 hover:bg-slate-50 transition-colors group"
-              onClick={() => setOpen(false)}
-            >
-              <span className="text-sm font-medium text-slate-900 group-hover:text-civic-navy flex items-center gap-2">
-                {item.label}
-                {item.operatorOnly && (
-                  <span className="text-[9px] font-mono bg-civic-amber/10 text-civic-amber px-1 py-0.5 rounded">OP</span>
-                )}
-              </span>
-              {item.description && (
-                <span className="text-xs text-slate-500 mt-0.5 block">{item.description}</span>
-              )}
-            </Link>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function NavSearch() {
-  const router = useRouter()
-  const [query, setQuery] = useState('')
-  const inputRef = useRef<HTMLInputElement>(null)
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    const trimmed = query.trim()
-    if (trimmed) {
-      router.push(`/search?q=${encodeURIComponent(trimmed)}`)
-      setQuery('')
-      inputRef.current?.blur()
-    }
-  }
-
-  // Keyboard shortcut: / to focus search
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === '/' && !['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement)?.tagName)) {
-        e.preventDefault()
-        inputRef.current?.focus()
-      }
-    }
-    document.addEventListener('keydown', handler)
-    return () => document.removeEventListener('keydown', handler)
-  }, [])
-
-  return (
-    <form onSubmit={handleSubmit} className="hidden sm:block" role="search">
-      <div className="relative">
-        <input
-          ref={inputRef}
-          type="search"
-          value={query}
-          onChange={e => setQuery(e.target.value)}
-          placeholder="Search…"
-          aria-label="Search the site"
-          className="w-36 lg:w-44 px-3 py-1.5 pl-8 text-sm bg-civic-navy-light/50 border border-slate-500/30 rounded-md text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-civic-amber-light focus:border-civic-amber-light focus:w-56 transition-all"
-        />
-        <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-        </svg>
-      </div>
-    </form>
-  )
-}
-
-function MobileMenu({ isOperator, navGroupsForRender }: { isOperator: boolean; navGroupsForRender: NavGroup[] }) {
-  const [open, setOpen] = useState(false)
-  const router = useRouter()
-  const [mobileQuery, setMobileQuery] = useState('')
-
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault()
-    const trimmed = mobileQuery.trim()
-    if (trimmed) {
-      router.push(`/search?q=${encodeURIComponent(trimmed)}`)
-      setMobileQuery('')
-      setOpen(false)
-    }
-  }
-
-  // Close on Escape
-  const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    if (e.key === 'Escape') setOpen(false)
-  }, [])
-
-  useEffect(() => {
-    if (open) {
-      document.addEventListener('keydown', handleKeyDown)
-      return () => document.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [open, handleKeyDown])
-
-  return (
-    <div className="sm:hidden">
-      <button
-        type="button"
-        onClick={() => setOpen(prev => !prev)}
-        className="p-2 rounded text-slate-200 hover:text-white hover:bg-civic-navy-light transition-colors"
-        aria-expanded={open}
-        aria-label={open ? 'Close menu' : 'Open menu'}
-      >
-        {open ? (
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        ) : (
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-          </svg>
-        )}
-      </button>
-
-      {open && (
-        <div className="absolute top-16 left-0 right-0 bg-civic-navy border-t border-civic-navy-light z-50 shadow-lg">
-          {/* Mobile search */}
-          <form onSubmit={handleSearch} className="px-4 py-3 border-b border-civic-navy-light" role="search">
-            <input
-              type="search"
-              value={mobileQuery}
-              onChange={e => setMobileQuery(e.target.value)}
-              placeholder="Search a name, topic, or address…"
-              aria-label="Search the site"
-              className="w-full px-3 py-2 text-sm bg-civic-navy-light/50 border border-slate-500/30 rounded-md text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-civic-amber-light"
-            />
-          </form>
-
-          {/* Mobile nav groups */}
-          <div className="px-2 py-2 max-h-[70vh] overflow-y-auto">
-            {navGroupsForRender.map(group => {
-              const visibleItems = group.items.filter(item => !item.operatorOnly || isOperator)
-              if (visibleItems.length === 0) return null
-              return (
-                <div key={group.label} className="mb-2">
-                  <div className="px-3 py-1.5 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                    {group.label}
-                  </div>
-                  {visibleItems.map(item => (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      className="block px-4 py-2.5 rounded text-sm text-slate-200 hover:text-white hover:bg-civic-navy-light transition-colors"
-                      onClick={() => setOpen(false)}
-                    >
-                      <span className="flex items-center gap-2">
-                        {item.label}
-                        {item.operatorOnly && (
-                          <span className="text-[9px] font-mono bg-civic-amber/20 text-civic-amber-light px-1 py-0.5 rounded">OP</span>
-                        )}
-                      </span>
-                    </Link>
-                  ))}
-                </div>
-              )
-            })}
-
-            {/* About + operator items */}
-            <div className="mb-2">
-              <div className="px-3 py-1.5 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                Info
-              </div>
-              <Link
-                href="/about"
-                className="block px-4 py-2.5 rounded text-sm text-slate-200 hover:text-white hover:bg-civic-navy-light transition-colors"
-                onClick={() => setOpen(false)}
-              >
-                About
-              </Link>
-              {isOperator && (
-                <>
-                  <Link
-                    href="/operator/decisions"
-                    className="block px-4 py-2.5 rounded text-sm text-civic-amber-light hover:text-white hover:bg-civic-navy-light transition-colors"
-                    onClick={() => setOpen(false)}
-                  >
-                    <span className="flex items-center gap-2">
-                      Decisions
-                      <span className="text-[9px] font-mono bg-civic-amber/20 text-civic-amber-light px-1 py-0.5 rounded">OP</span>
-                    </span>
-                  </Link>
-                  <Link
-                    href="/operator/sync-health"
-                    className="block px-4 py-2.5 rounded text-sm text-civic-amber-light hover:text-white hover:bg-civic-navy-light transition-colors"
-                    onClick={() => setOpen(false)}
-                  >
-                    <span className="flex items-center gap-2">
-                      Sync Health
-                      <span className="text-[9px] font-mono bg-civic-amber/20 text-civic-amber-light px-1 py-0.5 rounded">OP</span>
-                    </span>
-                  </Link>
-                  <Link
-                    href="/operator/recaps"
-                    className="block px-4 py-2.5 rounded text-sm text-civic-amber-light hover:text-white hover:bg-civic-navy-light transition-colors"
-                    onClick={() => setOpen(false)}
-                  >
-                    <span className="flex items-center gap-2">
-                      Recaps
-                      <span className="text-[9px] font-mono bg-civic-amber/20 text-civic-amber-light px-1 py-0.5 rounded">OP</span>
-                    </span>
-                  </Link>
-                  <Link
-                    href="/operator/settings"
-                    className="block px-4 py-2.5 rounded text-sm text-civic-amber-light hover:text-white hover:bg-civic-navy-light transition-colors"
-                    onClick={() => setOpen(false)}
-                  >
-                    <span className="flex items-center gap-2">
-                      Settings
-                      <span className="text-[9px] font-mono bg-civic-amber/20 text-civic-amber-light px-1 py-0.5 rounded">OP</span>
-                    </span>
-                  </Link>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-export default function Nav({ nextElection = null }: { nextElection?: NextElectionLink | null } = {}) {
+export default function Nav({ nextElection = null }: { nextElection?: NextElectionLink | null }) {
   const { isOperator } = useOperatorMode()
-  const navGroupsForRender = buildNavGroups(nextElection)
-
-  return (
-    <nav className="bg-civic-navy text-white" aria-label="Main navigation">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
-          {/* Logo */}
-          <div className="flex items-center gap-2 shrink-0">
-            <Link href="/" className="text-lg font-bold tracking-tight hover:text-civic-amber-light transition-colors">
-              Richmond Commons
-            </Link>
-            {isOperator && (
-              <span className="text-[10px] font-mono bg-civic-amber/20 text-civic-amber-light px-1.5 py-0.5 rounded">
-                OP
-              </span>
-            )}
-          </div>
-
-          {/* Desktop nav */}
-          <div className="hidden sm:flex items-center gap-0.5">
-            {navGroupsForRender.map(group => (
-              <NavDropdown key={group.label} group={group} isOperator={isOperator} />
-            ))}
-
-            <Link
-              href="/about"
-              className="px-3 py-2 rounded text-sm font-medium text-slate-200 hover:text-white hover:bg-civic-navy-light transition-colors"
-            >
-              About
-            </Link>
-
-            <div className="ml-2 border-l border-slate-500/30 pl-2">
-              <NavSearch />
-            </div>
-          </div>
-
-          {/* Mobile menu toggle */}
-          <MobileMenu isOperator={isOperator} navGroupsForRender={navGroupsForRender} />
-        </div>
+  const pathname = usePathname()
+  const [mobileOpen, setMobileOpen] = useState(false)
+  const primary = [
+    { href: '/stories', label: 'Stories' },
+    { href: '/meetings', label: 'Meetings' },
+    { href: '/council', label: 'Council' },
+    { href: nextElection ? `/elections/${nextElection.slug}` : '/elections', label: 'Elections' },
+  ]
+  const isCurrent = (href: string) => pathname === href || pathname.startsWith(`${href}/`)
+  const close = () => setMobileOpen(false)
+  return <header className="bg-civic-navy text-white">
+    <a href="#main-content" className="sr-only z-50 rounded-md bg-white p-3 text-civic-navy focus:not-sr-only focus:absolute focus:left-3 focus:top-3">Skip to main content</a>
+    <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <div className="hidden min-h-20 items-center justify-between gap-4 xl:flex">
+        <Link href="/" className="flex min-h-11 shrink-0 items-center rounded-sm text-lg font-semibold tracking-tight">Richmond Commons</Link>
+        <nav aria-label="Main navigation" className="flex items-center gap-1">
+          {primary.map(item => <Link key={item.href} href={item.href} aria-current={isCurrent(item.href) ? 'page' : undefined} className={`${navLink} ${isCurrent(item.href) ? 'bg-civic-navy-light' : ''}`}>{item.label}</Link>)}
+          <details className="relative" onKeyDown={event => { if (event.key === 'Escape') { event.currentTarget.open = false; event.currentTarget.querySelector('summary')?.focus() } }}>
+            <summary className={`${navLink} cursor-pointer list-none gap-2`}>More <span aria-hidden="true">⌄</span></summary>
+            <div className="absolute right-0 z-30 mt-2 w-64 rounded-md border border-slate-200 bg-white p-2 shadow-lg">{[...moreItems, ...(isOperator ? operatorItems : [])].map(item => <Link key={item.href} href={item.href} className="flex min-h-11 items-center rounded px-3 py-2 text-sm leading-6 text-slate-800 hover:bg-slate-100" onClick={event => { const details = event.currentTarget.closest('details'); if (details) details.open = false }}>{item.label}</Link>)}</div>
+          </details>
+        </nav>
+        <SearchForm />
       </div>
-    </nav>
-  )
+      <Collapsible.Root open={mobileOpen} onOpenChange={setMobileOpen} className="xl:hidden">
+        <div className="flex min-h-18 items-center justify-between gap-3"><Link href="/" onClick={close} className="flex min-h-11 items-center rounded-sm text-lg font-semibold tracking-tight">Richmond Commons</Link><Collapsible.Trigger className="min-h-11 rounded-md border border-slate-400 px-4 text-sm font-medium hover:bg-civic-navy-light">{mobileOpen ? 'Close' : 'Menu'}</Collapsible.Trigger></div>
+        <Collapsible.Content className="pb-5" onKeyDown={event => { if (event.key === 'Escape') { close(); event.currentTarget.parentElement?.querySelector<HTMLButtonElement>('button[data-state]')?.focus() } }}>
+          <nav aria-label="Mobile navigation" className="mb-5 grid gap-1 sm:grid-cols-2">{[...primary, ...moreItems, ...(isOperator ? operatorItems : [])].map(item => <Link key={item.href} href={item.href} onClick={close} aria-current={isCurrent(item.href) ? 'page' : undefined} className={`${navLink} ${isCurrent(item.href) ? 'bg-civic-navy-light' : ''}`}>{item.label}</Link>)}</nav>
+          <SearchForm mobile onNavigate={close} />
+        </Collapsible.Content>
+      </Collapsible.Root>
+    </div>
+  </header>
 }

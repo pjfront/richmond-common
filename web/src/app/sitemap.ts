@@ -13,6 +13,7 @@ import {
 } from '@/lib/queries/sitemap'
 import { S29_PUBLIC_TREATMENT_ENABLED } from '@/lib/s29-release-phase'
 import { SITE_URL } from '@/lib/structured-data'
+import { CIVIC_STORIES } from '@/data/civic-stories'
 
 // Sitemap regeneration is deliberately daily. Dynamic URL enumeration is a
 // bounded database read, and pipeline writes explicitly revalidate changed
@@ -40,6 +41,10 @@ export const BASELINE_STATIC_PATHS = [
  */
 export const PUBLIC_STATIC_PATHS = [
   '/',
+  '/stories',
+  ...CIVIC_STORIES.map(story => `/stories/${story.slug}`),
+  '/elections/2026-general',
+  '/support',
   '/meetings',
   '/meetings/most-discussed',
   '/council',
