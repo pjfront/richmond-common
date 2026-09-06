@@ -42,7 +42,7 @@ COMPLETE = {
     "total_subscribers": 3,
     "fully_delivered": True,
 }
-PERIOD = {"start": "2026-08-31", "end": "2026-09-06", "contentKey": "2026-08-31"}
+PERIOD = {"start": "2026-08-31", "end": "2026-09-06", "contentKey": "week:2026-08-31"}
 CANARY = {"mode": "canary", "sent": 1, "provider_confirmed": True}
 
 

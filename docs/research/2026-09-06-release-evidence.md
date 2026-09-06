@@ -1,6 +1,14 @@
 # September 6 release evidence
 
-## Final production release — independently verified
+## Provider verification update — deployed; weekly activation held
+
+PR184 deployed source `59615f9ced439f4094e870fa6c57cbf9222451f8` as `dpl_rfdoTHUgSiMFAT3dXefTG38AGoSH`, with immutable host `rtp-mjj556l13-phillips-projects-1f180556.vercel.app`. The deployment wrapper passed its source/project/ref/READY/alias proofs. Independent authenticated control-plane checks at 20:33 and 20:34 UTC agreed on that exact source and deployment for the production domain. [Main Build Check 34057910960](https://github.com/pjfront/richmond-common/actions/runs/34057910960) and [main Python tests 34057910921](https://github.com/pjfront/richmond-common/actions/runs/34057910921) passed; all four PR checks passed before merge.
+
+Read-only production postflight at 20:34 UTC passed: homepage HTTP200, health HTTP200/healthy, anonymous digest GET401, authenticated capability GET200 with `canary_ready=true` and `broadcast_ready=false`, and a malformed provider-ID query503. All digest GET responses were private/no-store. No email POST or real provider-message lookup was made. The scoped proof endpoint can verify the existing configured canary's exact sender, destination, subject, body hashes and provider state without exposing its content or credentials.
+
+The user authorized one representative canary and subsequent Monday activation after verification. That August31–September6 UTC week becomes eligible at September7 00:00UTC (September6 5p.m. PDT). A separate paired activation remains held for that check; see the [launch record](../weekly-digest-launch.md). Preparation passed494 frontend tests, TypeScript checking,118 focused Python tests with one existing Windows-only skip, and22 private once-only-caller test cases. These tests used mocked email providers. No subscriber broadcast or canary send has occurred during this preparation, and no new migration or recipient-preference change was made.
+
+## Resident production release — independently verified
 
 The deployed application source is `97abc9bd5c4ae81911b90034e2f10823dd5df8af`, deployment `dpl_5QCfFa2CLET6ABPMW4ff9BGqrTc1`, READY since September 6 at 17:34:17 UTC. Its immutable host is `rtp-9k6hbft4x-phillips-projects-1f180556.vercel.app`; the public domain is [richmondcommons.org](https://richmondcommons.org). A later documentation-only commit may advance `main` without changing this deployed source. This receipt does not trigger another application deployment.
 
