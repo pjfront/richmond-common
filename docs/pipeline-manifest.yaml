@@ -37,6 +37,7 @@ sources:
       - paper_filing_zero_results
     paper_filings:
       discovery: "RSS feed at /public/list/filing/rss/{shortcut}/campaign.xml"
+      candidate_coverage: "Anderson FPPC1481105: Next.js hourly server cache reads the official portal byFiler metadata for verified portal ID214395297 and cross-checks the latest460 through Connect2 info. Two GETs, 2.5s each, 100 rows/256KiB response cap, dated fallback. No PDF/model calls or database writes; metadata inventory is not transaction completeness."
       documents: "/public/image/{filingId} returns PDF"
       data_dir: "src/data/paper_filings/*.json"
       extractor: "netfile_paper_extractor.py (PyMuPDF + DeepSeek tool calling, optional Kimi vision; durable idempotency via contributions + paper_filing_zero_results)"
@@ -1406,6 +1407,12 @@ queries:
     tables: [finance_events, finance_source_coverage]
     used_by: ["/elections/2026-general", "/elections/2026-general/money"]
     description: "Bounded cached public projections with explicit source coverage; read errors are not cached as no activity."
+  getAndersonFilingCoverage:
+    file: queries/candidate-filing-coverage.ts
+    tables: []
+    used_by: ["/elections/2026-general"]
+    description: "Exact-filer official metadata cached hourly, with dated paper-filing fallback and explicit source unavailability; no amounts or receipt assertions."
+  acquireAndersonFilingCoverage: {file: queries/candidate-filing-coverage.ts, tables: [], used_by: []}
   # ── Meetings ────────────────────────────────────────────────
   getMeetings:
     file: queries.ts
@@ -1973,7 +1980,7 @@ pages:
     queries: [getPublishedCivicBriefVersion]
     description: "Noindex email destination for one exact reviewed publication, independent of the short story feed; source-read failures and withdrawn/replaced versions have distinct unavailable notices."
   "/elections/2026-general":
-    queries: [getPublicFinanceSnapshot, getPublishedCivicBriefs]
+    queries: [getPublicFinanceSnapshot, getPublishedCivicBriefs, getAndersonFilingCoverage]
     description: "Source-checked municipal choices, separate money meanings and explicit coverage, voting and filing dates."
   "/elections/2026-general/money":
     queries: [getPublicFinanceSnapshot]
