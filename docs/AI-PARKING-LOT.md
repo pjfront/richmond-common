@@ -6,6 +6,10 @@ _Convention: Every session adds observations here. Items stay until promoted to 
 
 ---
 
+## 2026-09-06 production CLI output contract
+
+- Deployment now requests explicit JSON and parses only CLI59.1.4's documented object/agent envelope or narrow legacy URL forms. The lost September6 stdout cannot establish its exact failure format; installed official CLI code confirms agent detection can change stdout from a bare URL to JSON. Authenticated project/SHA/ref/alias proof stays separate from locator parsing. Future format failures emit only redacted structural diagnostics.
+
 ## 2026-09-06 access verification follow-up
 
 - Keep private operator state behind database grants and role-scoped policies as well as route authentication. The prepared migration 147 has a disposable PostgreSQL role-access verifier covering public denial, service access, registry public reads, and idempotent replay.

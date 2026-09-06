@@ -8,6 +8,7 @@ network request or a Vercel deployment.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 import os
 from pathlib import Path
 import shutil
@@ -18,6 +19,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SOURCE_SCRIPT = REPO_ROOT / "web" / "scripts" / "deploy-prod.sh"
+OUTPUT_PARSER = REPO_ROOT / "web" / "scripts" / "parse-deploy-output.mjs"
 POWERSHELL_LAUNCHER = REPO_ROOT / "web" / "scripts" / "deploy-prod.ps1"
 VERCEL_IGNORE = REPO_ROOT / ".vercelignore"
 JUDGMENT_CATALOG = REPO_ROOT / ".claude" / "rules" / "judgment-boundaries.md"
@@ -231,6 +233,7 @@ def deploy_harness(tmp_path: Path) -> DeployHarness:
 
     script = repo / "web" / "scripts" / "deploy-prod.sh"
     _write_lf(script, SOURCE_SCRIPT.read_text(encoding="utf-8"))
+    _write_lf(script.with_name(OUTPUT_PARSER.name), OUTPUT_PARSER.read_text(encoding="utf-8"))
     _write_lf(
         script.with_suffix(".ps1"),
         POWERSHELL_LAUNCHER.read_text(encoding="utf-8"),
@@ -763,6 +766,30 @@ def test_invalid_deploy_url_fails_attestation_with_action(
     assert "invalid or unbounded deployment URL" in result.stderr
     assert f"Captured previous production: {PREVIOUS_DEPLOYMENT_ID}" in result.stderr
     assert "ACTION: Open https://richmondcommons.org" in result.stderr
+    assert "Deployment output diagnostic:" in result.stderr
+
+
+@pytest.mark.parametrize("form", ["json", "agent_json", "formatted"])
+def test_supported_deploy_stdout_still_requires_authenticated_attestation(
+    deploy_harness: DeployHarness, form: str,
+) -> None:
+    deployment = {"id": NEW_DEPLOYMENT_ID, "url": DEPLOYMENT_URL, "readyState": "READY", "target": "production"}
+    value = json.dumps(deployment) if form == "json" else json.dumps({"status": "ok", "deployment": deployment})
+    if form == "formatted":
+        value = f"\x1b[2K\x1b[1G  Production      {DEPLOYMENT_URL}"
+    result = deploy_harness.run(deploy_url=value)
+    assert result.returncode == 0, result.stderr
+    assert f"Production attested: {NEW_DEPLOYMENT_ID}" in result.stdout
+    assert any("api /v13/deployments/rtp-exact-sha-test.vercel.app?teamId=" in call for call in deploy_harness.npx_calls)
+
+
+def test_json_locator_cannot_bypass_authenticated_metadata_proof(deploy_harness: DeployHarness) -> None:
+    value = json.dumps({"status": "ok", "deployment": {
+        "id": NEW_DEPLOYMENT_ID, "url": DEPLOYMENT_URL, "readyState": "READY", "target": "production"}})
+    result = deploy_harness.run(deploy_url=value, deployment_json=json.dumps({"uid": NEW_DEPLOYMENT_ID,
+        "url": "rtp-exact-sha-test.vercel.app", "projectId": "prj_wrong", "target": "production", "readyState": "READY"}))
+    assert result.returncode != 0
+    assert "not READY production with approved SHA/ref metadata" in result.stderr
 
 
 def test_wrong_deployment_metadata_fails_attestation(
@@ -864,6 +891,7 @@ def test_exact_happy_path_uses_pinned_cli_and_attests_production(
     assert f"githubCommitSha={deploy_harness.sha}" in deploy_calls[0]
     assert "githubCommitRef=main" in deploy_calls[0]
     assert "githubDeployment=1" in deploy_calls[0]
+    assert "--format=json" in deploy_calls[0]
     assert any(
         "api /v13/deployments/rtp-exact-sha-test.vercel.app?teamId="
         + VERCEL_ORG_ID
@@ -889,6 +917,11 @@ def test_windows_launcher_is_pinned_and_propagates_exit_status() -> None:
     assert "& $gitBashPath $deployScriptPath $ApprovedSha" in text
     assert "if ($LASTEXITCODE -ne 0)" in text
     assert "ACTION: Install Git for Windows" in text
+
+
+def test_locator_parser_uses_approved_archive_bytes() -> None:
+    text = SOURCE_SCRIPT.read_text(encoding="utf-8")
+    assert 'node "$DEPLOY_DIR/web/scripts/parse-deploy-output.mjs"' in text
 
 
 def test_vercel_ignore_excludes_all_local_env_families() -> None:
