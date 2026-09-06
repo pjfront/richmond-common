@@ -3,13 +3,13 @@ import FollowSubject from '@/components/FollowSubject'
 import SuggestCorrectionLink from '@/components/SuggestCorrectionLink'
 import PublishedCivicBriefs from '@/components/PublishedCivicBriefs'
 import AndersonFinanceSummary from '@/components/AndersonFinanceSummary'
-import { getAndersonFilingCoverage } from '@/lib/queries/candidate-filing-coverage'
+import JimenezFinanceSummary from '@/components/JimenezFinanceSummary'
+import { getAndersonFilingCoverage, getJimenezFilingCoverage } from '@/lib/queries/candidate-filing-coverage'
 import { getPublicFinanceSnapshot, candidateMoney, type FinanceEvent, type PublicFinanceSnapshot } from '@/lib/queries/finance-public'
 import { NOVEMBER_CANDIDATES, NOVEMBER_DATES, NOVEMBER_ELECTION as election, formatCivicDate } from '@/lib/november-election'
 import { financeEventLabel, isFinanceAdjustment } from '@/lib/finance-ledger'
 
 const money = (amount: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount)
-const signedMoney = (amount: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', signDisplay: 'always' }).format(amount)
 const linkClass = 'inline-flex min-h-11 items-center text-civic-navy underline underline-offset-4'
 
 function OfficialSource({ href, children }: { href: string; children: React.ReactNode }) {
@@ -34,11 +34,13 @@ function EventList({ events }: { events: FinanceEvent[] }) {
 
 export default async function NovemberElection() {
   const paperCoveragePromise = getAndersonFilingCoverage()
+  const jimenezCoveragePromise = getJimenezFilingCoverage()
   let snapshot: PublicFinanceSnapshot | null = null
   try { snapshot = await getPublicFinanceSnapshot() } catch (error) {
     console.error('[November finance]', error instanceof Error ? error.message : 'Unavailable')
   }
   const paperCoverage = await paperCoveragePromise
+  const jimenezCoverage = await jimenezCoveragePromise
   const latest = snapshot?.events.filter(event => event.event_kind === 'independent_expenditure'
     || NOVEMBER_CANDIDATES.some(candidate => event.recipient_fppc_id === candidate.committeeId)).slice(0, 8) ?? []
   return <article className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
@@ -76,27 +78,18 @@ export default async function NovemberElection() {
     <section id="money" className="mt-12 scroll-mt-24 border-t border-slate-200 pt-8">
       <h2 className="text-2xl font-semibold text-civic-navy">Follow the money</h2>
       <p className="mt-3 max-w-3xl leading-relaxed text-slate-700">A donation goes to a campaign. Independent spending pays for activity supporting or opposing a candidate outside that campaign. Transfers between committees can fund later spending, so adding all three together would count some money twice.</p>
-      <p className="mt-3 max-w-3xl text-slate-600">Each campaign&apos;s figures show the dates and reports they cover. Anderson&apos;s summary comes from his filed reports; Jimenez&apos;s figures below come from the individual transactions collected here. Their coverage differs, so these are not a ranking of how much each campaign has raised today.</p>
+      <p className="mt-3 max-w-3xl text-slate-600">Both campaigns&apos; cash donation figures come from their filed reports covering January through June. Later donations are shown separately with their receipt dates; these are not totals through today.</p>
       {!snapshot ? <p role="status" className="mt-5 rounded-lg border border-amber-300 bg-amber-50 p-5 text-slate-800">Campaign records are temporarily unavailable here. This is a source-loading problem, not a finding of no donations or outside spending. The election guide and original sources remain available.</p> : <>
         {snapshot.truncated && <p role="status" className="mt-4 text-slate-700">This view reached its record limit; totals are withheld until the complete set can be read.</p>}
         <div className="mt-6 grid gap-5 md:grid-cols-2">
           {NOVEMBER_CANDIDATES.map(candidate => {
             const totals = candidateMoney(snapshot.events, candidate.committeeId, candidate.name)
             const unavailableSubtotal = snapshot.truncated ? 'Subtotal withheld (record limit)' : 'Not established'
-            const hasReceipts = totals.receipts.length > 0 && !snapshot.truncated
             const isAnderson = candidate.committeeId === '1481105'
             return <article key={candidate.committeeId} className="rounded-xl border border-slate-200 p-5">
               <h3 className="text-xl font-semibold text-civic-navy">{candidate.name}</h3>
               <p className="mt-1 text-sm text-slate-600">Candidate committee · FPPC {candidate.committeeId}</p>
-              {isAnderson ? <AndersonFinanceSummary coverage={paperCoverage} /> : <>
-                <dl className="mt-5 space-y-4">
-                  <div><dt className="text-slate-600">Gross cash receipts indexed · 2026</dt><dd className="mt-1 text-3xl font-semibold text-civic-navy">{hasReceipts ? money(totals.grossReceiptsTotal) : unavailableSubtotal}</dd></div>
-                  <div><dt className="text-slate-600">Signed adjustments to receipts</dt><dd className="font-semibold text-civic-navy">{hasReceipts ? totals.receiptAdjustments.length ? signedMoney(totals.receiptAdjustmentsTotal) : 'No indexed adjustments' : unavailableSubtotal}</dd></div>
-                  <div><dt className="text-slate-600">Net reported receipts indexed · 2026</dt><dd className="font-semibold text-civic-navy">{hasReceipts ? money(totals.netReceiptsTotal) : unavailableSubtotal}</dd></div>
-                </dl>
-                <p className="mt-4 text-sm leading-relaxed text-slate-600">This is a partial set of 2026 cash donations. The signed corrections above adjust the amount reported; they do not by themselves establish refunds. Loans, noncash gifts and outgoing transfers are excluded.</p>
-                <Link className={linkClass} href={`/elections/2026-general/money?committee=${candidate.committeeId}`}>Read this committee&apos;s indexed records →</Link>
-              </>}
+              {isAnderson ? <AndersonFinanceSummary coverage={paperCoverage} /> : <JimenezFinanceSummary coverage={jimenezCoverage} />}
               <dl className="mt-5 space-y-4 border-t border-slate-200 pt-4">
                 <div><dt className="text-slate-600">Independent November support</dt><dd className="font-semibold text-civic-navy">{snapshot.truncated ? unavailableSubtotal : totals.support.length ? money(totals.supportTotal) : 'No published matching records'}</dd></div>
                 <div><dt className="text-slate-600">Independent November opposition</dt><dd className="font-semibold text-civic-navy">{snapshot.truncated ? unavailableSubtotal : totals.opposition.length ? money(totals.oppositionTotal) : 'No published matching records'}</dd></div>
@@ -113,7 +106,10 @@ export default async function NovemberElection() {
           </li>)}</ul> : <p className="mt-3 text-slate-600">A complete source-coverage check has not yet been published. Treat the indexed records as a partial set.</p>}
         </div>
       </>}
-      {!snapshot && <article className="mt-6 max-w-xl"><h3 className="text-xl font-semibold text-civic-navy">Ahmad Anderson · FPPC 1481105</h3><AndersonFinanceSummary coverage={paperCoverage} /></article>}
+      {!snapshot && <div className="mt-6 grid gap-5 md:grid-cols-2">
+        <article><h3 className="text-xl font-semibold text-civic-navy">Ahmad Anderson · FPPC 1481105</h3><AndersonFinanceSummary coverage={paperCoverage} /></article>
+        <article><h3 className="text-xl font-semibold text-civic-navy">Claudia Jimenez · FPPC 1488504</h3><JimenezFinanceSummary coverage={jimenezCoverage} /></article>
+      </div>}
       <div className="mt-8">
         <h3 className="text-lg font-semibold text-civic-navy">Recent indexed activity ({latest.length})</h3>
         {latest.length ? <EventList events={latest} /> : <p className="mt-3 text-slate-600">No reconciled entries are available in this view yet. That does not establish that no activity occurred.</p>}

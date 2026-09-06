@@ -1,21 +1,10 @@
 import data from '@/data/anderson-reported-finance.json'
 import type { CandidateFilingCoverage } from '@/data/anderson-paper-filings'
+import { reportedCents } from '@/lib/reported-money'
+export { reportedCents, formatReportedMoney } from '@/lib/reported-money'
 
 export const ANDERSON_FINANCE = data
 export const ANDERSON_MONEY_PATH = '/elections/2026-general/money/ahmad-anderson'
-
-/** Fixed decimal dollars become integer cents before addition. No inferred zero. */
-export function reportedCents(value: string): number {
-  if (!/^\d{1,10}\.\d{2}$/.test(value)) throw new Error('Invalid reviewed financial amount')
-  const [dollars, cents] = value.split('.')
-  return Number(dollars) * 100 + Number(cents)
-}
-
-export function formatReportedMoney(value: string | number): string {
-  const cents = typeof value === 'string' ? reportedCents(value) : value
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD',
-    minimumFractionDigits: cents % 100 ? 2 : 0, maximumFractionDigits: 2 }).format(cents / 100)
-}
 
 export function andersonSource(filingId: string) {
   const source = data.sources.find(item => item.filing_id === filingId)

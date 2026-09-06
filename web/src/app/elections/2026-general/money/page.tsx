@@ -5,6 +5,7 @@ import { filterFinanceEvents, financeEventLabel, isFinanceAdjustment } from '@/l
 import { formatCivicDate } from '@/lib/november-election'
 import SuggestCorrectionLink from '@/components/SuggestCorrectionLink'
 import { ANDERSON_MONEY_PATH } from '@/lib/anderson-finance'
+import { JIMENEZ_MONEY_PATH } from '@/lib/jimenez-finance'
 
 export const metadata: Metadata = {
   title: 'Who paid? Richmond campaign money and source filings',
@@ -50,6 +51,7 @@ export default async function MoneyLedger({ searchParams }: { searchParams: Prom
     </form>
     {committee && <p className="mt-3 text-slate-600">Showing records involving FPPC {committee}. <Link href="/elections/2026-general/money" className={linkClass}>Clear filter</Link></p>}
     {(committee === '1481105' || /\b(anderson|1481105)\b/i.test(q)) && <aside className="mt-5 rounded-lg border border-slate-200 p-5"><h2 className="text-lg font-semibold text-civic-navy">Looking for Anderson&apos;s campaign finances?</h2><p className="mt-2 leading-relaxed text-slate-700">We&apos;ve read his campaign reports and put the fundraising figures, cash balance and recent named donations together.</p><Link href={ANDERSON_MONEY_PATH} className={linkClass}>Read Anderson&apos;s campaign money summary →</Link></aside>}
+    {(committee === '1488504' || /\b(jimenez|jiménez|1488504)\b/i.test(q)) && <aside className="mt-5 rounded-lg border border-slate-200 p-5"><h2 className="text-lg font-semibold text-civic-navy">Looking for Jimenez&apos;s campaign finances?</h2><p className="mt-2 leading-relaxed text-slate-700">Her campaign&apos;s reported totals include donations that do not appear individually in this index. See the dated cash balance, donation totals and later reports together.</p><Link href={JIMENEZ_MONEY_PATH} className={linkClass}>Read Jimenez&apos;s campaign money summary →</Link></aside>}
     {!snapshot ? <p role="status" className="mt-8 rounded-lg border border-amber-300 bg-amber-50 p-5">The campaign record index could not be loaded. This does not mean there were no reports. Please try again later.</p> : <>
       <div className="mt-7 flex flex-wrap items-center justify-between gap-3"><p role="status" className="text-slate-600">{matches.length} indexed {matches.length === 1 ? 'record' : 'records'}{snapshot.truncated ? ' in a limited result set' : ''} · page {page} of {pageCount}</p><a href={`/api/finance/export?${urlParams}`} className={linkClass}>Download matching records (CSV)</a></div>
       <p className="mt-2 text-sm leading-relaxed text-slate-600">Partial source coverage: records awaiting reconciliation and unprocessed paper filings may be absent. A receipt and a matching contribution-made report represent one event; a committee transfer and its later advertising expense are different events. Do not add all rows as a measure of total political spending.</p>

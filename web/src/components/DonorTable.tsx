@@ -15,6 +15,7 @@ import {
   contributionsInYear, donorRecordSources, searchDonorRecords, sumRecordedAmounts,
 } from '@/lib/historical-donor-records'
 import type { DonorAggregate, DonorContribution } from '@/lib/types'
+import CsvDownloadButton from '@/components/CsvDownloadButton'
 
 // ── Helpers ──────────────────────────────────────────────────
 
@@ -155,6 +156,18 @@ export default function DonorTable({ contributions }: DonorTableProps) {
             className="min-h-11 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-civic-navy/40"
           />
         </div>
+      </div>
+
+      <div className="mb-4">
+        <CsvDownloadButton filename={`council-donation-records-${activeYear}.csv`}
+          columns={['donor_name', 'donor_employer', 'amount', 'contribution_date', 'contribution_type', 'committee_name', 'committee_fppc_id', 'filing_id', 'source', 'source_url']}
+          rows={matchingRecords.map(record => ({
+            donor_name: record.donor_name, donor_employer: record.donor_employer,
+            amount: record.amount, contribution_date: record.contribution_date,
+            contribution_type: record.contribution_type ?? null, committee_name: record.committee_name ?? null,
+            committee_fppc_id: record.committee_fppc_id ?? null, filing_id: record.filing_id ?? null,
+            source: record.source, source_url: record.source_url ?? null,
+          }))} />
       </div>
 
       <div className="mb-3" role="status" aria-live="polite" aria-atomic="true">

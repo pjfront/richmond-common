@@ -8,8 +8,6 @@ import {
   getOfficialWithStats,
   getOfficialVotingRecord,
   getOfficialContributions,
-  getPastElectionDates,
-  getOfficialComparativeStats,
   getOfficialElectionHistory,
 } from '@/lib/queries'
 import DonorTable from '@/components/DonorTable'
@@ -18,7 +16,9 @@ import BioSummary from '@/components/BioSummary'
 import OperatorGate from '@/components/OperatorGate'
 import OperatorCouncilSections from '@/components/OperatorCouncilSections'
 import SuggestCorrectionLink from '@/components/SuggestCorrectionLink'
-import ComparativeContext from '@/components/ComparativeContext'
+import JimenezFinanceSummary from '@/components/JimenezFinanceSummary'
+import { JIMENEZ_FINANCE } from '@/lib/jimenez-finance'
+import { getJimenezFilingCoverage } from '@/lib/queries/candidate-filing-coverage'
 import { S29_PUBLIC_TREATMENT_ENABLED } from '@/lib/s29-release-phase'
 import {
   canonicalUrl,
@@ -71,19 +71,19 @@ export default async function CouncilMemberPage({
   const { slug } = await params
   const official = await getOfficialBySlug(slug)
   if (!official) notFound()
+  const hasJimenezMayoralCampaign = official.id === JIMENEZ_FINANCE.identity.official_id
 
   // Keep read failures uncaught. Next ISR retains the last successful page
   // when revalidation throws; a first render fails honestly instead of
   // caching a temporary fallback for this route's full 24-hour lifetime.
   const votingRecordPromise = getOfficialVotingRecord(official.id)
 
-  const [stats, votingRecord, contributions, electionDates, comparativeStats, electionHistory] = await Promise.all([
+  const [stats, votingRecord, contributions, electionHistory, jimenezCoverage] = await Promise.all([
     getOfficialWithStats(official.id),
     votingRecordPromise,
     getOfficialContributions(official.id),
-    getPastElectionDates(),
-    getOfficialComparativeStats(official.id),
     getOfficialElectionHistory(official.id),
+    hasJimenezMayoralCampaign ? getJimenezFilingCoverage() : Promise.resolve(null),
   ])
 
   return (
@@ -209,23 +209,15 @@ export default async function CouncilMemberPage({
         <h2 className="text-xl font-semibold text-slate-800 mb-3">
           Campaign Contributions
         </h2>
-        <p className="text-sm text-slate-500 mb-3">
-          Public records filed with the city registrar or state FPPC. Donors are
-          sorted by total amount. Richmond adopted electronic filing in 2018.
-        </p>
-        {/* Comparative Context — donor count & fundraising rank (S14-E4) */}
-        {comparativeStats && (
-          <ComparativeContext stats={comparativeStats} officialName={official.name} />
-        )}
-        <DonorTable
-          contributions={contributions}
-          electionDates={electionDates}
-          candidateElectionDates={
-            electionHistory
-              .map((e) => e.election_date)
-              .sort()
-          }
-        />
+        {hasJimenezMayoralCampaign && <div className="mb-8 rounded-lg border border-slate-200 p-5">
+          <h3 className="text-lg font-semibold text-civic-navy">2026 campaign for mayor</h3>
+          <JimenezFinanceSummary coverage={jimenezCoverage ?? undefined} />
+        </div>}
+        <h3 className="text-lg font-semibold text-civic-navy mb-2">{hasJimenezMayoralCampaign ? 'Council campaign donation records' : 'Campaign donation records'}</h3>
+        {hasJimenezMayoralCampaign && <p className="text-slate-600 mb-4">
+          Her mayoral campaign uses a separate committee and is covered above.
+        </p>}
+        <DonorTable contributions={contributions} />
       </section>
 
       {/* Voting Record — activity data (T6) */}

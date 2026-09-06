@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { FinanceEvent, PublicFinanceSnapshot } from '@/lib/queries/finance-public'
 import { VERIFIED_ANDERSON_FILINGS } from '@/data/anderson-paper-filings'
+import { VERIFIED_JIMENEZ_FILINGS } from '@/lib/jimenez-finance'
 
 const mocks = vi.hoisted(() => ({ snapshot: vi.fn() }))
 vi.mock('next/cache', () => ({ unstable_cache: (fn: unknown) => fn }))
@@ -12,7 +13,10 @@ vi.mock('@/lib/queries/finance-public', async importOriginal => ({
 vi.mock('@/components/PublishedCivicBriefs', () => ({ default: () => null }))
 vi.mock('@/components/SubscribeForm', () => ({ default: () => null }))
 vi.mock('@/components/SuggestCorrectionLink', () => ({ default: () => null }))
-vi.mock('@/lib/queries/candidate-filing-coverage', () => ({ getAndersonFilingCoverage: async () => VERIFIED_ANDERSON_FILINGS }))
+vi.mock('@/lib/queries/candidate-filing-coverage', () => ({
+  getAndersonFilingCoverage: async () => VERIFIED_ANDERSON_FILINGS,
+  getJimenezFilingCoverage: async () => VERIFIED_JIMENEZ_FILINGS,
+}))
 
 import NovemberElection from './NovemberElection'
 import MoneyLedger from '@/app/elections/2026-general/money/page'
@@ -38,12 +42,13 @@ const snapshot = (events: FinanceEvent[], truncated = false): PublicFinanceSnaps
 describe('resident campaign money presentation', () => {
   beforeEach(() => { mocks.snapshot.mockReset() })
 
-  it('shows gross receipts, signed corrections, and net receipts with cents and distinct meanings', async () => {
+  it('uses reported campaign totals rather than adding the partial transaction index', async () => {
     mocks.snapshot.mockResolvedValue(snapshot([event(), event({ event_key: 'adjustment', amount: -25.10, amount_kind: 'negative_adjustment' })]))
     const html = renderToStaticMarkup(await NovemberElection())
-    expect(html).toMatch(/Gross cash receipts indexed · 2026<\/dt><dd[^>]*>\$100\.25/)
-    expect(html).toMatch(/Signed adjustments to receipts<\/dt><dd[^>]*>-\$25\.10/)
-    expect(html).toMatch(/Net reported receipts indexed · 2026<\/dt><dd[^>]*>\$75\.15/)
+    expect(html).toContain('$60,365')
+    expect(html).toContain('$18,655.12')
+    expect(html).not.toContain('Gross cash receipts indexed')
+    expect(html).not.toContain('Net reported receipts indexed')
     expect(html).toContain('Signed adjustment to cash receipts')
     expect(html).toContain('this record alone does not establish a cash refund')
     expect(html).not.toContain('Cash gifts')
@@ -58,8 +63,9 @@ describe('resident campaign money presentation', () => {
       election_date: '2026-11-03', support_oppose: 'O', amount: 75,
     })], true))
     const html = renderToStaticMarkup(await NovemberElection())
-    expect(html.match(/Subtotal withheld \(record limit\)/g)).toHaveLength(7)
+    expect(html.match(/Subtotal withheld \(record limit\)/g)).toHaveLength(4)
     expect(html).toContain('$54,303')
+    expect(html).toContain('$60,365')
     expect(html).not.toContain('No published matching records')
     expect(html).toContain('Recent indexed activity (3)')
   })
@@ -117,6 +123,8 @@ describe('resident campaign money presentation', () => {
       expect(html).toContain('Campaign records are temporarily unavailable')
       expect(html).toContain('$54,303')
       expect(html).toContain('Anderson campaign finances')
+      expect(html).toContain('$60,365')
+      expect(html).toContain('/elections/2026-general/money/claudia-jimenez')
     } finally { log.mockRestore() }
   })
 })

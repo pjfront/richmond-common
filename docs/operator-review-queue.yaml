@@ -402,7 +402,7 @@ gates:
 
   - id: council-economic-interests-section
     file: web/src/app/council/[slug]/page.tsx
-    line: 254
+    line: 246
     category: pending_graduation
     gated_at: '2026-07-05'
     view_at: /council
