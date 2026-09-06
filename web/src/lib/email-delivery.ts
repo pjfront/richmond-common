@@ -17,6 +17,7 @@ import { RICHMOND_LOCAL_ISSUES } from './local-issues'
 import { isRichmondCouncilOrientationMeeting } from './orientation-scope'
 import { richmondDateKey } from './richmond-date'
 import type { Provenance } from './types'
+import { loadPublishedDigestBriefs, selectSubscriberDigest, type DigestBrief, type DigestPreferenceRow } from './digest-selection'
 
 export const MAX_BROADCAST_RECIPIENTS = 500
 export const MAX_DELIVERY_RETRIES_PER_REQUEST = 50
@@ -41,6 +42,7 @@ export interface DeliverySubscriber {
   current_activation_id?: string | null
   current_activation_at?: string | null
   last_orientation_meeting_id?: string | null
+  receive_council_updates?: boolean
 }
 
 export interface SubscriptionLinks {
@@ -171,13 +173,15 @@ export function activationScopedContentKey(
 export async function loadActiveSubscribers(
   supabase: SupabaseClient,
   cityFips = '0660620',
+  councilOnly = false,
 ): Promise<DeliverySubscriber[]> {
-  const { data, error } = await supabase
+  let query = supabase
     .from('email_subscribers')
-    .select('id, email, name, subscribed_at, current_activation_id, current_activation_at, unsubscribe_token, last_orientation_meeting_id')
+    .select('id, email, name, subscribed_at, current_activation_id, current_activation_at, unsubscribe_token, last_orientation_meeting_id, receive_council_updates')
     .eq('status', 'active')
     .eq('city_fips', cityFips)
-    .order('id', { ascending: true })
+  if (councilOnly) query = query.eq('receive_council_updates', true)
+  const { data, error } = await query.order('id', { ascending: true })
     .limit(MAX_BROADCAST_RECIPIENTS + 1)
 
   if (error) throw new Error(`Failed to fetch subscribers: ${error.message}`)
@@ -216,6 +220,8 @@ export async function deliverTrackedEmail(args: {
   contentKey: string
   build: (links: SubscriptionLinks) => EmailContent
   sender?: EmailSender
+  briefVersions?: Pick<DigestBrief, 'id' | 'content_version' | 'published_at'>[]
+  containsCouncilContent?: boolean
   /** Recovery only: use the exact identity of an already-persisted row. */
   contentKeyIsPersisted?: boolean
 }): Promise<DeliveryResult> {
@@ -224,11 +230,13 @@ export async function deliverTrackedEmail(args: {
     ? args.contentKey
     : activationScopedContentKey(kind, args.contentKey, subscriber.current_activation_id)
   const content = build(subscriptionLinks(subscriber.unsubscribe_token))
-  const claimResponse = await supabase.rpc('claim_email_delivery', {
+  const claimResponse = await supabase.rpc('claim_consented_email_delivery', {
     p_subscriber_id: subscriber.id,
     p_delivery_kind: kind,
     p_content_key: contentKey,
     p_payload_sha256: payloadSha256(subscriber, content),
+    p_brief_versions: args.briefVersions ?? [],
+    p_contains_council_content: args.containsCouncilContent ?? true,
     p_lease_minutes: 15,
     p_max_attempts: MAX_DELIVERY_ATTEMPTS,
   })
@@ -316,6 +324,8 @@ export async function broadcastTrackedEmail(args: {
   contentKey: string
   build: (subscriber: DeliverySubscriber, links: SubscriptionLinks) => EmailContent
   sender?: EmailSender
+  briefVersions?: (subscriber: DeliverySubscriber) => Pick<DigestBrief, 'id' | 'content_version' | 'published_at'>[]
+  containsCouncilContent?: (subscriber: DeliverySubscriber) => boolean
 }): Promise<BroadcastResult> {
   const subscribers = ensureBoundedRecipients(args.subscribers)
   const results: DeliveryResult[] = []
@@ -330,6 +340,8 @@ export async function broadcastTrackedEmail(args: {
         contentKey: args.contentKey,
         build: (links) => args.build(subscriber, links),
         sender: args.sender,
+        briefVersions: args.briefVersions?.(subscriber),
+        containsCouncilContent: args.containsCouncilContent?.(subscriber),
       }),
     ))
     results.push(...batchResults)
@@ -367,6 +379,8 @@ interface RetryMeeting extends PersistedRecapSource {
 
 interface DeliveryRetryTask {
   deliveryId: string
+  briefVersions?: Pick<DigestBrief, 'id' | 'content_version' | 'published_at'>[]
+  containsCouncilContent?: boolean
   subscriber: DeliverySubscriber
   kind: DeliveryKind
   contentKey: string
@@ -506,7 +520,7 @@ export async function retryPendingEmailDeliveries(
   const subscriberIds = [...new Set(pendingRows.map((row) => row.subscriber_id))]
   const { data: subscribers, error: subscriberError } = await supabase
     .from('email_subscribers')
-    .select('id, email, name, status, city_fips, subscribed_at, current_activation_id, current_activation_at, unsubscribe_token, last_orientation_meeting_id')
+    .select('id, email, name, status, city_fips, subscribed_at, current_activation_id, current_activation_at, unsubscribe_token, last_orientation_meeting_id, receive_council_updates')
     .eq('status', 'active')
     .eq('city_fips', RICHMOND_FIPS)
     .in('id', subscriberIds)
@@ -551,6 +565,11 @@ export async function retryPendingEmailDeliveries(
         reason: 'Subscriber is missing, inactive, or outside Richmond',
         manualReview: false,
       })
+      continue
+    }
+
+    if ((parsed.kind === 'orientation' || parsed.kind === 'recap') && subscriber.receive_council_updates === false) {
+      staleRows.push({ id: row.id, failureKind: 'recipient_inactive', reason: 'General council emails are turned off', manualReview: false })
       continue
     }
 
@@ -674,12 +693,12 @@ export async function retryPendingEmailDeliveries(
     digestSources = (meetings ?? []) as unknown as PersistedRecapSource[]
   }
 
-  const preferencesBySubscriber = new Map<string, string[]>()
+  const digestPreferences: DigestPreferenceRow[] = []
   if (digestSubscriberIds.size > 0) {
     const { data: preferences, error: preferenceError } = await supabase
       .from('email_preferences')
-      .select('subscriber_id, preference_value')
-      .eq('preference_type', 'topic')
+      .select('subscriber_id, preference_type, preference_value')
+      .in('preference_type', ['topic', 'subject'])
       .in('subscriber_id', [...digestSubscriberIds])
       .limit(MAX_DIGEST_PREFERENCE_ROWS + 1)
     if (preferenceError) {
@@ -688,12 +707,7 @@ export async function retryPendingEmailDeliveries(
     if ((preferences ?? []).length > MAX_DIGEST_PREFERENCE_ROWS) {
       throw new Error(`Digest retry preference cap exceeded (${MAX_DIGEST_PREFERENCE_ROWS})`)
     }
-    for (const row of preferences ?? []) {
-      const subscriberId = row.subscriber_id as string
-      const values = preferencesBySubscriber.get(subscriberId) ?? []
-      values.push(row.preference_value as string)
-      preferencesBySubscriber.set(subscriberId, values)
-    }
+    digestPreferences.push(...(preferences ?? []) as DigestPreferenceRow[])
   }
 
   const digestRecapsByPeriod = new Map<string, RecapDeliveryMeeting[]>()
@@ -713,8 +727,7 @@ export async function retryPendingEmailDeliveries(
   const digestMeetingIds = [...new Set(
     [...digestRecapsByPeriod.values()].flatMap((meetings) => meetings.map((meeting) => meeting.id)),
   )]
-  const needsTopicLabels = [...preferencesBySubscriber.values()]
-    .some((preferences) => preferences.length > 0)
+  const needsTopicLabels = digestPreferences.some(preference => preference.preference_type === 'topic')
   const meetingTopicLabels = new Map<string, Set<string>>()
   if (needsTopicLabels && digestMeetingIds.length > 0) {
     const { data: topicRows, error: topicError } = await supabase
@@ -738,6 +751,7 @@ export async function retryPendingEmailDeliveries(
     }
   }
 
+  const digestBriefsByPeriod = await loadPublishedDigestBriefs(supabase, [...digestPeriodsByKey.values()])
   const topicLabelsById = new Map(
     RICHMOND_LOCAL_ISSUES.map((issue) => [issue.id, issue.label]),
   )
@@ -843,17 +857,13 @@ export async function retryPendingEmailDeliveries(
     }
 
     const recaps = digestRecapsByPeriod.get(parsed.period.contentKey) ?? []
-    const selectedRecaps = filterMeetingsForTopicPreferences(
-      recaps,
-      preferencesBySubscriber.get(subscriber.id) ?? [],
-      meetingTopicLabels,
-      topicLabelsById,
-    )
-    if (selectedRecaps.length === 0) {
+    const selected = selectSubscriberDigest(recaps, digestBriefsByPeriod.get(parsed.period.contentKey) ?? [],
+      subscriber, digestPreferences, meetingTopicLabels, topicLabelsById)
+    if (selected.meetings.length === 0 && selected.briefs.length === 0) {
       staleRows.push({
         id: row.id,
         failureKind: 'source_unavailable',
-        reason: 'Digest has no current recap matching this subscriber preferences',
+        reason: 'Digest has no current published update or recap matching this subscriber preferences',
         manualReview: false,
       })
       continue
@@ -863,10 +873,13 @@ export async function retryPendingEmailDeliveries(
       subscriber,
       kind: 'digest',
       contentKey: row.content_key,
+      briefVersions: selected.briefs.map(({ id, content_version, published_at }) => ({ id, content_version, published_at })),
+      containsCouncilContent: selected.meetings.length > 0,
       build: ({ unsubscribeUrl, manageUrl }) => buildDigestEmail(
-        selectedRecaps,
+        selected.meetings,
         unsubscribeUrl,
         manageUrl,
+        { briefs: selected.briefs },
       ),
     })
   }
@@ -904,7 +917,7 @@ export async function retryPendingEmailDeliveries(
 
   for (let offset = 0; offset < retryRows.length; offset += DELIVERY_CONCURRENCY) {
     const batch = retryRows.slice(offset, offset + DELIVERY_CONCURRENCY)
-    results.push(...await Promise.all(batch.map(({ subscriber, kind, contentKey, build }) =>
+    results.push(...await Promise.all(batch.map(({ subscriber, kind, contentKey, build, briefVersions, containsCouncilContent }) =>
       deliverTrackedEmail({
         supabase,
         subscriber,
@@ -913,6 +926,8 @@ export async function retryPendingEmailDeliveries(
         build,
         sender,
         contentKeyIsPersisted: true,
+        briefVersions,
+        containsCouncilContent,
       }),
     )))
   }
@@ -1060,7 +1075,7 @@ export async function sendRecapBroadcast(
     }
   }
 
-  const subscribers = await loadActiveSubscribers(supabase, cityFips)
+  const subscribers = await loadActiveSubscribers(supabase, cityFips, true)
   const contentKey = `meeting:${meeting.id}`
   const result = await broadcastTrackedEmail({
     supabase,
@@ -1105,21 +1120,4 @@ export async function sendRecapBroadcast(
   }
 }
 
-export function filterMeetingsForTopicPreferences<T extends { id: string }>(
-  meetings: T[],
-  topicIds: string[],
-  meetingTopicLabels: Map<string, Set<string>>,
-  topicLabelsById: Map<string, string>,
-): T[] {
-  if (topicIds.length === 0) return meetings
-  const selectedLabels = new Set(
-    topicIds
-      .map((id) => topicLabelsById.get(id)?.toLowerCase())
-      .filter((label): label is string => Boolean(label)),
-  )
-  if (selectedLabels.size === 0) return []
-  return meetings.filter((meeting) => {
-    const labels = meetingTopicLabels.get(meeting.id) ?? new Set<string>()
-    return [...labels].some((label) => selectedLabels.has(label.toLowerCase()))
-  })
-}
+export { filterMeetingsForTopicPreferences } from './subscription-preferences'

@@ -2792,6 +2792,7 @@ export type Database = {
           last_orientation_meeting_id: string | null
           metadata: Json | null
           name: string | null
+          receive_council_updates: boolean
           source: string
           status: string
           subscribed_at: string
@@ -2808,6 +2809,7 @@ export type Database = {
           last_orientation_meeting_id?: string | null
           metadata?: Json | null
           name?: string | null
+          receive_council_updates?: boolean
           source?: string
           status?: string
           subscribed_at?: string
@@ -2824,6 +2826,7 @@ export type Database = {
           last_orientation_meeting_id?: string | null
           metadata?: Json | null
           name?: string | null
+          receive_council_updates?: boolean
           source?: string
           status?: string
           subscribed_at?: string
@@ -6591,6 +6594,15 @@ export type Database = {
           url_path: string
         }[]
       }
+      activate_email_subscription_v2: {
+        Args: {
+          p_email: string
+          p_name: string
+          p_subject?: string
+          p_surface: string
+        }
+        Returns: Json
+      }
       check_and_increment_rate_limit: {
         Args: {
           p_bucket_key: string
@@ -6600,6 +6612,24 @@ export type Database = {
         Returns: {
           allowed: boolean
           retry_after_secs: number
+        }[]
+      }
+      claim_consented_email_delivery: {
+        Args: {
+          p_brief_versions?: Json
+          p_contains_council_content?: boolean
+          p_content_key: string
+          p_delivery_kind: string
+          p_lease_minutes?: number
+          p_max_attempts?: number
+          p_payload_sha256: string
+          p_subscriber_id: string
+        }
+        Returns: {
+          delivery_attempt: number
+          delivery_claim_token: string
+          delivery_disposition: string
+          delivery_id: string
         }[]
       }
       claim_due_source_change_jobs: {
@@ -6637,6 +6667,22 @@ export type Database = {
         }
       }
       claim_email_delivery: {
+        Args: {
+          p_content_key: string
+          p_delivery_kind: string
+          p_lease_minutes?: number
+          p_max_attempts?: number
+          p_payload_sha256: string
+          p_subscriber_id: string
+        }
+        Returns: {
+          delivery_attempt: number
+          delivery_claim_token: string
+          delivery_disposition: string
+          delivery_id: string
+        }[]
+      }
+      claim_email_delivery_v141: {
         Args: {
           p_content_key: string
           p_delivery_kind: string
@@ -6952,6 +6998,18 @@ export type Database = {
           p_districts?: string[]
           p_subscriber_id: string
           p_topics?: string[]
+        }
+        Returns: undefined
+      }
+      replace_email_preferences_v2: {
+        Args: {
+          p_candidates: string[]
+          p_districts: string[]
+          p_manage_token: string
+          p_receive_council_updates: boolean
+          p_subjects: string[]
+          p_subscriber_id: string
+          p_topics: string[]
         }
         Returns: undefined
       }

@@ -9,7 +9,7 @@ export default async function PublishedCivicBriefs({ subjectKey }: { subjectKey:
   if (!briefs.length) return null
   return <section aria-label="Reviewed updates" className="mt-8">
     <h2 className="text-2xl font-semibold text-civic-navy">Reviewed updates</h2>
-    <div className="mt-4 space-y-6">{briefs.map(brief => <article key={brief.id} className="border-l-4 border-civic-navy pl-5">
+    <div className="mt-4 space-y-6">{briefs.map(brief => <article key={brief.id} id={`brief-${brief.id}-v${brief.content_version}`} className="border-l-4 border-civic-navy pl-5">
       <h3 className="text-lg font-semibold text-civic-navy">{brief.title}</h3>
       <p className="mt-1 text-sm text-slate-600">AI-written, operator-reviewed · published {formatCivicDate(brief.published_at)} · version {brief.content_version}</p>
       <p className="mt-3 whitespace-pre-line leading-relaxed text-slate-700">{brief.body}</p>

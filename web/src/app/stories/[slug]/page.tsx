@@ -7,6 +7,7 @@ import { CivicLanguageScope, Localized } from '@/components/civic/CivicLanguage'
 import { civicLink, SourceNote, StoryAgenda, StorySources, StoryTimeline } from '@/components/civic/CivicStory'
 import SuggestCorrectionLink from '@/components/SuggestCorrectionLink'
 import PublishedCivicBriefs from '@/components/PublishedCivicBriefs'
+import FollowSubject from '@/components/FollowSubject'
 
 export const revalidate = 3600
 export const dynamicParams = false
@@ -37,6 +38,7 @@ export default async function StoryPage({ params }: { params: Promise<{ slug: st
         <PublishedCivicBriefs subjectKey={story.slug} />
         <StoryAgenda story={story} snapshot={snapshot} />
         <StorySources story={story} />
+        <FollowSubject subject={story.slug} />
         <div className="flex min-h-11 items-center"><SuggestCorrectionLink /></div>
       </div>
       <aside className="space-y-7 border-t-4 border-civic-navy bg-slate-100 p-6 sm:p-7">

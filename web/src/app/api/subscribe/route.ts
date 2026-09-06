@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { randomUUID } from 'node:crypto'
 import { getSupabaseAdmin } from '@/lib/supabase-admin'
+import { isSubscriptionSubject } from '@/lib/subscription-subjects'
 import { buildWelcomeEmail, buildOrientationEmail } from '@/lib/email'
 import {
   deliverTrackedEmail,
@@ -152,109 +152,25 @@ export async function POST(request: NextRequest) {
 
     const supabase = getSupabaseAdmin()
 
-    // Check if already exists
-    const { data: existing } = await supabase
-      .from('email_subscribers')
-      .select('id, name, status, subscribed_at, unsubscribe_token')
-      .eq('email', email)
-      .single() as { data: Pick<EmailSubscriber, 'id' | 'name' | 'status' | 'subscribed_at' | 'unsubscribe_token'> | null; error: unknown }
-
-    if (existing && existing.status === 'active') {
-      logEvent('subscribe.already_active', { ...ctx, email_hash: emailH })
-      return subscribeSuccessResponse()
+    const follow = body.follow
+    if (follow !== undefined && !isSubscriptionSubject(follow)) {
+      return NextResponse.json({ success: false, message: 'Choose a listed story or election to follow.' } satisfies SubscribeResponse, { status: 400 })
     }
-
-    let unsubscribeToken: string
-    let subscriberId: string
-    let subscriberName = name
-    // No database default is allowed for this marker: only this new route may
-    // opt a real new/reactivated subscription into activation history and its
-    // atomically paired welcome intent.
-    const activationId = randomUUID()
-    const activationAt = new Date().toISOString()
-
-    if (existing) {
-      // Re-subscribe: was previously unsubscribed
-      const rotatedUnsubscribeToken = randomUUID()
-      const { data: reactivated, error } = await supabase
-        .from('email_subscribers')
-        .update({
-          status: 'active',
-          name: name ?? existing.name, // keep existing name if not provided
-          subscribed_at: activationAt,
-          unsubscribed_at: null,
-          // A reactivation is a new authorization cycle. Invalidating the old
-          // bearer token prevents links from the prior cycle managing it.
-          unsubscribe_token: rotatedUnsubscribeToken,
-          current_activation_id: activationId,
-          current_activation_at: activationAt,
-          current_activation_surface: acquisitionSurface,
-          // The previous cycle marker must not suppress onboarding in this one.
-          last_orientation_meeting_id: null,
-        })
-        .eq('id', existing.id)
-        .eq('status', 'unsubscribed')
-        .select('id, unsubscribe_token')
-        .maybeSingle()
-
-      if (error) {
-        logEvent('subscribe.resubscribe_error', {
-          ...ctx,
-          severity: 'error',
-          email_hash: emailH,
-          message: error.message,
-        })
-        return NextResponse.json(
-          { success: false, message: 'Something went wrong. Please try again.' } satisfies SubscribeResponse,
-          { status: 500 },
-        )
-      }
-      if (!reactivated) {
-        logEvent('subscribe.resubscribe_race', { ...ctx, email_hash: emailH })
-        return subscribeSuccessResponse()
-      }
-      logEvent('subscribe.resubscribed', { ...ctx, email_hash: emailH })
-      unsubscribeToken = reactivated.unsubscribe_token
-      subscriberId = existing.id
-      subscriberName = name ?? existing.name
-    } else {
-      // New subscriber
-      const { data, error } = await supabase
-        .from('email_subscribers')
-        .insert({
-          email,
-          name,
-          city_fips: RICHMOND_FIPS,
-          source: 'website',
-          subscribed_at: activationAt,
-          current_activation_id: activationId,
-          current_activation_at: activationAt,
-          current_activation_surface: acquisitionSurface,
-        })
-        .select('id, unsubscribe_token')
-        .single()
-
-      if (error) {
-        // Handle unique constraint violation (race condition)
-        if (error.code === '23505') {
-          logEvent('subscribe.race_collision', { ...ctx, email_hash: emailH })
-          return subscribeSuccessResponse()
-        }
-        logEvent('subscribe.insert_error', {
-          ...ctx,
-          severity: 'error',
-          email_hash: emailH,
-          message: error.message,
-        })
-        return NextResponse.json(
-          { success: false, message: 'Something went wrong. Please try again.' } satisfies SubscribeResponse,
-          { status: 500 },
-        )
-      }
-      logEvent('subscribe.created', { ...ctx, email_hash: emailH })
-      unsubscribeToken = data.unsubscribe_token
-      subscriberId = data.id
+    // Activation, rotation, preferences and the durable welcome intent are one
+    // transaction. Email-only requests never change an active subscriber.
+    const { data: activation, error: activationError } = await supabase.rpc('activate_email_subscription_v2', {
+      p_email: email, p_name: name, p_surface: acquisitionSurface, p_subject: follow ?? null,
+    })
+    if (activationError) {
+      logEvent('subscribe.activation_error', { ...ctx, severity: 'error', email_hash: emailH, message: activationError.message })
+      return NextResponse.json({ success: false, message: 'Something went wrong. Please try again.' } satisfies SubscribeResponse, { status: 500 })
     }
+    if (!activation?.activated) return subscribeSuccessResponse()
+    const subscriberId = activation.subscriber_id as string
+    const subscriberName = activation.subscriber_name as string | null
+    const unsubscribeToken = activation.unsubscribe_token as string
+    const activationId = activation.activation_id as string
+    const receiveCouncilUpdates = activation.receive_council_updates === true
 
     // Claim and attempt the welcome delivery before returning. Provider failures
     // are durable and retryable, but do not roll back a successful subscription.
@@ -296,7 +212,7 @@ export async function POST(request: NextRequest) {
 
     // Claim and attempt the next meeting preview, if one is ready. Awaiting the
     // tracked attempt prevents a serverless response from stranding the send.
-    await sendNextOrientationToSubscriber(
+    if (receiveCouncilUpdates) await sendNextOrientationToSubscriber(
       supabase,
       subscriberId,
       email,

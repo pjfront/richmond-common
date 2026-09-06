@@ -54,6 +54,7 @@ export const GET = withOperatorAuth(async (request: NextRequest) => {
       .from('email_subscribers')
       .select('id, current_activation_id')
       .eq('status', 'active')
+      .eq('receive_council_updates', true)
       .eq('city_fips', RICHMOND_FIPS)
       .order('id', { ascending: true })
       .limit(MAX_BROADCAST_RECIPIENTS + 1),
