@@ -6,6 +6,10 @@ _Convention: Every session adds observations here. Items stay until promoted to 
 
 ---
 
+## 2026-09-06 deployed release receipt
+
+- Production application source is `97abc9bd5c4ae81911b90034e2f10823dd5df8af`; the subsequent documentation-only receipt must not be described as another deployment. Migrations 150/151 and replay passed production preservation/access checks, two source-checked AI briefs are published, and public/browser/control-plane checks passed. Weekly subscriber delivery remains inactive. Finance reconciliation, paper-money extraction, full archive inventory refetching, and a future live exercise of the startup barrier remain explicit limitations in the release evidence.
+
 ## 2026-09-06 Preview startup stability
 
 - The first successful SQL read and ACTIVE_HEALTHY status can precede an automatic PostgreSQL restart. Before the first baseline write, require a 60-second-old exact branch and two healthy read-only samples of the same postmaster with at least 30 seconds of uptime. Restart/unhealthy samples reset readiness, polling is capped at 180 seconds, and schema writes remain single-attempt. This reduces the observed early-startup race; it cannot guarantee that a remote database will never restart later.
@@ -24,7 +28,7 @@ _Convention: Every session adds observations here. Items stay until promoted to 
 - Publication producers create draft civic briefs and editorial decisions pinned to a content version. Re-extraction must refresh the packet before approval.
 - `civic_review_packets.py` now prepares bounded finance comparisons and source-backed agenda/receipt drafts without model calls. Fingerprints suppress unchanged and rejected inputs, and draft refresh invalidates stale browser review versions. The real Python writer passes disposable PostgreSQL integration checks.
 - Source rechecks now convert open story publication proposals into versioned engineering closure notes when cancelled/retired/removed agenda evidence no longer qualifies. The old private draft and evidence remain, public content is untouched, and failed/truncated reads cannot trigger withdrawal. Upstream source fetchers must retain last successful state on fetch failure.
-- Story/election follows need delivery integration, not just stored checkboxes: current digest/retry paths filter only topic preferences and orientation ignores preferences. `docs/civic-review-packets.md` identifies the exact small extension; migration150 remains unused.
+- Story/election follows are integrated through migration 150, shared digest/recovery selection, and consent-aware claims. They are deployed with weekly broadcast delivery inactive; the remaining provider rehearsal and paired gate/schedule activation are documented in `docs/subject-follows.md`.
 - Move the standalone PostgreSQL publication/role verifier into the standard integration gate after this release.
 
 ## 2026-09-06 access verification follow-up
