@@ -43,7 +43,7 @@ jobs:
         with:
           python-version: '3.11'
       - name: Install packet writer database dependencies
-        run: pip install psycopg2-binary python-dotenv pytest requests pymupdf
+        run: pip install psycopg2-binary python-dotenv pytest requests pymupdf PyYAML
       - name: Exercise roles, grants, RLS, and migration replay
         run: |
           node tests/operator_table_security.integration.mjs "$RUNNER_TEMP/permission-db/node_modules/@electric-sql/pglite/dist/index.js"
