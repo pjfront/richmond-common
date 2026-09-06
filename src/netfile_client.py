@@ -100,6 +100,7 @@ EXPENDITURE_TYPES = {
 }
 
 ALL_TYPES = {**CONTRIBUTION_TYPES, **EXPENDITURE_TYPES}
+ALL_TYPES.update({4: "F496P3", 12: "F460B1", 19: "S496"})
 
 # Rate limiting
 REQUEST_DELAY = 0.5  # seconds between API calls
@@ -194,6 +195,7 @@ def search_transactions(
     page_index: int = 0,
     sort_order: int = 1,  # DateDescending
     city_fips: Optional[str] = None,
+    show_superseded: bool = False,
 ) -> dict:
     """Search transactions via the Connect2 API.
 
@@ -210,6 +212,9 @@ def search_transactions(
         "PageSize": page_size,
         "CurrentPageIndex": page_index,
         "SortOrder": sort_order,
+        # API spelling is intentional. Its default is true and includes
+        # obsolete amendments; financial totals must explicitly opt out.
+        "ShowSuperceded": show_superseded,
     }
     if transaction_type is not None:
         payload["TransactionType"] = transaction_type
@@ -250,9 +255,15 @@ def fetch_all_transactions(
         city_fips=city_fips,
     )
 
-    total = data.get("totalMatchingCount", 0)
-    total_pages = data.get("totalMatchingPages", 0)
-    results = data.get("results", [])
+    total = data.get("totalMatchingCount")
+    total_pages = data.get("totalMatchingPages")
+    results = data.get("results")
+    if (type(total) is not int or total < 0 or type(total_pages) is not int
+            or total_pages < 0 or not isinstance(results, list)
+            or (total > 0 and total_pages < 1)):
+        raise NetFileAPIError("Malformed transaction response cannot prove empty source coverage")
+    if data.get("searchParameters", {}).get("showSuperceded") is True:
+        raise NetFileAPIError("Source did not honor exclusion of superseded reports")
     all_results.extend(results)
 
     type_label = ALL_TYPES.get(transaction_type, "all") if transaction_type is not None else "all"
@@ -272,11 +283,27 @@ def fetch_all_transactions(
             city_fips=city_fips,
         )
         results = data.get("results", [])
+        if data.get("totalMatchingCount") != total:
+            raise NetFileAPIError("Source changed during pagination; retry the complete snapshot")
         all_results.extend(results)
         if page % 10 == 0:
             print(f"    Page {page}/{total_pages} ({len(all_results):,} fetched)")
 
+    if len(all_results) != total or len({r.get("id") for r in all_results}) != total:
+        raise NetFileAPIError("Incomplete or repeated transaction pages; snapshot rejected")
     return all_results
+
+
+def get_filing_info(filing_id: str, api_base: str = API_BASE) -> dict:
+    """Read authoritative amends/amendedBy lineage; IDs are opaque source IDs."""
+    response = requests.get(
+        f"{api_base}/public/filing/info/{filing_id}", params={"format": "json"}, timeout=30,
+    )
+    response.raise_for_status()
+    data = response.json()
+    if str(data.get("filingId")) != str(filing_id):
+        raise NetFileAPIError("Filing metadata did not identify the requested filing")
+    return data
 
 
 # --- Data Processing ---
@@ -287,50 +314,80 @@ def normalize_transaction(tx: dict, city_fips: str | None = None) -> dict:
     The conflict scanner expects contributions with these fields:
         contributor_name, contributor_employer, amount, date, committee
     (also accepts donor_name, donor_employer, committee_name)
+
+    Form 497 Part 2 reports contributions MADE by the filer: NetFile's
+    ``name`` and ``transactionFppcId`` identify the recipient. Normalize
+    those rows into the same donor -> recipient direction as receipts,
+    while preserving the actual reporting filer separately for provenance
+    and paper-filing discovery. Existing ``filer_*`` keys are the recipient
+    committee identity consumed by the contribution loader.
     """
     resolved_fips = city_fips if city_fips is not None else CITY_FIPS
-    return {
+    contribution_made = tx.get("transactionType") == 21
+    filer_name = (tx.get("filerName") or "").strip()
+    filer_fppc_id = (tx.get("filerFppcId") or "").strip()
+    filer_local_id = (tx.get("filerLocalId") or "").strip()
+    counterparty_name = (tx.get("name") or "").strip()
+    counterparty_fppc_id = (tx.get("transactionFppcId") or "").strip()
+    normalized = {
         # Conflict scanner fields
-        "contributor_name": (tx.get("name") or "").strip(),
+        "contributor_name": counterparty_name,
         "contributor_employer": (tx.get("employer") or "").strip(),
         "amount": tx.get("amount", 0),
         "date": (tx.get("date") or "")[:10],  # ISO date only
-        "committee": (tx.get("filerName") or "").strip(),
+        "committee": filer_name,
         # Extra fields for analysis
         "occupation": (tx.get("occupation") or "").strip(),
         "city": (tx.get("city") or "").strip(),
         "state": (tx.get("state") or "").strip(),
         "zip": (tx.get("zip") or "").strip(),
         "transaction_type": ALL_TYPES.get(tx.get("transactionType"), "unknown"),
-        "filer_fppc_id": (tx.get("filerFppcId") or "").strip(),
-        "filer_local_id": (tx.get("filerLocalId") or "").strip(),
+        "filer_fppc_id": filer_fppc_id,
+        "filer_local_id": filer_local_id,
         "filing_id": (tx.get("filingId") or "").strip(),
         "transaction_id": (tx.get("id") or "").strip(),
         "entity_code": (tx.get("code") or "").strip() or None,
         # Source tracking
+        "reporting_filer_name": filer_name,
+        "reporting_filer_fppc_id": filer_fppc_id,
+        "reporting_filer_local_id": filer_local_id,
+        "contributor_fppc_id": counterparty_fppc_id,
         "source": "netfile",
         "city_fips": resolved_fips,
     }
+    if contribution_made:
+        normalized.update({
+            "contributor_name": filer_name,
+            "contributor_fppc_id": filer_fppc_id,
+            "committee": counterparty_name,
+            "filer_fppc_id": counterparty_fppc_id,
+            # The source exposes the reporting filer's local ID, not the
+            # recipient's. Never attach that ID to a different committee.
+            "filer_local_id": "",
+            # These source fields describe the counterparty (recipient),
+            # not the contributing filer. Do not attribute them to donor.
+            "contributor_employer": "",
+            "occupation": "",
+            "city": "",
+            "state": "",
+            "zip": "",
+            "entity_code": None,
+        })
+    return normalized
 
 
 def deduplicate_contributions(contributions: list[dict]) -> list[dict]:
-    """Remove duplicate contributions (from amended filings).
+    """Remove repeated source records only; equality is not amendment lineage.
 
-    NetFile may return both original and amended versions. Dedup by
-    (contributor_name, amount, date, committee) tuple, keeping the
-    record from the most recent filing.
+    The API excludes superseded filings. Distinct transaction IDs, including
+    same-day equal gifts, must survive. Missing IDs cannot prove duplication.
     """
     seen = {}
-    for c in contributions:
-        key = (
-            c["contributor_name"].lower(),
-            c["amount"],
-            c["date"],
-            c["committee"].lower(),
-        )
-        existing = seen.get(key)
-        if existing is None or c["filing_id"] > existing["filing_id"]:
-            seen[key] = c
+    for index, c in enumerate(contributions):
+        key = (c.get("filing_id"), c.get("transaction_id")) if c.get("transaction_id") else ("unidentified", index)
+        if key in seen and seen[key] != c:
+            raise NetFileAPIError("Conflicting versions of the same source transaction")
+        seen[key] = c
 
     deduped = list(seen.values())
     if len(contributions) != len(deduped):
@@ -340,16 +397,21 @@ def deduplicate_contributions(contributions: list[dict]) -> list[dict]:
 
 
 def extract_filers(transactions: list[dict], city_fips: str | None = None) -> list[dict]:
-    """Extract unique filer (committee) info from transactions."""
+    """Extract reporting filers, not inferred recipients of Part 2 gifts.
+
+    Paper-filing discovery uses this list as evidence of who e-files.
+    Receiving a gift reported by another committee does not establish
+    that the recipient e-files its own reports.
+    """
     resolved_fips = city_fips if city_fips is not None else CITY_FIPS
     filers = {}
     for tx in transactions:
-        fppc_id = tx.get("filer_fppc_id", "")
+        fppc_id = tx.get("reporting_filer_fppc_id", tx.get("filer_fppc_id", ""))
         if fppc_id and fppc_id not in filers:
             filers[fppc_id] = {
                 "fppc_id": fppc_id,
-                "local_id": tx.get("filer_local_id", ""),
-                "name": tx.get("committee", ""),
+                "local_id": tx.get("reporting_filer_local_id", tx.get("filer_local_id", "")),
+                "name": tx.get("reporting_filer_name", tx.get("committee", "")),
                 "source": "netfile",
                 "city_fips": resolved_fips,
             }

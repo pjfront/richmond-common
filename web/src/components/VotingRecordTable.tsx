@@ -13,6 +13,8 @@ import {
 import SortableHeader from './SortableHeader'
 import VoteBadge from './VoteBadge'
 import CivicTerm from './CivicTerm'
+import { agendaItemPath } from '@/lib/format'
+import { normalizeRecordedChoice } from '@/lib/vote-records'
 
 interface VoteRecord {
   id: string
@@ -44,22 +46,19 @@ interface VoteRecord {
 }
 
 /** Returns true if this vote was part of a split (non-unanimous) decision */
-function isSplitVote(record: VoteRecord): boolean {
-  // Use actual vote records when available (avoids vote_tally text parsing bugs
-  // where absent/abstain members were incorrectly counted as nay votes)
-  if (record.has_nay_votes !== undefined) {
-    return record.has_nay_votes
-  }
-  // Fallback to vote_tally text parsing for records without has_nay_votes
+export function isSplitVote(record: VoteRecord): boolean {
+  // A nay flag alone cannot distinguish a split from unanimous rejection.
+  if (record.has_nay_votes === false) return false
   if (record.vote_tally) {
     const dashMatch = record.vote_tally.match(/^(\d+)\s*-\s*(\d+)/)
     if (dashMatch) {
       return parseInt(dashMatch[1]) > 0 && parseInt(dashMatch[2]) > 0
     }
-    const noesMatch = record.vote_tally.match(/No[ea]s?\s*\((\d+)\)/i)
-    if (noesMatch && parseInt(noesMatch[1]) > 0) return true
+    const noesMatch = record.vote_tally.match(/(?:No[ea]s?|Nays?)\s*\((\d+)\)/i)
+    const ayesMatch = record.vote_tally.match(/Ayes?\s*\((\d+)\)/i)
+    if (noesMatch && ayesMatch) return Number(noesMatch[1]) > 0 && Number(ayesMatch[1]) > 0
   }
-  return false
+  return record.has_nay_votes === true && normalizeRecordedChoice(record.vote_choice) === 'aye'
 }
 
 function formatDate(dateStr: string): string {
@@ -87,7 +86,7 @@ function groupByItem(votes: VoteRecord[]): VoteRecord[] {
   }
   return Array.from(groups.values()).map((motions) => {
     const first = motions[0]
-    if (motions.length === 1) return first
+    if (motions.length === 1) return { ...first, has_nay_votes: isSplitVote(first) }
     const choices = [...new Set(motions.map((m) => m.vote_choice.toLowerCase()))]
     return {
       ...first,
@@ -118,7 +117,6 @@ function shortMotion(text: string, max = 140): string {
 const columnHelper = createColumnHelper<VoteRecord>()
 
 export default function VotingRecordTable({ votes }: { votes: VoteRecord[] }) {
-  const [topicFilter, setTopicFilter] = useState<string>('all')
   const [choiceFilter, setChoiceFilter] = useState<string>('all')
   const [hideConsent, setHideConsent] = useState(false)
   const [splitOnly, setSplitOnly] = useState(false)
@@ -130,28 +128,14 @@ export default function VotingRecordTable({ votes }: { votes: VoteRecord[] }) {
   // Collapse multiple motions on the same agenda item into one row
   const grouped = useMemo(() => groupByItem(votes), [votes])
 
-  // Build topic labels for filter (prefer topic_label, fall back to category)
-  const topics = useMemo(() => {
-    const labels = new Set<string>()
-    for (const v of grouped) {
-      const label = v.topic_label || (v.category ? formatCategory(v.category) : null)
-      if (label) labels.add(label)
-    }
-    return Array.from(labels).sort()
-  }, [grouped])
-
   const filtered = useMemo(() => {
     return grouped.filter((v) => {
-      if (topicFilter !== 'all') {
-        const label = v.topic_label || (v.category ? formatCategory(v.category) : null)
-        if (label !== topicFilter) return false
-      }
-      if (choiceFilter !== 'all' && v.vote_choice.toLowerCase() !== choiceFilter) return false
+      if (choiceFilter !== 'all' && !(v.all_choices ?? [v.vote_choice]).some(choice => normalizeRecordedChoice(choice) === choiceFilter)) return false
       if (hideConsent && v.is_consent_calendar) return false
       if (splitOnly && !v.has_nay_votes) return false
       return true
     })
-  }, [grouped, topicFilter, choiceFilter, hideConsent, splitOnly])
+  }, [grouped, choiceFilter, hideConsent, splitOnly])
 
   const splitCount = useMemo(() => grouped.filter((v) => v.has_nay_votes).length, [grouped])
 
@@ -182,7 +166,7 @@ export default function VotingRecordTable({ votes }: { votes: VoteRecord[] }) {
           : null
         return (
           <Link
-            href={`/meetings/${row.meeting_id}`}
+            href={agendaItemPath(row.meeting_id, row.item_number)}
             className="block text-slate-900 hover:text-civic-navy-light"
           >
             <span className="line-clamp-1 font-medium">
@@ -249,14 +233,16 @@ export default function VotingRecordTable({ votes }: { votes: VoteRecord[] }) {
     }),
     columnHelper.accessor('vote_choice', {
       header: ({ column }) => <SortableHeader column={column} label="Vote" />,
-      cell: (info) => <VoteBadge choice={info.getValue()} />,
+      cell: (info) => (info.row.original.motion_count ?? 1) > 1
+        ? <span className="text-xs text-slate-600">Multiple motions; see individual votes</span>
+        : <VoteBadge choice={info.getValue()} />,
     }),
     columnHelper.accessor('motion_result', {
       header: ({ column }) => (
-        <SortableHeader column={column} label="Result" className="hidden sm:table-cell" />
+        <SortableHeader column={column} label="Motion result" className="hidden sm:table-cell" />
       ),
       cell: (info) => (
-        <span className="text-xs text-slate-500 capitalize">{info.getValue()}</span>
+        <span className="text-xs text-slate-600">{(info.row.original.motion_count ?? 1) > 1 ? 'See each motion' : info.getValue() || 'Not recorded'}</span>
       ),
       meta: { className: 'hidden sm:table-cell' },
     }),

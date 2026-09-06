@@ -12,26 +12,6 @@ function formatShortDate(dateStr: string): string {
   })
 }
 
-function voteLabel(outcome: SimilarItem['vote_outcome']): string {
-  switch (outcome) {
-    case 'passed': return 'Passed'
-    case 'failed': return 'Failed'
-    case 'upcoming': return 'Upcoming'
-    case 'minutes pending': return 'Minutes pending'
-    default: return 'No vote'
-  }
-}
-
-function voteClasses(outcome: SimilarItem['vote_outcome']): string {
-  switch (outcome) {
-    case 'passed': return 'bg-green-50 text-vote-aye'
-    case 'failed': return 'bg-red-50 text-vote-nay'
-    case 'upcoming': return 'bg-blue-50 text-blue-600'
-    case 'minutes pending': return 'bg-amber-50 text-amber-600'
-    default: return 'bg-slate-100 text-slate-500'
-  }
-}
-
 /**
  * Server component: finds semantically similar agenda items using
  * pgvector embeddings. A source item without an embedding is a legitimate
@@ -53,10 +33,10 @@ export default async function SimilarDiscussions({
   return (
     <div className="mb-6">
       <h2 className="text-lg font-semibold text-civic-navy mb-1">
-        Similar Discussions
+        Related agenda records
       </h2>
-      <p className="text-xs text-slate-400 mb-3">
-        {items.length} related item{items.length !== 1 ? 's' : ''} found by meaning
+      <p className="text-sm text-slate-600 mb-3">
+        Automatically matched by topic. Open an item to check its relevance and each motion’s outcome.
       </p>
       <div className="space-y-1.5">
         {items.map((si) => (
@@ -66,25 +46,20 @@ export default async function SimilarDiscussions({
             className="flex items-center justify-between gap-3 py-2.5 px-3 rounded-lg border border-transparent hover:border-civic-navy/20 hover:bg-slate-50 transition-all group"
           >
             <div className="flex-1 min-w-0">
-              <p className="text-sm text-slate-800 group-hover:text-civic-navy truncate">
-                {si.summary_headline ?? si.title}
+              <p className="text-sm text-slate-800 group-hover:text-civic-navy line-clamp-2">
+                {si.title}
               </p>
-              <div className="flex items-center gap-2 text-xs text-slate-400 group-hover:text-slate-500">
+              <div className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
                 <span>{formatShortDate(si.meeting_date)}</span>
                 {si.financial_amount && (
                   <span className="text-civic-amber">{si.financial_amount}</span>
                 )}
                 {si.public_comment_count > 0 && (
-                  <span>{si.public_comment_count} comment{si.public_comment_count !== 1 ? 's' : ''}</span>
+                  <span>{si.public_comment_count} comment{si.public_comment_count !== 1 ? 's' : ''} recorded</span>
                 )}
-                <span className="text-slate-300">
-                  {Math.round(si.similarity * 100)}% match
-                </span>
               </div>
             </div>
-            <span className={`shrink-0 text-xs font-medium px-2 py-0.5 rounded ${voteClasses(si.vote_outcome)}`}>
-              {voteLabel(si.vote_outcome)}
-            </span>
+            <span className="shrink-0 text-civic-navy" aria-hidden="true">→</span>
           </Link>
         ))}
       </div>

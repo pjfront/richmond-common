@@ -1219,6 +1219,54 @@ export type Database = {
           },
         ]
       }
+      civic_brief_candidates: {
+        Row: {
+          body: string
+          content_version: number
+          created_at: string
+          id: string
+          input_fingerprint: string
+          kind: string
+          published_at: string | null
+          published_by: string | null
+          sources: Json
+          status: string
+          subject_key: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          body: string
+          content_version?: number
+          created_at?: string
+          id?: string
+          input_fingerprint: string
+          kind: string
+          published_at?: string | null
+          published_by?: string | null
+          sources?: Json
+          status?: string
+          subject_key: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          body?: string
+          content_version?: number
+          created_at?: string
+          id?: string
+          input_fingerprint?: string
+          kind?: string
+          published_at?: string | null
+          published_by?: string | null
+          sources?: Json
+          status?: string
+          subject_key?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       closed_session_items: {
         Row: {
           description: string
@@ -3124,6 +3172,278 @@ export type Database = {
           },
         ]
       }
+      finance_assertions: {
+        Row: {
+          activity_date: string | null
+          amended_by_filing_id: string | null
+          amendment_sequence: number
+          amends_filing_id: string | null
+          amount: number | null
+          amount_kind: string
+          candidate_name: string | null
+          canonical_event_key: string | null
+          confidence_score: number
+          content_hash: string
+          document_id: string | null
+          donor_fppc_id: string | null
+          donor_name: string | null
+          election_date: string | null
+          event_kind: string
+          extracted_at: string
+          filing_id: string
+          form_type: string
+          id: string
+          is_current: boolean
+          measure_name: string | null
+          raw_payload: Json
+          recipient_fppc_id: string | null
+          recipient_name: string | null
+          reconciliation_status: string
+          record_key: string
+          report_number: string | null
+          reporting_filer_fppc_id: string | null
+          reporting_filer_name: string
+          review_reason: string | null
+          scope_key: string
+          source: string
+          source_tier: number
+          source_url: string
+          support_oppose: string | null
+          transaction_id: string
+          transaction_type: number | null
+        }
+        Insert: {
+          activity_date?: string | null
+          amended_by_filing_id?: string | null
+          amendment_sequence?: number
+          amends_filing_id?: string | null
+          amount?: number | null
+          amount_kind: string
+          candidate_name?: string | null
+          canonical_event_key?: string | null
+          confidence_score: number
+          content_hash: string
+          document_id?: string | null
+          donor_fppc_id?: string | null
+          donor_name?: string | null
+          election_date?: string | null
+          event_kind: string
+          extracted_at?: string
+          filing_id: string
+          form_type: string
+          id?: string
+          is_current?: boolean
+          measure_name?: string | null
+          raw_payload: Json
+          recipient_fppc_id?: string | null
+          recipient_name?: string | null
+          reconciliation_status?: string
+          record_key: string
+          report_number?: string | null
+          reporting_filer_fppc_id?: string | null
+          reporting_filer_name: string
+          review_reason?: string | null
+          scope_key: string
+          source: string
+          source_tier?: number
+          source_url: string
+          support_oppose?: string | null
+          transaction_id: string
+          transaction_type?: number | null
+        }
+        Update: {
+          activity_date?: string | null
+          amended_by_filing_id?: string | null
+          amendment_sequence?: number
+          amends_filing_id?: string | null
+          amount?: number | null
+          amount_kind?: string
+          candidate_name?: string | null
+          canonical_event_key?: string | null
+          confidence_score?: number
+          content_hash?: string
+          document_id?: string | null
+          donor_fppc_id?: string | null
+          donor_name?: string | null
+          election_date?: string | null
+          event_kind?: string
+          extracted_at?: string
+          filing_id?: string
+          form_type?: string
+          id?: string
+          is_current?: boolean
+          measure_name?: string | null
+          raw_payload?: Json
+          recipient_fppc_id?: string | null
+          recipient_name?: string | null
+          reconciliation_status?: string
+          record_key?: string
+          report_number?: string | null
+          reporting_filer_fppc_id?: string | null
+          reporting_filer_name?: string
+          review_reason?: string | null
+          scope_key?: string
+          source?: string
+          source_tier?: number
+          source_url?: string
+          support_oppose?: string | null
+          transaction_id?: string
+          transaction_type?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "finance_assertions_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      finance_events: {
+        Row: {
+          activity_date: string
+          amount: number
+          amount_kind: string
+          assertion_ids: string[]
+          candidate_name: string | null
+          confidence_score: number
+          description: string | null
+          donor_fppc_id: string | null
+          donor_name: string | null
+          election_date: string | null
+          event_key: string
+          event_kind: string
+          extracted_at: string
+          filing_ids: string[]
+          is_current: boolean
+          measure_name: string | null
+          recipient_fppc_id: string | null
+          recipient_name: string | null
+          reconciliation_status: string
+          reporting_filer_fppc_id: string | null
+          reporting_filer_name: string
+          scope_key: string
+          source: string
+          source_tier: number
+          source_url: string
+          source_urls: string[]
+          support_oppose: string | null
+        }
+        Insert: {
+          activity_date: string
+          amount: number
+          amount_kind: string
+          assertion_ids: string[]
+          candidate_name?: string | null
+          confidence_score: number
+          description?: string | null
+          donor_fppc_id?: string | null
+          donor_name?: string | null
+          election_date?: string | null
+          event_key: string
+          event_kind: string
+          extracted_at: string
+          filing_ids: string[]
+          is_current?: boolean
+          measure_name?: string | null
+          recipient_fppc_id?: string | null
+          recipient_name?: string | null
+          reconciliation_status: string
+          reporting_filer_fppc_id?: string | null
+          reporting_filer_name: string
+          scope_key: string
+          source: string
+          source_tier: number
+          source_url: string
+          source_urls: string[]
+          support_oppose?: string | null
+        }
+        Update: {
+          activity_date?: string
+          amount?: number
+          amount_kind?: string
+          assertion_ids?: string[]
+          candidate_name?: string | null
+          confidence_score?: number
+          description?: string | null
+          donor_fppc_id?: string | null
+          donor_name?: string | null
+          election_date?: string | null
+          event_key?: string
+          event_kind?: string
+          extracted_at?: string
+          filing_ids?: string[]
+          is_current?: boolean
+          measure_name?: string | null
+          recipient_fppc_id?: string | null
+          recipient_name?: string | null
+          reconciliation_status?: string
+          reporting_filer_fppc_id?: string | null
+          reporting_filer_name?: string
+          scope_key?: string
+          source?: string
+          source_tier?: number
+          source_url?: string
+          source_urls?: string[]
+          support_oppose?: string | null
+        }
+        Relationships: []
+      }
+      finance_source_coverage: {
+        Row: {
+          activity_from: string | null
+          activity_through: string | null
+          assertion_count: number
+          checked_at: string
+          confidence_score: number
+          extracted_at: string
+          filing_count: number
+          form_type: string
+          limitations: string[]
+          pending_count: number
+          scope_key: string
+          source: string
+          source_tier: number
+          source_url: string
+          status: string
+        }
+        Insert: {
+          activity_from?: string | null
+          activity_through?: string | null
+          assertion_count?: number
+          checked_at: string
+          confidence_score: number
+          extracted_at: string
+          filing_count?: number
+          form_type: string
+          limitations?: string[]
+          pending_count?: number
+          scope_key: string
+          source: string
+          source_tier?: number
+          source_url: string
+          status: string
+        }
+        Update: {
+          activity_from?: string | null
+          activity_through?: string | null
+          assertion_count?: number
+          checked_at?: string
+          confidence_score?: number
+          extracted_at?: string
+          filing_count?: number
+          form_type?: string
+          limitations?: string[]
+          pending_count?: number
+          scope_key?: string
+          source?: string
+          source_tier?: number
+          source_url?: string
+          status?: string
+        }
+        Relationships: []
+      }
       form_summary_cache: {
         Row: {
           city_fips: string
@@ -4363,6 +4683,56 @@ export type Database = {
         }
         Relationships: []
       }
+      operator_decision_events: {
+        Row: {
+          action: string
+          actor: string
+          after_state: Json
+          before_state: Json
+          created_at: string
+          decision_id: string
+          expected_version: number
+          id: string
+          idempotency_key: string
+          note: string | null
+          result: Json
+        }
+        Insert: {
+          action: string
+          actor: string
+          after_state: Json
+          before_state: Json
+          created_at?: string
+          decision_id: string
+          expected_version: number
+          id?: string
+          idempotency_key: string
+          note?: string | null
+          result: Json
+        }
+        Update: {
+          action?: string
+          actor?: string
+          after_state?: Json
+          before_state?: Json
+          created_at?: string
+          decision_id?: string
+          expected_version?: number
+          id?: string
+          idempotency_key?: string
+          note?: string | null
+          result?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "operator_decision_events_decision_id_fkey"
+            columns: ["decision_id"]
+            isOneToOne: false
+            referencedRelation: "pending_decisions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       organizations: {
         Row: {
           city_fips: string
@@ -4801,6 +5171,7 @@ export type Database = {
       }
       pending_decisions: {
         Row: {
+          action_kind: string
           city_fips: string
           created_at: string
           decision_type: string
@@ -4814,13 +5185,18 @@ export type Database = {
           resolution_note: string | null
           resolved_at: string | null
           resolved_by: string | null
+          review_class: string
+          review_version: number
           severity: string
           source: string
           status: string
+          target_brief_id: string | null
+          target_content_version: number | null
           title: string
           updated_at: string
         }
         Insert: {
+          action_kind?: string
           city_fips: string
           created_at?: string
           decision_type: string
@@ -4834,13 +5210,18 @@ export type Database = {
           resolution_note?: string | null
           resolved_at?: string | null
           resolved_by?: string | null
+          review_class?: string
+          review_version?: number
           severity?: string
           source: string
           status?: string
+          target_brief_id?: string | null
+          target_content_version?: number | null
           title: string
           updated_at?: string
         }
         Update: {
+          action_kind?: string
           city_fips?: string
           created_at?: string
           decision_type?: string
@@ -4854,13 +5235,25 @@ export type Database = {
           resolution_note?: string | null
           resolved_at?: string | null
           resolved_by?: string | null
+          review_class?: string
+          review_version?: number
           severity?: string
           source?: string
           status?: string
+          target_brief_id?: string | null
+          target_content_version?: number | null
           title?: string
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "pending_decisions_target_brief_id_fkey"
+            columns: ["target_brief_id"]
+            isOneToOne: false
+            referencedRelation: "civic_brief_candidates"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       pipeline_journal: {
         Row: {
@@ -5509,6 +5902,144 @@ export type Database = {
             referencedColumns: ["fips_code"]
           },
         ]
+      }
+      finance_public_coverage: {
+        Row: {
+          activity_from: string | null
+          activity_through: string | null
+          assertion_count: number | null
+          checked_at: string | null
+          confidence_score: number | null
+          extracted_at: string | null
+          filing_count: number | null
+          form_type: string | null
+          limitations: string[] | null
+          pending_count: number | null
+          scope_key: string | null
+          source: string | null
+          source_tier: number | null
+          source_url: string | null
+          status: string | null
+        }
+        Insert: {
+          activity_from?: string | null
+          activity_through?: string | null
+          assertion_count?: number | null
+          checked_at?: string | null
+          confidence_score?: number | null
+          extracted_at?: string | null
+          filing_count?: number | null
+          form_type?: string | null
+          limitations?: string[] | null
+          pending_count?: number | null
+          scope_key?: string | null
+          source?: string | null
+          source_tier?: number | null
+          source_url?: string | null
+          status?: string | null
+        }
+        Update: {
+          activity_from?: string | null
+          activity_through?: string | null
+          assertion_count?: number | null
+          checked_at?: string | null
+          confidence_score?: number | null
+          extracted_at?: string | null
+          filing_count?: number | null
+          form_type?: string | null
+          limitations?: string[] | null
+          pending_count?: number | null
+          scope_key?: string | null
+          source?: string | null
+          source_tier?: number | null
+          source_url?: string | null
+          status?: string | null
+        }
+        Relationships: []
+      }
+      finance_public_events: {
+        Row: {
+          activity_date: string | null
+          amount: number | null
+          amount_kind: string | null
+          candidate_name: string | null
+          confidence_score: number | null
+          description: string | null
+          donor_fppc_id: string | null
+          donor_name: string | null
+          election_date: string | null
+          event_key: string | null
+          event_kind: string | null
+          extracted_at: string | null
+          filing_ids: string[] | null
+          measure_name: string | null
+          recipient_fppc_id: string | null
+          recipient_name: string | null
+          reconciliation_status: string | null
+          reporting_filer_fppc_id: string | null
+          reporting_filer_name: string | null
+          scope_key: string | null
+          source: string | null
+          source_tier: number | null
+          source_url: string | null
+          source_urls: string[] | null
+          support_oppose: string | null
+        }
+        Insert: {
+          activity_date?: string | null
+          amount?: number | null
+          amount_kind?: string | null
+          candidate_name?: string | null
+          confidence_score?: number | null
+          description?: string | null
+          donor_fppc_id?: string | null
+          donor_name?: string | null
+          election_date?: string | null
+          event_key?: string | null
+          event_kind?: string | null
+          extracted_at?: string | null
+          filing_ids?: string[] | null
+          measure_name?: string | null
+          recipient_fppc_id?: string | null
+          recipient_name?: string | null
+          reconciliation_status?: string | null
+          reporting_filer_fppc_id?: string | null
+          reporting_filer_name?: string | null
+          scope_key?: string | null
+          source?: string | null
+          source_tier?: number | null
+          source_url?: string | null
+          source_urls?: string[] | null
+          support_oppose?: string | null
+        }
+        Update: {
+          activity_date?: string | null
+          amount?: number | null
+          amount_kind?: string | null
+          candidate_name?: string | null
+          confidence_score?: number | null
+          description?: string | null
+          donor_fppc_id?: string | null
+          donor_name?: string | null
+          election_date?: string | null
+          event_key?: string | null
+          event_kind?: string | null
+          extracted_at?: string | null
+          filing_ids?: string[] | null
+          measure_name?: string | null
+          recipient_fppc_id?: string | null
+          recipient_name?: string | null
+          reconciliation_status?: string | null
+          reporting_filer_fppc_id?: string | null
+          reporting_filer_name?: string | null
+          scope_key?: string | null
+          source?: string | null
+          source_tier?: number | null
+          source_url?: string | null
+          source_urls?: string[] | null
+          support_oppose?: string | null
+        }
+        Relationships: []
       }
       v_appointment_network: {
         Row: {
@@ -6475,6 +7006,17 @@ export type Database = {
           isOneToOne: false
           isSetofReturn: true
         }
+      }
+      review_decision: {
+        Args: {
+          p_action: string
+          p_actor?: string
+          p_decision_id: string
+          p_expected_version: number
+          p_idempotency_key: string
+          p_note?: string
+        }
+        Returns: Json
       }
       search_hybrid: {
         Args: {

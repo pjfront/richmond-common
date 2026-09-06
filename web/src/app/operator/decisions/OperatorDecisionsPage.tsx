@@ -1,248 +1,166 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import OperatorGate from '@/components/OperatorGate'
-import type { DecisionQueueResponse, PendingDecision, DecisionSeverity } from '@/lib/types'
+import {
+  availableReviewActions, evidenceLabel, reviewErrorMessage, safeEvidenceLink,
+  type ReviewAction, type ReviewDecision, type ReviewHistoryEntry, type ReviewQueueData,
+} from '@/lib/decision-review'
 
-const SEVERITY_STYLES: Record<DecisionSeverity, string> = {
-  critical: 'bg-red-100 text-red-800 border-red-200',
-  high: 'bg-orange-100 text-orange-800 border-orange-200',
-  medium: 'bg-amber-100 text-amber-800 border-amber-200',
-  low: 'bg-blue-100 text-blue-800 border-blue-200',
-  info: 'bg-slate-100 text-slate-600 border-slate-200',
+const ACTION_LABELS: Record<ReviewAction, string> = {
+  approve: 'Approve', reject: 'Reject', defer: 'Defer', reopen: 'Reopen',
+  edit_note: 'Save note', withdraw: 'Withdraw published brief',
 }
 
-const TYPE_LABELS: Record<string, string> = {
-  staleness_alert: 'Staleness',
-  anomaly: 'Anomaly',
-  tier_graduation: 'Graduation',
-  conflict_review: 'Conflict',
-  assessment_finding: 'Assessment',
-  pipeline_failure: 'Pipeline',
-  general: 'General',
-}
-
-function SeverityBadge({ severity }: { severity: DecisionSeverity }) {
-  return (
-    <span
-      className={`inline-block px-2 py-0.5 rounded text-xs font-semibold border ${SEVERITY_STYLES[severity] ?? SEVERITY_STYLES.info}`}
-    >
-      {severity.toUpperCase()}
-    </span>
-  )
-}
-
-function TypePill({ type }: { type: string }) {
-  return (
-    <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200">
-      {TYPE_LABELS[type] ?? type}
-    </span>
-  )
-}
-
-function formatAge(dateStr: string): string {
-  const now = Date.now()
-  const then = new Date(dateStr).getTime()
-  const diffMs = now - then
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
-  const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
-
-  if (diffDays > 1) return `${diffDays} days ago`
-  if (diffDays === 1) return '1 day ago'
-  if (diffHours > 1) return `${diffHours} hours ago`
-  if (diffHours === 1) return '1 hour ago'
-  return 'just now'
-}
-
-function DecisionCard({ decision }: { decision: PendingDecision }) {
-  const isResolved = decision.status !== 'pending'
-  const evidence = decision.evidence && Object.keys(decision.evidence).length > 0
-    ? decision.evidence
-    : null
-
-  return (
-    <div className={`rounded-lg border p-4 ${isResolved ? 'bg-slate-50 border-slate-200' : 'bg-white border-slate-200'}`}>
-      <div className="flex items-start justify-between gap-3 mb-2">
-        <div className="flex items-center gap-2 flex-wrap">
-          <SeverityBadge severity={decision.severity} />
-          <TypePill type={decision.decision_type} />
+function EvidenceValue({ value, depth = 0 }: { value: unknown; depth?: number }) {
+  if (value === null || value === undefined) return <span className="text-slate-600">Not recorded</span>
+  if (Array.isArray(value)) return <ul className="space-y-2 pl-4 list-disc">{value.map((entry, index) => <li key={index}><EvidenceValue value={entry} depth={depth + 1} /></li>)}</ul>
+  if (typeof value === 'object') {
+    const record = value as Record<string, unknown>
+    const link = safeEvidenceLink(record.url ?? record.source_url)
+    return <div className="space-y-2">
+      {link && <a href={link} target="_blank" rel="noopener noreferrer" className="text-civic-navy underline break-words">{typeof record.title === 'string' ? record.title : 'Open source record'}</a>}
+      <dl className="space-y-2">{Object.entries(record).filter(([key]) => !(link && ['url', 'source_url', 'title'].includes(key))).map(([key, entry]) => (
+        <div key={key} className={depth < 2 ? 'border-l-2 border-slate-200 pl-3' : ''}>
+          <dt className="font-medium text-slate-800">{evidenceLabel(key)}</dt>
+          <dd className="mt-1 break-words"><EvidenceValue value={entry} depth={depth + 1} /></dd>
         </div>
-        <span className="text-xs text-slate-400 whitespace-nowrap">
-          {formatAge(decision.created_at)}
-        </span>
-      </div>
-
-      <h3 className="text-sm font-semibold text-slate-800 mb-1">
-        {decision.link ? (
-          <a
-            href={decision.link}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:text-civic-navy underline decoration-dotted"
-          >
-            {decision.title}
-          </a>
-        ) : (
-          decision.title
-        )}
-      </h3>
-
-      <p className="text-sm text-slate-600 mb-2 line-clamp-2">
-        {decision.description}
-      </p>
-
-      <div className="flex items-center gap-3 text-xs text-slate-400">
-        <span>Source: {decision.source}</span>
-        <span className="font-mono">{decision.id.slice(0, 8)}</span>
-      </div>
-
-      {evidence && (
-        <details className="mt-2">
-          <summary className="text-xs text-slate-400 cursor-pointer hover:text-slate-600">
-            Evidence
-          </summary>
-          <pre className="mt-1 text-xs bg-slate-50 rounded p-2 overflow-x-auto text-slate-600">
-            {JSON.stringify(evidence, null, 2)}
-          </pre>
-        </details>
-      )}
-
-      {isResolved && (
-        <div className="mt-2 pt-2 border-t border-slate-200">
-          <div className="flex items-center gap-2 text-xs">
-            <span className={`font-semibold ${
-              decision.status === 'approved' ? 'text-green-700' :
-              decision.status === 'rejected' ? 'text-red-700' :
-              'text-amber-700'
-            }`}>
-              {decision.status.toUpperCase()}
-            </span>
-            {decision.resolved_at && (
-              <span className="text-slate-400">{formatAge(decision.resolved_at)}</span>
-            )}
-          </div>
-          {decision.resolution_note && (
-            <p className="text-xs text-slate-500 mt-1">{decision.resolution_note}</p>
-          )}
-        </div>
-      )}
+      ))}</dl>
     </div>
-  )
+  }
+  const link = safeEvidenceLink(value)
+  return link ? <a href={link} target="_blank" rel="noopener noreferrer" className="text-civic-navy underline break-words">{String(value)}</a>
+    : <span className="whitespace-pre-wrap break-words">{String(value)}</span>
+}
+
+export function DecisionCard({ decision, history, onSaved }: {
+  decision: ReviewDecision; history: ReviewHistoryEntry[]; onSaved: (message: string) => Promise<void>
+}) {
+  const [note, setNote] = useState(decision.resolution_note ?? '')
+  const [busy, setBusy] = useState<ReviewAction | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const lastRequest = useRef<{ signature: string; key: string } | null>(null)
+  const candidate = decision.candidate
+  const staleContent = candidate && candidate.content_version !== decision.target_content_version
+  const sourceLink = safeEvidenceLink(decision.link)
+  const events = history.filter(event => event.decision_id === decision.id)
+
+  async function act(action: ReviewAction) {
+    if (action === 'withdraw' && !note.trim()) { setError('Add a note explaining why this published brief should be withdrawn.'); return }
+    const payload = { decision_id: decision.id, action, expected_version: decision.review_version, note: note || null }
+    const signature = JSON.stringify(payload)
+    if (lastRequest.current?.signature !== signature) lastRequest.current = { signature, key: crypto.randomUUID() }
+    setBusy(action); setError(null)
+    try {
+      const response = await fetch('/api/operator/decisions', {
+        method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...payload, idempotency_key: lastRequest.current.key }),
+      })
+      const result = await response.json()
+      if (!response.ok || !result.ok) throw new Error(reviewErrorMessage(result.code ?? 'review_failed'))
+      const message = result.effect === 'brief_published' ? 'Brief published with its reviewed sources.'
+        : result.effect === 'brief_withdrawn' ? 'Brief withdrawn. Its evidence and review history are preserved.'
+        : action === 'edit_note' ? 'Note saved.' : action === 'defer' ? 'Decision deferred. It remains available in this inbox.'
+        : action === 'reopen' ? 'Decision reopened.' : `Decision ${result.status}.`
+      await onSaved(message)
+      lastRequest.current = null
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'The action could not be saved. Retry with your note below.')
+    } finally { setBusy(null) }
+  }
+
+  return <article className="rounded-xl border border-slate-200 bg-white p-5 sm:p-6 space-y-4" aria-labelledby={`decision-${decision.id}`}>
+    <div className="flex flex-wrap items-center gap-2 text-sm">
+      <span className="rounded bg-slate-100 px-2 py-1 font-medium text-slate-800">{decision.review_class === 'editorial' ? 'Editorial judgment' : 'Engineering follow-up'}</span>
+      <span className="text-slate-700">{evidenceLabel(decision.severity)} priority · {evidenceLabel(decision.status)}</span>
+    </div>
+    <div>
+      <h3 id={`decision-${decision.id}`} className="text-xl font-semibold text-slate-900">{decision.title}</h3>
+      <p className="mt-2 text-base text-slate-700 whitespace-pre-wrap">{decision.description}</p>
+      <p className="mt-2 text-sm text-slate-600">From {evidenceLabel(decision.source)} · <time dateTime={decision.created_at}>{new Date(decision.created_at).toLocaleDateString()}</time> · Review version {decision.review_version}</p>
+      {sourceLink && <a href={sourceLink} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center text-civic-navy underline">Open supporting record</a>}
+    </div>
+    {decision.action_kind === 'resolve_only' && <p className="rounded-lg bg-slate-50 p-3 text-sm text-slate-700">This action records your decision. Any recommended repair or pipeline run remains a separate operation.</p>}
+    {candidate && <section className="rounded-lg border border-slate-300 p-4 space-y-3" aria-label="Exact proposed publication">
+      <p className="text-sm text-slate-600">Proposed public brief · {evidenceLabel(candidate.kind)} · Content version {candidate.content_version} · {evidenceLabel(candidate.status)}</p>
+      <h4 className="font-semibold text-lg text-slate-900">{candidate.title}</h4>
+      <div className="text-base text-slate-800 whitespace-pre-wrap break-words">{candidate.body}</div>
+      <div className="border-t border-slate-200 pt-3"><h5 className="font-semibold text-slate-900 mb-2">Sources that will accompany this brief</h5><EvidenceValue value={candidate.sources} /></div>
+      {staleContent && <p role="alert" className="text-red-800">The text or sources changed after this review was prepared. A refreshed packet is required before approval.</p>}
+    </section>}
+    {decision.evidence && Object.keys(decision.evidence).length > 0 && <details className="rounded-lg bg-slate-50 p-3" open={decision.action_kind === 'resolve_only'}>
+      <summary className="cursor-pointer min-h-11 font-semibold text-slate-900">Evidence, recommendation, and affected pages</summary>
+      <div className="mt-2 text-base text-slate-700"><EvidenceValue value={decision.evidence} /></div>
+    </details>}
+    <div>
+      <label htmlFor={`note-${decision.id}`} className="block font-medium text-slate-800 mb-2">Decision note <span className="font-normal text-slate-600">(optional; required to withdraw)</span></label>
+      <textarea id={`note-${decision.id}`} value={note} onChange={event => setNote(event.target.value)} maxLength={4000} rows={3}
+        className="w-full rounded-lg border border-slate-300 p-3 text-base text-slate-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-civic-navy" />
+      {error && <p role="alert" className="mt-2 text-red-800">{error}</p>}
+      <div className="flex flex-wrap gap-2 mt-3">{availableReviewActions(decision).map(action => <button key={action} type="button" onClick={() => void act(action)}
+        disabled={busy !== null || (action === 'approve' && !!staleContent)}
+        className={`min-h-11 rounded-lg border px-4 py-2 text-base font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-civic-navy disabled:opacity-60 ${action === 'approve' ? 'border-civic-navy bg-civic-navy text-white' : action === 'withdraw' ? 'border-red-300 text-red-800' : 'border-slate-300 text-slate-800 hover:bg-slate-50'}`}>
+        {busy === action ? 'Saving…' : action === 'approve' && decision.action_kind === 'publish_brief' ? 'Approve and publish' : ACTION_LABELS[action]}
+      </button>)}</div>
+      {busy && <p role="status" className="mt-2 text-sm text-slate-600">Saving this review and its audit record…</p>}
+    </div>
+    {events.length > 0 && <details className="border-t border-slate-200 pt-3"><summary className="min-h-11 cursor-pointer text-slate-700 font-medium">Review history ({events.length})</summary>
+      <ol className="space-y-3 text-sm text-slate-700">{events.map(event => <li key={event.id}>
+        <span className="font-semibold">{evidenceLabel(event.action)}</span> by {event.actor} · {new Date(event.created_at).toLocaleString()} · reviewed version {event.expected_version}
+        {event.note && <p className="mt-1 whitespace-pre-wrap">{event.note}</p>}
+      </li>)}</ol>
+    </details>}
+  </article>
 }
 
 function DecisionsDashboard() {
-  const [data, setData] = useState<DecisionQueueResponse | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [data, setData] = useState<ReviewQueueData | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [showResolved, setShowResolved] = useState(false)
-
-  useEffect(() => {
-    fetch('/api/operator/decisions')
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        return res.json()
-      })
-      .then(setData)
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false))
+  const [notice, setNotice] = useState('')
+  const [filter, setFilter] = useState('all')
+  const noticeRef = useRef<HTMLParagraphElement>(null)
+  const load = useCallback(async () => {
+    const response = await fetch('/api/operator/decisions', { cache: 'no-store', credentials: 'same-origin' })
+    if (!response.ok) throw new Error('The inbox is unavailable. Try refreshing in a moment.')
+    setData(await response.json()); setError(null)
   }, [])
-
-  if (loading) {
-    return (
-      <div className="text-center py-12 text-slate-500">
-        Loading decision queue...
-      </div>
-    )
+  useEffect(() => { void load().catch(reason => setError(reason.message)) }, [load])
+  useEffect(() => { if (notice) noticeRef.current?.focus() }, [notice])
+  async function saved(message: string) {
+    try { await load(); setNotice(message) } catch { setNotice(`${message} Refresh to load the latest inbox.`) }
   }
-
-  if (error) {
-    return (
-      <div className="text-center py-12 text-red-600">
-        Failed to load decisions: {error}
-      </div>
-    )
-  }
-
-  if (!data) return null
-
-  const { summary, pending, recently_resolved } = data
-
-  return (
-    <div>
-      {/* Header with severity counts */}
-      <div className="flex items-center gap-4 mb-6 flex-wrap">
-        <h2 className="text-lg font-bold text-slate-800">
-          {summary.total_pending === 0
-            ? 'No pending decisions'
-            : `${summary.total_pending} pending decision${summary.total_pending !== 1 ? 's' : ''}`}
-        </h2>
-        {summary.total_pending > 0 && (
-          <div className="flex gap-2">
-            {(['critical', 'high', 'medium', 'low', 'info'] as DecisionSeverity[])
-              .filter((s) => summary.counts[s] > 0)
-              .map((s) => (
-                <span key={s} className={`px-2 py-0.5 rounded text-xs font-medium border ${SEVERITY_STYLES[s]}`}>
-                  {summary.counts[s]} {s}
-                </span>
-              ))}
-          </div>
-        )}
-      </div>
-
-      {/* Pending decisions */}
-      {pending.length > 0 ? (
-        <div className="space-y-3 mb-8">
-          {pending.map((d) => (
-            <DecisionCard key={d.id} decision={d} />
-          ))}
-        </div>
-      ) : (
-        <p className="text-slate-500 text-sm mb-8">
-          All clear. No decisions awaiting operator judgment.
-        </p>
-      )}
-
-      {/* Recently resolved */}
-      {recently_resolved.length > 0 && (
-        <div>
-          <button
-            onClick={() => setShowResolved(!showResolved)}
-            className="text-sm font-medium text-slate-500 hover:text-slate-700 mb-3"
-          >
-            {showResolved ? 'Hide' : 'Show'} recently resolved ({recently_resolved.length})
-          </button>
-
-          {showResolved && (
-            <div className="space-y-3">
-              {recently_resolved.map((d) => (
-                <DecisionCard key={d.id} decision={d} />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  )
+  const visible = (items: ReviewDecision[]) => items.filter(item => filter === 'all' || item.review_class === filter)
+  return <div className="space-y-6">
+    {notice && <p role="status" tabIndex={-1} ref={noticeRef} className="rounded-lg bg-green-50 border border-green-200 p-4 text-green-900 focus-visible:outline-2">{notice}</p>}
+    <div className="flex flex-wrap gap-3 items-end justify-between"><div>
+      <label htmlFor="review-filter" className="block text-sm font-medium text-slate-700 mb-1">Show</label>
+      <select id="review-filter" value={filter} onChange={event => setFilter(event.target.value)} className="min-h-11 rounded-lg border border-slate-300 p-2 text-base text-slate-800">
+        <option value="all">All decisions</option><option value="editorial">Editorial judgments</option><option value="engineering">Engineering follow-ups</option>
+      </select>
+    </div><button type="button" onClick={() => void load().catch(reason => setError(reason.message))} className="min-h-11 rounded-lg border border-slate-300 px-4 text-slate-800">Refresh inbox</button></div>
+    {error && <p role="alert" className="text-red-800">{error}</p>}
+    {!data && !error && <p role="status" className="text-slate-700">Loading decisions and supporting evidence…</p>}
+    {data && <>
+      <section aria-labelledby="ready-decisions" className="space-y-4"><h2 id="ready-decisions" className="text-xl font-semibold text-slate-900">Ready for review ({visible(data.pending).length})</h2>
+        {data.limited && <p className="text-slate-700">Showing the oldest 100 open decisions. More appear as these are resolved.</p>}
+        {visible(data.pending).length === 0 && <p className="text-slate-700">No decisions waiting in this view.</p>}
+        {visible(data.pending).map(decision => <DecisionCard key={`${decision.id}:${decision.review_version}`} decision={decision} history={data.history} onSaved={saved} />)}
+      </section>
+      {data.deferred.length > 0 && <section aria-labelledby="deferred-decisions" className="space-y-4"><h2 id="deferred-decisions" className="text-xl font-semibold text-slate-900">Deferred ({visible(data.deferred).length})</h2>
+        {visible(data.deferred).map(decision => <DecisionCard key={`${decision.id}:${decision.review_version}`} decision={decision} history={data.history} onSaved={saved} />)}
+      </section>}
+      {data.recently_resolved.length > 0 && <details className="space-y-4"><summary className="min-h-11 cursor-pointer font-semibold text-lg text-slate-800">Recent decisions ({visible(data.recently_resolved).length})</summary>
+        {visible(data.recently_resolved).map(decision => <DecisionCard key={`${decision.id}:${decision.review_version}`} decision={decision} history={data.history} onSaved={saved} />)}
+      </details>}
+    </>}
+  </div>
 }
 
 export default function OperatorDecisionsPage() {
-  return (
-    <OperatorGate
-      fallback={
-        <div className="max-w-4xl mx-auto px-4 py-12 text-center text-slate-500">
-          This page is only available in operator mode.
-        </div>
-      }
-    >
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-slate-900">Operator Decision Queue</h1>
-          <p className="text-sm text-slate-500 mt-1">
-            Decisions requiring human judgment. Primary interface is Claude Code; this is the async read-only view.
-          </p>
-        </div>
-        <DecisionsDashboard />
-      </div>
-    </OperatorGate>
-  )
+  return <OperatorGate fallback={<p className="max-w-4xl mx-auto px-4 py-12 text-slate-700">Sign in as the operator to review decisions.</p>}>
+    <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8"><header className="mb-8">
+      <h1 className="text-3xl font-semibold text-slate-900">Review inbox</h1>
+      <p className="text-base text-slate-700 mt-3">Read the evidence, record your judgment, and publish prepared briefs when they are ready. Every action keeps a review history.</p>
+    </header><DecisionsDashboard /></div>
+  </OperatorGate>
 }

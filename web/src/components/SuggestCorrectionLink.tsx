@@ -7,7 +7,8 @@ export default function SuggestCorrectionLink() {
   return (
     <button
       onClick={openModal}
-      className="text-xs text-slate-400 hover:text-civic-navy-light transition-colors"
+      type="button"
+      className="min-h-11 rounded-sm text-sm text-slate-600 underline underline-offset-4 hover:text-civic-navy transition-colors"
     >
       See something wrong? Suggest a correction
     </button>

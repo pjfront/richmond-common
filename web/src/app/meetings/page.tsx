@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import { Suspense } from 'react'
-import { getMeetingsWithCounts, getMeetingFlagCounts } from '@/lib/queries'
+import { getMeetingsWithCounts } from '@/lib/queries'
 import MeetingsDiscovery from '@/components/MeetingsDiscovery'
 import LastUpdated from '@/components/LastUpdated'
 
@@ -11,13 +11,7 @@ export const metadata: Metadata = {
 }
 
 export default async function MeetingsPage() {
-  const [meetings, flagCountMap] = await Promise.all([
-    getMeetingsWithCounts(),
-    getMeetingFlagCounts(),
-  ])
-
-  // Convert Map to plain object for server→client serialization
-  const flagCounts = Object.fromEntries(flagCountMap)
+  const meetings = await getMeetingsWithCounts()
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
@@ -26,7 +20,7 @@ export default async function MeetingsPage() {
         From official city council minutes and agendas.
       </p>
       <Suspense fallback={<div className="py-8 text-slate-400">Loading meetings...</div>}>
-        <MeetingsDiscovery meetings={meetings} flagCounts={flagCounts} />
+        <MeetingsDiscovery meetings={meetings} />
       </Suspense>
       <LastUpdated />
     </div>

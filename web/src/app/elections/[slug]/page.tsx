@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import type { Metadata } from 'next'
+import NovemberElection from '@/components/NovemberElection'
 import {
   getElectionBySlug,
   getElectionWithCandidates,
@@ -22,6 +23,11 @@ interface PageProps {
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug } = await params
+  if (slug === '2026-general') return {
+    title: 'Richmond November 2026: Mayor, Fire-Station Bond & Campaign Money',
+    description: 'Richmond, California’s November 3 municipal guide: the mayoral runoff, proposed fire-station bond, source-linked campaign reports, and voting dates.',
+    alternates: { canonical: canonicalUrl('/elections/2026-general') },
+  }
   const election = await getElectionBySlug(slug)
   if (!election) {
     return {
@@ -73,6 +79,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 }
 
 export default async function ElectionPage({ params }: PageProps) {
+  if ((await params).slug === '2026-general') return <NovemberElection />
   return <ElectionPageContent params={params} />
 }
 

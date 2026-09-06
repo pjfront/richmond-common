@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import * as Collapsible from '@radix-ui/react-collapsible'
 import type { AgendaItemWithMotions, ThemeNarrative } from '@/lib/types'
 import type { Significance } from '@/lib/significance'
-import { getOverallResult, getCompactTally } from '@/lib/significance'
+import { getOverallResult, getCompactTally, getItemResultLabel } from '@/lib/significance'
 import { agendaItemPath } from '@/lib/format'
 import CategoryBadge from './CategoryBadge'
 import TopicLabel from './TopicLabel'
@@ -33,19 +33,19 @@ interface AgendaItemCardProps {
 
 /** Narrative copy scaled to engagement intensity (D6: narrative over numbers) */
 function communityVoiceCopy(count: number): string {
-  if (count >= 10) return 'This drew significant public input'
-  return 'The public weighed in on this'
+  return `${count} public ${count === 1 ? 'comment' : 'comments'} recorded`
 }
 
 /** Result label for collapsed row */
 function resultLabel(item: AgendaItemWithMotions): { text: string; color: string } | null {
   const result = getOverallResult(item)
   const tally = getCompactTally(item)
-  if (result === 'none') return null
+  const label = getItemResultLabel(item)
+  if (!label) return null
   const tallyStr = tally ? ` ${tally}` : ''
-  if (result === 'passed') return { text: `Passed${tallyStr}`, color: 'text-vote-aye' }
-  if (result === 'failed') return { text: `Failed${tallyStr}`, color: 'text-vote-nay' }
-  return { text: `Mixed${tallyStr}`, color: 'text-slate-500' }
+  if (result === 'passed') return { text: `${label}${tallyStr}`, color: 'text-vote-aye' }
+  if (result === 'failed') return { text: `${label}${tallyStr}`, color: 'text-vote-nay' }
+  return { text: label, color: 'text-slate-600' }
 }
 
 export default function AgendaItemCard({
@@ -59,13 +59,15 @@ export default function AgendaItemCard({
   highlighted = false,
 }: AgendaItemCardProps) {
   const { isOperator } = useOperatorMode()
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(Boolean(forceExpanded))
+  const [lastForceExpanded, setLastForceExpanded] = useState(forceExpanded)
   const [themesExpanded, setThemesExpanded] = useState(false)
 
-  // External expand control (from ToC click)
-  useEffect(() => {
+  // Apply a new ToC request; a resident can still collapse the item afterward.
+  if (forceExpanded !== lastForceExpanded) {
+    setLastForceExpanded(forceExpanded)
     if (forceExpanded) setExpanded(true)
-  }, [forceExpanded])
+  }
 
   const hasMotions = item.motions.length > 0
   const hasDescription = item.description && item.description.length > 0
@@ -114,7 +116,7 @@ export default function AgendaItemCard({
               )}
               {item.public_comment_count > 0 && (
                 <span className="inline-flex items-center px-1.5 py-px rounded text-[11px] font-medium bg-civic-navy/[0.08] text-civic-navy">
-                  {item.public_comment_count} {item.public_comment_count === 1 ? 'speaker' : 'speakers'}
+                  {communityVoiceCopy(item.public_comment_count)}
                 </span>
               )}
               {item.topic_label && (
@@ -179,7 +181,7 @@ export default function AgendaItemCard({
                 )}
                 {item.public_comment_count > 0 && (
                   <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-civic-navy/10 text-civic-navy border border-civic-navy/20">
-                    {item.public_comment_count} public {item.public_comment_count === 1 ? 'speaker' : 'speakers'}
+                    {communityVoiceCopy(item.public_comment_count)}
                   </span>
                 )}
                 {item.topic_label ? (

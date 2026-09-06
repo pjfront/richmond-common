@@ -75,17 +75,13 @@ BAY_AREA_ZIP_PREFIXES = ("94", "950", "951")
 
 @dataclass
 class FilingPeriod:
-    """A filing-deadline-aligned reporting window.
-
-    period_end is filing-deadline-aligned, NOT calendar-quarter-aligned —
-    e.g. Q1 2026 closes 2026-04-24 (FPPC semi-annual deadline), not
-    2026-03-31. The briefing generator covers the legal reporting window
-    so totals reconcile to filed Form 460 / 497 statements.
-    """
+    """Activity window, with filing deadline and election kept separate."""
     label: str            # '2026-Q1'
     kind: str             # 'quarterly' | 'pre_election_24h' | 'semi_annual' | 'annual'
     period_start: date    # inclusive
-    period_end: date      # inclusive (filing-deadline-aligned)
+    period_end: date      # inclusive activity cutoff, NOT the filing deadline
+    filing_deadline: date | None = None
+    election_date: date | None = None
 
 
 # Hard-coded periods until S25 brings filing-calendar discovery online.
@@ -95,7 +91,9 @@ KNOWN_PERIODS: dict[str, FilingPeriod] = {
         label="2026-Q1",
         kind="quarterly",
         period_start=date(2026, 1, 1),
-        period_end=date(2026, 4, 24),
+        period_end=date(2026, 4, 18),
+        filing_deadline=date(2026, 4, 23),
+        election_date=date(2026, 6, 2),
     ),
     # 24-hour pre-election reports: every contribution ≥$1,000 received
     # in the 90 days before an election. The briefing generator runs
@@ -105,6 +103,25 @@ KNOWN_PERIODS: dict[str, FilingPeriod] = {
         kind="pre_election_24h",
         period_start=date(2026, 3, 4),   # 90 days before 2026-06-02 primary
         period_end=date(2026, 6, 2),
+        election_date=date(2026, 6, 2),
+    ),
+    # FPPC local November 3, 2026 candidate schedule (published 2025-05-01):
+    # https://www.fppc.ca.gov/siteassets/documents/tad/filing_schedules/2026/2026_local_nov_01_cand_final.pdf
+    "2026-pre-general-24h": FilingPeriod(
+        "2026-pre-general-24h", "pre_election_24h",
+        date(2026, 8, 5), date(2026, 11, 3), election_date=date(2026, 11, 3),
+    ),
+    "2026-general-pre1": FilingPeriod(
+        "2026-general-pre1", "pre_election", date(2026, 7, 1), date(2026, 9, 19),
+        date(2026, 9, 24), date(2026, 11, 3),
+    ),
+    "2026-general-pre2": FilingPeriod(
+        "2026-general-pre2", "pre_election", date(2026, 9, 20), date(2026, 10, 17),
+        date(2026, 10, 22), date(2026, 11, 3),
+    ),
+    "2026-general-post": FilingPeriod(
+        "2026-general-post", "semi_annual", date(2026, 10, 18), date(2026, 12, 31),
+        date(2027, 2, 1), date(2026, 11, 3),
     ),
 }
 
@@ -245,14 +262,20 @@ def fetch_evidence(
             # Resolve election_id if not provided — default to the most
             # recent election whose date overlaps the period.
             if election_id is None:
-                cur.execute(
+                if period.election_date:
+                    cur.execute(
+                        "SELECT id FROM elections WHERE city_fips = %s AND election_date = %s LIMIT 1",
+                        (city_fips, period.election_date),
+                    )
+                else:
+                    cur.execute(
                     """SELECT id FROM elections
                         WHERE city_fips = %s
                           AND election_date >= %s
                         ORDER BY election_date ASC
                         LIMIT 1""",
-                    (city_fips, period.period_start),
-                )
+                        (city_fips, period.period_start),
+                    )
                 row = cur.fetchone()
                 election_id = row[0] if row else None
 
@@ -784,7 +807,8 @@ def current_period_labels(today: date | None = None) -> list[str]:
     grace_days = 60
     out = []
     for label, period in KNOWN_PERIODS.items():
-        if period.period_start <= today <= period.period_end + timedelta(days=grace_days):
+        active_through = (period.filing_deadline or period.period_end) + timedelta(days=grace_days)
+        if period.period_start <= today <= active_through:
             out.append(label)
     return out
 
