@@ -48,6 +48,38 @@ def test_date_conflict_packet_preserves_paired_report_values_without_repair():
     assert "PRIVATE FIXTURE" not in str(packet)
 
 
+def test_noncash_conflict_packet_packages_both_exact_originals_without_publication():
+    from finance_ledger import reconcile
+    from test_finance_ledger import noncash_conflict_fixture
+    rows = noncash_conflict_fixture()
+    reconcile(rows)
+    result = packets.prepare_finance_packets(rows, TODAY)
+    assert len(result) == 1 and result[0].kind is None
+    evidence = result[0].evidence
+    assert evidence["reason_codes"] == ["rapid_report_noncash_conflict"]
+    assert "does not establish an additional cash receipt" in evidence["reason"][0]
+    entries = evidence["reported_entries"]
+    assert len(entries) == 2
+    assert {entry["source"]["url"] for entry in entries} == {
+        "https://netfile.com/Connect2/api/public/image/216815171",
+        "https://netfile.com/Connect2/api/public/image/216668328",
+    }
+    assert {entry["amount_kind"] for entry in entries} == {"monetary", "reported_noncash_value"}
+    assert all(entry["activity_date"] == "2026-04-08" and entry["amount"] == "2000.00" for entry in entries)
+    assert packets.possible_counterpart(rows[0], rows[1]) and packets.possible_counterpart(rows[1], rows[0])
+    assert "does not merge, delete, or change" in evidence["recommendation"]
+
+
+def test_noncash_comparison_does_not_extend_to_nearby_dates_or_other_forms():
+    from test_finance_ledger import noncash_conflict_fixture
+    periodic, rapid = noncash_conflict_fixture()
+    rapid["activity_date"] = "2026-04-09"
+    assert not packets.possible_counterpart(periodic, rapid)
+    rapid["activity_date"] = "2026-04-08"
+    rapid["transaction_type"] = 21
+    assert not packets.possible_counterpart(periodic, rapid)
+
+
 @pytest.mark.parametrize("updates", [
     {"donor_fppc_id": "1111111"}, {"recipient_fppc_id": None}, {"amount": Decimal("5001")},
     {"activity_date": "2026-07-01"}, {"donor_fppc_id": None, "donor_name": "Reported Donor LLC"},

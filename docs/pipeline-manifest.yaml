@@ -1414,6 +1414,11 @@ queries:
     used_by: ["/elections/2026-general", "/elections/2026-general/money/ahmad-anderson"]
     description: "Exact-filer official metadata cached hourly with explicit staleness/unavailability. The metadata query has no monetary values; its consumers separately use the checked source-pinned JSON via lib/anderson-finance.ts, retaining amounts when the metadata refresh fails and flagging newly detected sources."
   acquireAndersonFilingCoverage: {file: queries/candidate-filing-coverage.ts, tables: [], used_by: []}
+  getJimenezFilingCoverage:
+    file: queries/candidate-filing-coverage.ts
+    tables: []
+    used_by: ["/council/[slug]", "/elections/2026-general", "/elections/2026-general/money/claudia-jimenez"]
+  acquireJimenezFilingCoverage: {file: queries/candidate-filing-coverage.ts, tables: [], used_by: []}
   # ── Meetings ────────────────────────────────────────────────
   getMeetings:
     file: queries.ts
@@ -1458,14 +1463,14 @@ queries:
     used_by: ["/council/[slug]"]
 
   getOfficialContributions:
-    file: queries.ts
+    file: queries/council.ts
     tables: [committees, contributions, donors]
     used_by: ["/council/[slug]"]
 
   getPastElectionDates:
     file: queries.ts
     tables: [elections]
-    used_by: ["/council/[slug]", "/influence/elections"]
+    used_by: ["/council", "/influence/elections"]
 
   getEconomicInterests:
     file: queries.ts
@@ -1540,7 +1545,7 @@ queries:
   getOfficialComparativeStats:
     file: queries.ts
     tables: [committees, contributions]
-    used_by: ["/council/[slug]"]
+    used_by: []
 
   # ── Influence Map ────────────────────────────────────────────
   getAgendaItemBasic:
@@ -1981,7 +1986,7 @@ pages:
     queries: [getPublishedCivicBriefVersion]
     description: "Noindex email destination for one exact reviewed publication, independent of the short story feed; source-read failures and withdrawn/replaced versions have distinct unavailable notices."
   "/elections/2026-general":
-    queries: [getPublicFinanceSnapshot, getPublishedCivicBriefs, getAndersonFilingCoverage]
+    queries: [getPublicFinanceSnapshot, getPublishedCivicBriefs, getAndersonFilingCoverage, getJimenezFilingCoverage]
     description: "Source-checked municipal choices, separate money meanings and explicit coverage, voting and filing dates."
   "/elections/2026-general/money":
     queries: [getPublicFinanceSnapshot]
@@ -1989,6 +1994,9 @@ pages:
   "/elections/2026-general/money/ahmad-anderson":
     queries: [getAndersonFilingCoverage]
     description: "Anderson's source-checked reported period amounts, latest-period spending/cash, and separately dated rapid receipts from anderson-reported-finance.json; source inconsistencies and unverified donor completeness remain explicit. No monetary database query."
+  "/elections/2026-general/money/claudia-jimenez":
+    queries: [getJimenezFilingCoverage]
+    description: "Source-checked Jimenez mayoral cash and noncash totals, June30 cash balance, separately dated July receipts and original source documents from jimenez-reported-finance.json. No monetary database query; newer-report checks never replace checked amounts."
   "/support":
     queries: []
     description: "Existing voluntary support link and free civic research tools."
@@ -2038,10 +2046,10 @@ pages:
     queries: [getOfficials, officialToSlug]
 
   "/council/[slug]":
-    description: "Council member profile — bio, voting record, donors, interests"
+    description: "Council profile with bio, votes, paginated historical committee donation records by actual receipt year, and separately source-checked 2026 Jimenez mayoral finances. Historical donor totals are not campaign totals or rankings."
     queries: [getOfficialBySlug, getOfficialVotingRecord, getOfficialContributions,
               getEconomicInterests, getOfficialWithStats, getOfficialCategoryBreakdown,
-              getOfficialComparativeStats]
+              getOfficialElectionHistory, getJimenezFilingCoverage]
 
   "/council/analytics":
     description: "Phase 2.6 consolidation of three formerly-separate routes — /council/voting-patterns (default tab, public), /council/stats (?tab=stats, operator), /council/patterns (?tab=patterns, operator). Old URLs 308-redirect via next.config.ts. Tabs are real <Link>s for indexability per-tab; force-dynamic to absorb anon statement_timeout under build prerenders."
@@ -2737,6 +2745,15 @@ field_map:
       query: getAndersonFilingCoverage
       column: "official NetFile byFiler inventory + Connect2 metadata"
       sources: [netfile]
+  "/elections/2026-general/money/claudia-jimenez":
+    "reported amounts, source pages and period boundaries":
+      column: "web/src/data/jimenez-reported-finance.json"
+      sources: [netfile]
+      note: "Three adjacent current460 periods sum to the reported calendar-year cash total. Noncash, the overlapping May report, and later receipt disclosures remain separate. Official and committee UUIDs were checked against both2026 candidacies."
+    "new official filings and dated coverage":
+      query: getJimenezFilingCoverage
+      column: "official NetFile byFiler inventory + Connect2 metadata"
+      sources: [netfile]
   "/support":
     "support destination":
       column: ".github/FUNDING.yml"
@@ -3066,6 +3083,12 @@ field_map:
       column: "committees + contributions + elections (per-official aggregated totals and donor counts)"
       sources: [netfile, calaccess, elections]
 
+    "legacy council-grid cycle boundaries":
+      query: getPastElectionDates
+      column: elections.election_date
+      sources: [elections]
+      note: "Retained by the separate legacy grid query; individual profile donation filters use receipt years instead."
+
   # ── Council Profile (/council/[slug]) ───────────────────────
 
   "/council/[slug]":
@@ -3158,19 +3181,9 @@ field_map:
       sources: [netfile, calaccess, escribemeetings, minutes_extraction, form700]
       enrichment: conflict_scanning
 
-    "comparative fundraising stats":
-      query: getOfficialComparativeStats
-      column: "committees + contributions (aggregated donor count and total per official)"
-      sources: [netfile, calaccess]
-
     "election history":
       query: getOfficialElectionHistory
       column: "election_candidates + elections joined per official"
-      sources: [elections]
-
-    "past election dates":
-      query: getPastElectionDates
-      column: elections.election_date
       sources: [elections]
 
   # ── Council Analytics (/council/analytics — tabbed) ──────────
