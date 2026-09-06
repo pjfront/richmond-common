@@ -909,6 +909,20 @@ tables:
 
   # ── Operational Tables ──────────────────────────────────────
 
+  civic_brief_candidates:
+    layer: operational
+    description: "Versioned story, meeting, and finance drafts; only approved versions are public, with sources attached to the exact reviewed text."
+    written_by: {sources: [], enrichments: []}
+    read_by: {enrichments: [], queries: []}
+    api_routes: ["/api/operator/decisions"]
+
+  operator_decision_events:
+    layer: operational
+    description: "Private review snapshots and idempotent action results written atomically by review_decision."
+    written_by: {sources: [], enrichments: []}
+    read_by: {enrichments: [], queries: []}
+    api_routes: ["/api/operator/decisions"]
+
   data_sync_log:
     layer: operational
     description: "Per-source sync execution log (freshness tracking)"
@@ -2389,9 +2403,10 @@ api_routes:
 
   "/api/operator/decisions":
     file: "web/src/app/api/operator/decisions/route.ts"
-    method: GET
-    tables_read: [pending_decisions]
-    description: "Operator decision queue (operator-only)"
+    method: "GET, POST"
+    tables_read: [pending_decisions, civic_brief_candidates, operator_decision_events]
+    rpcs_called: [review_decision]
+    description: "Authenticated same-origin review inbox; optimistic, idempotent status decisions and source-backed brief publication with atomic audit history."
     used_by_pages: ["/operator/decisions"]
 
   "/api/operator/logout":

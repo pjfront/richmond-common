@@ -6,6 +6,12 @@ _Convention: Every session adds observations here. Items stay until promoted to 
 
 ---
 
+## 2026-09-06 review inbox follow-through
+
+- Generic engineering decisions record a judgment; they do not claim to run a fix. Future automatic repair executors need their own small allowlist and validation contract.
+- Publication producers create draft civic briefs and editorial decisions pinned to a content version. Re-extraction must refresh the packet before approval.
+- Move the standalone PostgreSQL publication/role verifier into the standard integration gate after this release.
+
 ## 2026-09-06 access verification follow-up
 
 - Keep private operator state behind database grants and role-scoped policies as well as route authentication. The prepared migration 147 has a disposable PostgreSQL role-access verifier covering public denial, service access, registry public reads, and idempotent replay.

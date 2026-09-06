@@ -72,11 +72,12 @@ gates:
 
   - id: operator-decisions-page
     file: web/src/app/operator/decisions/OperatorDecisionsPage.tsx
-    line: 230
+    line: 160
     category: permanent
     gated_at: '2026-04-01'
     reason: |
-      /operator/decisions workflow. Permanent by definition.
+      /operator/decisions review inbox. Operator-only actions and evidence;
+      individual source-backed briefs publish only through the guarded review RPC.
 
   - id: operator-settings-page
     file: web/src/app/operator/settings/OperatorSettingsPage.tsx
