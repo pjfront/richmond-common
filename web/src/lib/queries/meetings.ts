@@ -1,20 +1,16 @@
+import { readCompleteRecords } from '../complete-record-read'
+import { failReadPath } from '../read-path-unavailable'
 import {
   supabase,
   RICHMOND_FIPS,
-  warnIfEmpty,
-  nameToSlug,
-  isGovernmentEntity,
   filterGovernmentEntityFlags,
   COLS_MEETING_LIST,
   COLS_MEETING_BANNER,
-  COLS_PUBLIC_RECORD_LIST,
 } from './_shared'
 import { isUuid } from '../uuid'
 import { cache } from 'react'
-import RICHMOND_FILERS_DATA from '@/data/netfile-richmond-filers.json'
 import type {
   Meeting,
-  Official,
   AgendaItem,
   Motion,
   Vote,
@@ -25,59 +21,14 @@ import type {
   AgendaItemWithMotions,
   MotionWithVotes,
   MeetingDetail,
-  DonorAggregate,
-  DonorContribution,
-  EconomicInterest,
-  NextRequestRequest,
-  PublicRecordsStats,
-  DepartmentCompliance,
-  Commission,
-  CommissionMember,
-  CommissionWithStats,
-  CommissionStaleness,
-  CategoryStats,
-  ControversyItem,
-  PairwiseAlignment,
-  CategoryDivergence,
-  DivergentMotionRow,
-  DivergentMotion,
-  DonorCategoryPattern,
-  DonorOverlap,
   CategoryCount,
   TopicLabelCount,
-  MeetingWithCounts,
-  FinancialConnectionFlag,
-  OfficialConnectionSummary,
-  SearchResult,
-  SearchResultType,
-  SimilarItem,
-  ContributionNarrativeData,
-  ContributionRecord,
-  BehstedPaymentNarrativeData,
-  ItemVoteContext,
-  RelatedAgendaItem,
-  ItemInfluenceMapData,
-  Election,
-  ElectionCandidate,
-  ElectionWithCandidates,
-  CandidateFundraising,
-  CandidateFundraisingDetail,
-  CandidateTopDonor,
-  CandidateDonorsByCycle,
   PublicCommentDetail,
   CommentTheme,
   ThemeNarrative,
   AgendaItemDetail,
   AgendaItemSibling,
-  NeighborhoodCouncil,
-  Provenance,
-  FilingPeriodBriefing,
-  PACAggregate,
-  PACContributionRow,
-  PACOutgoingRow,
-  PACIndependentExpenditureRow,
 } from '../types'
-import { commentSourceToProvenance } from '../provenance'
 import { getOfficials } from './council'
 
 // ─── Meetings ────────────────────────────────────────────────
@@ -101,18 +52,9 @@ export async function getNextMeeting(
 }
 
 export async function getMeetings(cityFips = RICHMOND_FIPS) {
-  const { data, error } = await supabase
-    .from('meetings')
-    .select(COLS_MEETING_LIST)
-    .eq('city_fips', cityFips)
-    .order('meeting_date', { ascending: false })
-
-  if (error) {
-    console.error('getMeetings query failed:', error)
-    return [] as Meeting[]
-  }
-  warnIfEmpty('getMeetings', data)
-  return data as Meeting[]
+  return await readCompleteRecords('Meeting index', (from, to) => supabase.from('meetings')
+    .select(COLS_MEETING_LIST, { count: 'exact' }).eq('city_fips', cityFips)
+    .order('meeting_date', { ascending: false }).order('id').range(from, to)) as Meeting[]
 }
 
 interface MeetingCounts {
@@ -123,75 +65,55 @@ interface MeetingCounts {
   topic_labels: TopicLabelCount[]
 }
 
-/**
- * Fetch meeting counts via RPC with automatic fallback to direct queries.
- * The RPC (get_meeting_counts) is fast but fragile — it gets dropped and
- * recreated across migrations, so any failed migration leaves meetings
- * showing "0 items." The fallback queries agenda_items directly, which
- * always works as long as the base tables exist.
+/** One complete invoker-RLS source for item, motion-with-vote and category counts.
+ * Migration 064 returns every visible meeting, including explicit zero rows.
+ * Migration 133's RLS excludes cancelled meetings and retired agenda entries.
  */
 export async function fetchMeetingCounts(cityFips: string): Promise<Map<string, MeetingCounts>> {
-  // Try the RPC first (fast, single round-trip for all counts)
-  const { data: counts, error: rpcError } = await supabase.rpc('get_meeting_counts', { p_city_fips: cityFips })
-
-  if (!rpcError && counts && (counts as MeetingCounts[]).length > 0) {
-    return new Map((counts as MeetingCounts[]).map((c) => [c.meeting_id, c]))
-  }
-
-  // RPC failed or returned empty — fall back to direct queries.
-  // This is slower (two queries instead of one RPC) but always works.
-  console.warn(
-    `[Richmond Commons] get_meeting_counts RPC ${rpcError ? 'failed' : 'returned 0 rows'} — falling back to direct count queries.`,
-    rpcError ? rpcError.message : ''
-  )
-
-  // Fetch all agenda_items with their meeting_id via an inner join on meetings.
-  // Supabase PostgREST handles the city_fips filter through the join.
-  const { data: itemRows, error: fallbackError } = await supabase
-    .from('agenda_items')
-    .select('meeting_id, meetings!inner(city_fips)')
-    .is('agenda_source_retired_at', null)
-    .eq('meetings.city_fips', cityFips)
-
-  if (fallbackError) {
-    console.error('[Richmond Commons] Fallback agenda_items count query also failed:', fallbackError.message)
-    return new Map<string, MeetingCounts>()
-  }
-
-  const map = new Map<string, MeetingCounts>()
-  for (const row of (itemRows ?? []) as { meeting_id: string }[]) {
-    const existing = map.get(row.meeting_id)
-    if (existing) {
-      existing.agenda_item_count++
-    } else {
-      map.set(row.meeting_id, {
-        meeting_id: row.meeting_id,
-        agenda_item_count: 1,
-        vote_count: 0,
-        categories: [],
-        topic_labels: [],
-      })
+  const counts = await readCompleteRecords('Meeting counts', async (from, to) => {
+    const page = await supabase.rpc('get_meeting_counts', { p_city_fips: cityFips }, { count: 'exact' })
+      .order('meeting_id').range(from, to)
+    return { ...page, data: page.data === null ? null : (page.data as MeetingCounts[]).map(row => ({ ...row, id: row.meeting_id })) }
+  })
+  const validCount = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+  const validGroups = (groups: unknown, key: 'category' | 'label', itemCount: number): boolean => {
+    if (!Array.isArray(groups)) return false
+    const names = new Set<string>()
+    let sum = 0
+    for (const entry of groups as unknown[]) {
+      if (!entry || typeof entry !== 'object') return false
+      const group = entry as Record<string, unknown>
+      const name = group[key]
+      const count = group.count
+      if (typeof name !== 'string' || !name.trim() || names.has(name) || !validCount(count) || count === 0) return false
+      names.add(name)
+      sum += count
+      if (!Number.isSafeInteger(sum) || sum > itemCount) return false
     }
+    return true
   }
-
-  // Vote counts and categories/topics are not available in fallback mode —
-  // item counts are the critical data. Votes show as 0 until RPC is restored.
-  return map
+  return new Map(counts.map(row => {
+    if (!validCount(row.agenda_item_count) || !validCount(row.vote_count)
+      || !validGroups(row.categories, 'category', row.agenda_item_count)
+      || !validGroups(row.topic_labels, 'label', row.agenda_item_count)) {
+      failReadPath('Meeting counts', 'Invalid source count or category rows')
+    }
+    return [row.meeting_id, { meeting_id: row.meeting_id, agenda_item_count: row.agenda_item_count,
+      vote_count: row.vote_count, categories: row.categories, topic_labels: row.topic_labels }]
+  }))
 }
 
-/** Enrich a meetings array with counts from the shared fetchMeetingCounts helper.
- *  agenda_item_count comes from the stored column on meetings (trigger-maintained),
- *  NOT the RPC — eliminates ISR failures when the RPC times out. */
+/** Use the same checked RPC row for every displayed count; absence is not zero. */
 export function applyMeetingCounts(meetings: Meeting[], countMap: Map<string, MeetingCounts>) {
   return meetings.map((m) => {
     const c = countMap.get(m.id)
-    const allCats = c?.categories ?? []
-    const allLabels = c?.topic_labels ?? []
+    if (!c) failReadPath('Meeting counts', 'A visible meeting has no source count row')
+    const allCats = c.categories
+    const allLabels = c.topic_labels
     return {
       ...m,
-      // Stored column is authoritative; || falls through on 0 to RPC fallback
-      agenda_item_count: Number(m.agenda_item_count || c?.agenda_item_count || 0),
-      vote_count: Number(c?.vote_count ?? 0),
+      agenda_item_count: c.agenda_item_count,
+      vote_count: c.vote_count,
       top_categories: allCats.slice(0, 4),
       all_categories: allCats,
       top_topic_labels: allLabels.slice(0, 5),
@@ -219,175 +141,30 @@ export const getMeeting = cache(async function getMeeting(
     .from('meetings')
     .select('*, bodies(name)')
     .eq('id', meetingId)
-    .single()
+    .maybeSingle()
 
-  if (error || !meeting) return null
+  if (error) failReadPath('Meeting', error)
+  if (!meeting) return null
 
-  // These reads depend only on the meeting, so start them together.
-  const [
-    { data: items },
-    { data: attendance },
-    { data: closedSession },
-    { data: commentRows },
-    allOfficials,
-  ] = await Promise.all([
-    supabase
-      .from('agenda_items')
-      .select('*')
-      .is('agenda_source_retired_at', null)
-      .eq('meeting_id', meetingId)
-      .order('item_number'),
-    supabase
-      .from('meeting_attendance')
-      .select('*, officials(name, role)')
-      .eq('meeting_id', meetingId),
-    supabase
-      .from('closed_session_items')
-      .select('*')
-      .eq('meeting_id', meetingId),
-    supabase
-      .from('public_comments')
-      .select('id, agenda_item_id, speaker_name, comment_type, method, source')
-      .eq('meeting_id', meetingId),
-    getOfficials(meeting.city_fips as string),
+  // Each displayed count and list uses the same complete source rows.
+  const [items, attendance, closedSession, commentRows] = await Promise.all([
+    readCompleteRecords('Meeting agenda', (from, to) => supabase.from('agenda_items')
+      .select('*', { count: 'exact' }).is('agenda_source_retired_at', null).eq('meeting_id', meetingId)
+      .order('item_number').order('id').range(from, to)),
+    readCompleteRecords('Meeting attendance records', (from, to) => supabase.from('meeting_attendance')
+      .select('*, officials(name, role)', { count: 'exact' }).eq('meeting_id', meetingId).order('id').range(from, to)),
+    readCompleteRecords('Closed session records', (from, to) => supabase.from('closed_session_items')
+      .select('*', { count: 'exact' }).eq('meeting_id', meetingId).order('id').range(from, to)),
+    readCompleteRecords('Meeting comment records', (from, to) => supabase.from('public_comments')
+      .select('id, agenda_item_id, speaker_name, comment_type, method, source', { count: 'exact' })
+      .eq('meeting_id', meetingId).order('id').range(from, to)),
   ])
-
-  // Fetch motions for all items
-  const itemIds = (items ?? []).map((i) => i.id)
-  const { data: motions } = itemIds.length > 0
-    ? await supabase
-        .from('motions')
-        .select('*')
-        .in('agenda_item_id', itemIds)
-        .order('sequence_number')
-    : { data: [] }
-
-  // Fetch votes for all motions
-  const motionIds = (motions ?? []).map((m) => m.id)
-  const { data: votes } = motionIds.length > 0
-    ? await supabase
-        .from('votes')
-        .select('*')
-        .in('motion_id', motionIds)
-    : { data: [] }
-
-  // Build a lookup for notable speaker detection.
-  const officialNameMap = new Map(
-    allOfficials.map((o) => [o.name.toLowerCase(), o])
-  )
-
-  // Build per-item comment counts, summaries, and channel breakdowns
-  const commentCountByItem = new Map<string, number>()
-  const commentSpeakersByItem = new Map<string, string[]>()
-  const spokenByItem = new Map<string, number>()
-  const writtenByItem = new Map<string, number>()
-  const commentSourceByItem = new Map<string, string | null>()
-  let totalPublicComments = 0
-  for (const c of (commentRows ?? [])) {
-    if (c.agenda_item_id) {
-      const itemId = c.agenda_item_id as string
-      commentCountByItem.set(itemId, (commentCountByItem.get(itemId) ?? 0) + 1)
-      const speakers = commentSpeakersByItem.get(itemId) ?? []
-      if (c.speaker_name) speakers.push(c.speaker_name as string)
-      commentSpeakersByItem.set(itemId, speakers)
-      if ((c.comment_type as string) === 'written') {
-        writtenByItem.set(itemId, (writtenByItem.get(itemId) ?? 0) + 1)
-      } else {
-        spokenByItem.set(itemId, (spokenByItem.get(itemId) ?? 0) + 1)
-      }
-      if (!commentSourceByItem.has(itemId)) {
-        commentSourceByItem.set(itemId, (c.source as string | null) ?? null)
-      }
-    }
-    totalPublicComments++
-  }
-
-  // Batch-fetch theme narratives for items with comments (inline community voice)
-  const itemIdsWithComments = [...commentCountByItem.keys()]
-  const themeNarrativesByItem = new Map<string, ThemeNarrative[]>()
-
-  if (itemIdsWithComments.length > 0) {
-    // Fetch theme narratives with theme metadata
-    const { data: narrativeRows } = await supabase
-      .from('item_theme_narratives')
-      .select('agenda_item_id, narrative, comment_count, confidence, generated_at, comment_themes(id, slug, label, description)')
-      .in('agenda_item_id', itemIdsWithComments)
-      .order('comment_count', { ascending: false })
-
-    // Fetch comment-to-theme assignments for per-theme channel counts
-    const allCommentIds = (commentRows ?? [])
-      .filter((c) => c.agenda_item_id && itemIdsWithComments.includes(c.agenda_item_id as string))
-      .map((c) => c.id as string)
-
-    const { data: assignmentRows } = allCommentIds.length > 0
-      ? await supabase
-          .from('comment_theme_assignments')
-          .select('comment_id, comment_themes(slug)')
-          .in('comment_id', allCommentIds)
-      : { data: [] }
-
-    // Build comment lookups by ID
-    const commentTypeById = new Map<string, string>()
-    const commentItemById = new Map<string, string>()
-    const commentDetailById = new Map<string, { speaker_name: string; method: string; comment_type: string }>()
-    for (const c of commentRows ?? []) {
-      if (c.id) {
-        const id = c.id as string
-        commentTypeById.set(id, (c.comment_type as string) ?? 'public')
-        if (c.agenda_item_id) commentItemById.set(id, c.agenda_item_id as string)
-        commentDetailById.set(id, {
-          speaker_name: (c.speaker_name as string) || 'Anonymous',
-          method: (c.method as string) || 'unknown',
-          comment_type: (c.comment_type as string) ?? 'public',
-        })
-      }
-    }
-
-    // Compute per-theme counts and comment lists per item
-    // A comment can be assigned to multiple themes, so iterate assignments directly
-    // Key: "itemId:themeSlug" → { spoken, written, comments }
-    type ThemeAccum = { spoken: number; written: number; comments: { speaker_name: string; method: string; comment_type: string }[] }
-    const themeChannelCounts = new Map<string, ThemeAccum>()
-    for (const a of assignmentRows ?? []) {
-      const theme = a.comment_themes as unknown as { slug: string } | null
-      if (!theme?.slug) continue
-      const commentId = a.comment_id as string
-      const itemId = commentItemById.get(commentId)
-      if (!itemId) continue
-      const commentType = commentTypeById.get(commentId) ?? 'public'
-      const detail = commentDetailById.get(commentId)
-      const key = `${itemId}:${theme.slug}`
-      const accum = themeChannelCounts.get(key) ?? { spoken: 0, written: 0, comments: [] }
-      if (commentType === 'written') accum.written++
-      else accum.spoken++
-      if (detail) accum.comments.push(detail)
-      themeChannelCounts.set(key, accum)
-    }
-
-    // Group narratives by item, attaching channel counts and comment lists
-    for (const r of narrativeRows ?? []) {
-      const itemId = r.agenda_item_id as string
-      const theme = r.comment_themes as unknown as CommentTheme
-      const slug = theme?.slug
-      const channelKey = `${itemId}:${slug}`
-      const accum = themeChannelCounts.get(channelKey) ?? { spoken: 0, written: 0, comments: [] }
-
-      const narrative: ThemeNarrative = {
-        theme,
-        narrative: r.narrative as string,
-        comment_count: r.comment_count as number,
-        confidence: r.confidence as number,
-        generated_at: r.generated_at as string,
-        spoken_count: accum.spoken,
-        written_count: accum.written,
-        comments: accum.comments,
-      }
-
-      const arr = themeNarrativesByItem.get(itemId) ?? []
-      arr.push(narrative)
-      themeNarrativesByItem.set(itemId, arr)
-    }
-  }
+  const itemIds = items.map(item => item.id)
+  const motions = itemIds.length ? await readCompleteRecords('Meeting motions', (from, to) => supabase.from('motions')
+    .select('*', { count: 'exact' }).in('agenda_item_id', itemIds).order('sequence_number').order('id').range(from, to)) : []
+  const motionIds = motions.map(motion => motion.id)
+  const votes = motionIds.length ? await readCompleteRecords('Meeting vote records', (from, to) => supabase.from('votes')
+    .select('*', { count: 'exact' }).in('motion_id', motionIds).order('id').range(from, to)) : []
 
   // Assemble the nested structure
   const votesByMotion = new Map<string, Vote[]>()
@@ -404,41 +181,10 @@ export const getMeeting = cache(async function getMeeting(
     motionsByItem.set(m.agenda_item_id, arr)
   }
 
-  const agendaItems: AgendaItemWithMotions[] = ((items ?? []) as AgendaItem[]).map((i) => {
-    const count = commentCountByItem.get(i.id) ?? 0
-    const speakers = commentSpeakersByItem.get(i.id) ?? []
-
-    // Detect notable speakers (current/former officials)
-    const notable: NotableSpeaker[] = []
-    for (const name of speakers) {
-      const official = officialNameMap.get(name.toLowerCase())
-      if (official) {
-        const role = official.is_current
-          ? official.role.replace(/_/g, ' ')
-          : `former ${official.role.replace(/_/g, ' ')}`
-        // Deduplicate
-        if (!notable.some(n => n.name === official.name)) {
-          notable.push({ name: official.name, role })
-        }
-      }
-    }
-
-    // S20: only use YouTube-sourced count from agenda_items.public_comment_count
-    // (set by youtube_comments.py). NULL = no data, don't fall back to
-    // unreliable public_comments JOIN. Items without YouTube data show nothing.
-    const safeCount = i.public_comment_count ?? 0
-
-    return {
-      ...i,
-      motions: motionsByItem.get(i.id) ?? [],
-      public_comment_count: safeCount,
-      comment_summary: safeCount > 0 ? { total: safeCount, notable_speakers: notable } : undefined,
-      theme_narratives: themeNarrativesByItem.get(i.id),
-      spoken_comment_count: spokenByItem.get(i.id) ?? 0,
-      written_comment_count: writtenByItem.get(i.id) ?? 0,
-      comment_source: commentSourceByItem.get(i.id) ?? null,
-    }
-  })
+  const agendaItems: AgendaItemWithMotions[] = (items as AgendaItem[]).map((item) => ({
+    ...item,
+    motions: motionsByItem.get(item.id) ?? [],
+  }))
 
   const attendanceWithOfficials = (attendance ?? []).map((a) => {
     const official = (a as Record<string, unknown>).officials as { name: string; role: string } | null
@@ -463,7 +209,7 @@ export const getMeeting = cache(async function getMeeting(
     agenda_items: agendaItems,
     attendance: attendanceWithOfficials,
     closed_session_items: (closedSession ?? []) as ClosedSessionItem[],
-    total_public_comments: totalPublicComments,
+    total_public_comments: commentRows.length,
   }
 })
 
@@ -534,8 +280,8 @@ export async function getMeetingsWithFlags(cityFips = RICHMOND_FIPS) {
   }))
 }
 
-export async function getConflictFlagsDetailed(meetingId: string, cityFips = RICHMOND_FIPS) {
-  const { data, error } = await supabase
+export async function getConflictFlagsDetailed(meetingId: string, cityFips = RICHMOND_FIPS, client = supabase) {
+  const { data, error } = await client
     .from('conflict_flags')
     .select('*, agenda_items(title, item_number, category), officials(name)')
     .eq('meeting_id', meetingId)

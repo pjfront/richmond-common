@@ -372,9 +372,7 @@ tables:
       enrichments: [orientation_generation]
     read_by:
       enrichments: [conflict_scanning, orientation_generation, transcript_vote_extraction, civic_review_packet_generation]
-      queries: [getMeetings, getMeetingsWithCounts, getMeeting, getMeetingStats,
-                getMeetingsWithFlags, getMeetingForReport, getCoalitionData,
-                getCrossMeetingPatterns, getCommissionMeetings]
+      queries: [getMeetings, getMeetingsWithCounts, getMeeting, getMeetingsWithFlags, getMeetingForReport, getCrossMeetingPatterns, getCommissionMeetings]
 
   agenda_items_embeddings:
     layer: 3
@@ -416,7 +414,7 @@ tables:
       enrichments: [summary_generation]
     read_by:
       enrichments: [conflict_scanning, orientation_generation, summary_generation, civic_review_packet_generation]
-      queries: [getMeeting, getMeetingStats, getMeetingForReport,
+      queries: [getMeeting, getMeetingForReport,
                 getCategoryStats, getControversialItems]
 
   motions:
@@ -438,9 +436,8 @@ tables:
       enrichments: [transcript_vote_extraction]
     read_by:
       enrichments: []
-      queries: [getMeeting, getOfficialVotingRecord, getMeetingStats,
-                getOfficialWithStats, getOfficialCategoryBreakdown,
-                getCoalitionData, getCrossMeetingPatterns]
+      queries: [getMeeting, getOfficialVotingRecord, getOfficialWithStats, getOfficialCategoryBreakdown,
+                getCrossMeetingPatterns]
 
   meeting_attendance:
     layer: 2
@@ -539,7 +536,7 @@ tables:
     read_by:
       enrichments: [conflict_scanning, bio_generation]
       queries: [getOfficials, getOfficialBySlug, getOfficialWithStats,
-                getCoalitionData, getCrossMeetingPatterns,
+                getCrossMeetingPatterns,
                 getAllFinancialConnectionSummaries]
 
   # ── Layer 2: Structured Core — Finance ──────────────────────
@@ -552,7 +549,7 @@ tables:
       enrichments: [contributor_classification, donor_employer_merge, donor_dedup, paper_filing_reconciliation]
     read_by:
       enrichments: [conflict_scanning, filing_period_briefing_generation, donor_employer_merge, donor_dedup, paper_filing_reconciliation]
-      queries: [getOfficialContributions, getMeetingStats, getFinancialConnectionsForOfficial,
+      queries: [getOfficialContributions, getFinancialConnectionsForOfficial,
                 getAllFinancialConnectionSummaries, getCrossMeetingPatterns]
 
   donors:
@@ -646,8 +643,7 @@ tables:
     read_by:
       enrichments: [comment_generation]
       queries: [getConflictFlags, getMeetingsWithFlags, getConflictFlagsDetailed,
-                getFinancialConnectionsForOfficial, getAllFinancialConnectionSummaries,
-                getMeetingStats]
+                getFinancialConnectionsForOfficial, getAllFinancialConnectionSummaries]
 
   scan_runs:
     layer: 2
@@ -669,7 +665,7 @@ tables:
       enrichments: []
     read_by:
       enrichments: []
-      queries: [getPublicRecordsStats, getDepartmentCompliance, getRecentRequests]
+      queries: []
 
   nextrequest_documents:
     layer: 2
@@ -1109,6 +1105,11 @@ tables:
 enrichments:
   civic_review_packet_generation:
     module: civic_review_packets.py
+    workflow_cli:
+      workflow: .github/workflows/data-sync.yml
+      job: daily-finance-ledger
+      step: Prepare changed source records for operator review
+      command: python src/civic_review_packets.py --section all --apply --max-packets 6 --report tmp/finance/review-summary.json
     description: "Bounded deterministic finance comparisons and source-title/receipt publication drafts; no models, automatic publication, or email."
     reads_from: [finance_assertions, meetings, bodies, agenda_items, pending_decisions, civic_brief_candidates]
     writes_to: [pending_decisions, civic_brief_candidates]
@@ -1383,8 +1384,6 @@ queries:
     tables: [meetings, agenda_items, bodies]
     used_by: ["/", "/stories", "/stories/[slug]"]
     description: "Bounded recent/upcoming council agenda discovery; exact item links, source-alias deduplication, and an explicit unavailable state."
-  COLS_RESIDENT_MEETING: {file: queries/civic-stories.ts, tables: [], used_by: []}
-  COLS_RESIDENT_AGENDA_ITEM: {file: queries/civic-stories.ts, tables: [], used_by: []}
   STORY_AGENDA_LIMIT: {file: queries/civic-stories.ts, tables: [], used_by: []}
   RECENT_COUNCIL_LIMIT: {file: queries/civic-stories.ts, tables: [], used_by: []}
   UPCOMING_COUNCIL_LIMIT: {file: queries/civic-stories.ts, tables: [], used_by: []}
@@ -1492,11 +1491,6 @@ queries:
     tables: [votes]
     used_by: ["/council/[slug]"]
 
-  getMeetingStats:
-    file: queries.ts
-    tables: [meetings, agenda_items, votes, contributions, conflict_flags]
-    used_by: ["/council/analytics"]
-
   # ── Conflict Analysis ──────────────────────────────────────
   getConflictFlags:
     file: queries.ts
@@ -1541,11 +1535,6 @@ queries:
     file: queries.ts
     tables: [conflict_flags, motions, officials]
     used_by: ["/financial-connections", "/influence"]
-
-  getOfficialComparativeStats:
-    file: queries.ts
-    tables: [committees, contributions]
-    used_by: []
 
   # ── Influence Map ────────────────────────────────────────────
   getAgendaItemBasic:
@@ -1647,11 +1636,6 @@ queries:
     tables: [election_candidates, contributions]
     used_by: ["/influence/elections/[id]"]
 
-  getCandidateTopDonors:
-    file: queries.ts
-    tables: [contributions, donors]
-    used_by: ["/elections/[slug]"]
-
   # getCandidateContributionBreakdown removed 2026-05-20: its output
   # (per-bucket × per-source-type matrix) is now built inside
   # getCandidateFundraisingDetails so the candidate page does one
@@ -1679,11 +1663,6 @@ queries:
     used_by: []
     returns: "Dormant operator-analysis helper retained after the standalone Mayor funding artifact was retired. Its last-name matching has documented false positives and is not public-ready."
 
-  getOfficialElectionHistory:
-    file: queries.ts
-    tables: [election_candidates, elections]
-    used_by: ["/council/[slug]"]
-
   getCurrentCandidacies:
     file: queries.ts
     tables: [election_candidates, elections]
@@ -1695,25 +1674,11 @@ queries:
     used_by: ["/council"]
 
   # ── Public Records ──────────────────────────────────────────
-  getPublicRecordsStats:
-    file: queries.ts
+  getPublicRecordsSnapshot:
+    file: queries/public_records.ts
     tables: [nextrequest_requests]
-    used_by: ["/public-records"]
-
-  getDepartmentCompliance:
-    file: queries.ts
-    tables: [nextrequest_requests]
-    used_by: ["/public-records"]
-
-  getRecentRequests:
-    file: queries.ts
-    tables: [nextrequest_requests]
-    used_by: ["/public-records"]
-
-  getAllPublicRecords:
-    file: queries.ts
-    tables: [nextrequest_requests]
-    used_by: ["/public-records"]
+    used_by: ["/public-records", "/api/public-records"]
+    returns: "One complete bounded record set, observed status counts and closure-duration denominators; failures are not zeros."
 
   # ── Community Comments ──────────────────────────────────────
   # getCommunityComments removed 2026-05-20: the agenda-item detail
@@ -1788,22 +1753,11 @@ queries:
     tables: []  # Pure string transform
     used_by: ["/topics", "/topics/[slug]"]
 
-  getMostDiscussedItems:
-    file: queries.ts
-    tables: [agenda_items, meetings]
-    used_by: ["/"]
-    returns: "Top agenda items by public_comment_count within recent N days"
-
-  getCoalitionData:
-    file: queries.ts
-    tables: [officials, meetings, votes]
-    used_by: ["/council/analytics"]
-
   getDivergentMotions:
     file: queries.ts
     tables: [officials, meetings, motions, votes, agenda_items]
     used_by: ["/council/analytics"]
-    returns: "{motions: DivergentMotion[], officials} — per-motion vote breakdowns for the public 'where members split' table. Filters to current council members; falls back to 'absent' for members not voting on a motion."
+    returns: "Complete bounded split-motion source records among current council members. Missing votes stay missing; no inferred result or alignment percentage."
 
   getCrossMeetingPatterns:
     file: queries.ts
@@ -1916,27 +1870,21 @@ queries:
   # ── Individual Donors ─────────────────────────────────────────
   getDonorList:
     file: queries/donors.ts
-    tables: [donors, contributions]
-    used_by: ["/donors"]
-    returns: "All individual donors above $5K aggregate threshold with date-range bounds."
+    tables: [donors]
+    used_by: ["/donors", "/donors/[slug]"]
+    returns: "Alphabetical selected donor identities only. Cached $5K threshold preserves historical disclosure scope; no financial totals selected."
 
   getDonorBySlug:
     file: queries/donors.ts
-    tables: [donors, contributions, committees]
+    tables: [donors]
     used_by: ["/donors/[slug]"]
-    returns: "Single donor profile by entity_slug with full contribution details."
+    returns: "Identity resolved from the same selected directory; no separate money cache."
 
   getDonorOutgoing:
     file: queries/donors.ts
     tables: [contributions, committees]
     used_by: ["/donors/[slug]"]
-    returns: "Contributions FROM this individual donor TO committees, with recipient context."
-
-  getDonorCycleBars:
-    file: queries/donors.ts
-    tables: [contributions]
-    used_by: ["/donors/[slug] (temporal layer)"]
-    returns: "Per-election-cycle aggregates of contributions FROM this individual donor."
+    returns: "Complete bounded individual entries retaining amounts, kinds, dates, recipient identity and source links. No election attribution or aggregation."
 
   # ── Search ──────────────────────────────────────────────────
   searchSite:
@@ -1964,12 +1912,6 @@ queries:
     file: queries.ts
     tables: []  # Pure string transform
     used_by: ["/council"]
-
-  parseVoteTally:
-    file: queries.ts
-    tables: []  # Pure string parser
-    used_by: ["/meetings/[id]"]
-
 
 # ══════════════════════════════════════════════════════════════
 # PAGES — Frontend routes → queries used
@@ -2017,7 +1959,7 @@ pages:
 
   "/meetings/[id]":
     description: "Meeting detail — agenda items, votes, attendance"
-    queries: [getMeeting, getAttendance, parseVoteTally, getPromotedTopicLabels]
+    queries: [getMeeting, getAttendance, getPromotedTopicLabels]
 
   "/meetings/[id]/items/[itemNumber]":
     description: "Agenda item detail — full item with comments, votes, related items"
@@ -2028,9 +1970,8 @@ pages:
     queries: [getAgendaItemsByCategory]
 
   "/meetings/most-discussed":
-    description: "Most contentious agenda items by controversy score (top public testimony)"
-    queries: [getControversialItems]
-    publication_tier: graduated
+    description: "Redirect to source-linked split votes; the composite controversy ranking was retired."
+    queries: []
 
   "/topics":
     description: "Topic index — recurring topics promoted by >=3 items city-wide (organic, no curation)"
@@ -2046,15 +1987,12 @@ pages:
     queries: [getOfficials, officialToSlug]
 
   "/council/[slug]":
-    description: "Council profile with bio, votes, paginated historical committee donation records by actual receipt year, and separately source-checked 2026 Jimenez mayoral finances. Historical donor totals are not campaign totals or rankings."
-    queries: [getOfficialBySlug, getOfficialVotingRecord, getOfficialContributions,
-              getEconomicInterests, getOfficialWithStats, getOfficialCategoryBreakdown,
-              getOfficialElectionHistory, getJimenezFilingCoverage]
+    description: "Council identity, one same-row dated voting summary, individual historical finance entries and checked Jimenez mayoral summary; no rankings, guessed cycles or attendance inference."
+    queries: [getOfficialBySlug, getOfficialVotingRecord, getOfficialContributions, getJimenezFilingCoverage]
 
   "/council/analytics":
-    description: "Phase 2.6 consolidation of three formerly-separate routes — /council/voting-patterns (default tab, public), /council/stats (?tab=stats, operator), /council/patterns (?tab=patterns, operator). Old URLs 308-redirect via next.config.ts. Tabs are real <Link>s for indexability per-tab; force-dynamic to absorb anon statement_timeout under build prerenders."
-    queries: [getCoalitionData, getDivergentMotions, getCategoryStats,
-              getControversialItems, getCrossMeetingPatterns]
+    description: "Public source-linked split-motion records. Stats and donor-pattern tabs require server authorization before querying. Former controversy-ranking URLs redirect here."
+    queries: [getDivergentMotions, getCategoryStats, getControversialItems, getCrossMeetingPatterns]
 
   "/reports":
     description: "Operator-only index of meetings with conflict flags. Detail pages (formerly /reports/[meetingId]) are folded into /meetings/[id] as an operator-gated MeetingConflictsSection; the old detail URL 308-redirects to /meetings/[id]#conflicts (Phase 2.6)."
@@ -2090,8 +2028,8 @@ pages:
     queries: [getOfficials, getNeighborhoodCouncils]
 
   "/elections/[slug]":
-    description: "Election detail — voter guide with candidate fundraising, top donors, contribution breakdown"
-    queries: [getElectionBySlug, getCandidateFundraisingDetails, getElectionWithCandidates]
+    description: "Dated candidate roster independent of fundraising coverage; checked campaign summary links do not claim election-only amounts. November uses the separately reviewed guide."
+    queries: [getElectionBySlug, getElectionWithCandidates]
 
   "/elections/[slug]/candidates/[candidateSlug]":
     description: "Candidate detail — voting alignment, top donors, most-discussed votes (S24)"
@@ -2105,7 +2043,7 @@ pages:
     publication_tier: public
 
   "/elections/methodology":
-    description: "Public methodology page — plain-language guide to contribution bucket boundaries with primary-source citations (FPPC $100, SB 1439 $250, Form 497 $1000, Richmond MC $2500)"
+    description: "Dated checked summaries, typed campaign records, unreconciled historical entries and CSV source field definitions"
     queries: []
     publication_tier: public
 
@@ -2151,7 +2089,7 @@ pages:
 
   "/donors/[slug]":
     description: "Individual donor profile — contribution history, cycle bars, and recipient context (S28.6)"
-    queries: [getDonorBySlug, getDonorList, getDonorOutgoing, getDonorCycleBars]
+    queries: [getDonorBySlug, getDonorList, getDonorOutgoing]
     publication_tier: public
 
   "/influence/methodology":
@@ -2172,8 +2110,8 @@ pages:
     queries: [getCommission, getCommissionMeetings]
 
   "/public-records":
-    description: "CPRA compliance dashboard"
-    queries: [getPublicRecordsStats, getDepartmentCompliance, getRecentRequests]
+    description: "One complete set of source-linked requests and observed status/closure counts; no first-response, overdue or compliance claims."
+    queries: [getPublicRecordsSnapshot]
 
   "/search":
     description: "Full-text and semantic search"
@@ -2387,13 +2325,6 @@ rpcs:
     used_by_queries: [getControversialItems]
     notes: "Sort: comment count DESC, vote split DESC, motions DESC. Uses agenda_items.public_comment_count (fixed in 085)"
 
-  get_contested_votes:
-    migration: "038"
-    reads_from: [votes, motions, agenda_items, meetings]
-    returns: "{motion_id, official_id, official_name, vote_choice, category}"
-    used_by_queries: [getCoalitionData]
-    notes: "Migration 103 added optional p_official_ids UUID[]. When provided, votes are pre-filtered to those officials in SQL and contestedness re-evaluated within the subset, keeping the response under PostgREST's 10K-row cap."
-
   get_divergent_motions_detail:
     migration: "096"
     reads_from: [votes, motions, agenda_items, meetings]
@@ -2492,8 +2423,8 @@ api_routes:
   "/api/flag-details":
     file: "web/src/app/api/flag-details/route.ts"
     method: GET
-    tables_read: [conflict_flags, meetings, agenda_items, officials, motions, votes]
-    description: "Expanded conflict flag detail with vote context"
+    tables_read: [conflict_flags, meetings, agenda_items, officials]
+    description: "Current public-eligible flag detail; incomplete vote-context aggregates retired."
     used_by_pages: ["/reports/[meetingId]"]
 
   "/api/feedback":
@@ -2514,7 +2445,7 @@ api_routes:
   "/api/public-records":
     file: "web/src/app/api/public-records/route.ts"
     method: GET
-    description: "CPRA compliance stats (delegates to queries.ts)"
+    description: "Complete request snapshot and observed status/closure-duration denominators; failed reads return unavailable."
     used_by_pages: ["/public-records"]
 
   "/api/operator/decisions":
@@ -2837,12 +2768,6 @@ field_map:
       sources: [escribemeetings, minutes_extraction]
       enrichment: "rules-based categorization in load_meeting_to_db"
 
-    "stats bar counts":
-      query: getMeetingStats
-      column: "COUNT(meetings, agenda_items, votes, contributions, conflict_flags)"
-      sources: [escribemeetings, minutes_extraction, netfile, calaccess]
-      enrichment: conflict_scanning
-
     "latest meeting flags":
       query: getConflictFlags
       column: "conflict_flags.* for latest meeting"
@@ -2859,12 +2784,6 @@ field_map:
       query: getCurrentCandidacies
       column: "election_candidates joined with elections"
       sources: [elections]
-
-    "most discussed items":
-      query: getMostDiscussedItems
-      column: "agenda_items.public_comment_count + meetings.meeting_date"
-      sources: [escribemeetings, minutes_extraction]
-      note: "Top N items in last 30 days by public_comment_count"
 
     "upcoming meeting banner":
       query: getNextMeeting
@@ -3092,48 +3011,28 @@ field_map:
   # ── Council Profile (/council/[slug]) ───────────────────────
 
   "/council/[slug]":
-    "bio summary":
+    "official identity":
       query: getOfficialBySlug
-      column: officials.bio_summary
-      sources: []
-      enrichment: bio_generation
+      column: "officials.name, role, seat and recorded term"
+      note: "Seeded council identity; no inferred election-history narrative."
 
-    "bio factual":
-      query: getOfficialBySlug
-      column: officials.bio_factual
-      sources: []
-      enrichment: bio_generation
+    "dated voting coverage":
+      query: getOfficialVotingRecord
+      column: "same unique source-row IDs, agenda items, meeting IDs and dates as the voting table"
+      sources: [minutes_extraction, escribemeetings]
+      note: "No stored AI bio, attendance rate or majority-alignment calculation."
 
-    "vote count":
-      query: getOfficialWithStats
-      column: "COUNT(votes.id)"
-      sources: [minutes_extraction]
-
-    "attendance rate":
-      query: getOfficialWithStats
-      column: "meeting_attendance.status aggregation"
-      sources: [minutes_extraction]
+    "historical finance entries":
+      query: getOfficialContributions
+      column: "individual contributions with reported kinds, amounts, receipt dates, committee identifiers and filing links"
+      sources: [netfile, calaccess]
+      note: "These unreconciled records are not summed as fundraising or grouped as unique people."
 
     "voting record":
       query: getOfficialVotingRecord
       rpc: get_official_voting_record
       column: "flat votes + motions + agenda_items + meetings projection"
       sources: [minutes_extraction, escribemeetings]
-
-    "top donor name":
-      query: getOfficialContributions
-      column: donors.name
-      sources: [netfile, calaccess]
-
-    "top donor amount":
-      query: getOfficialContributions
-      column: "SUM(contributions.amount)"
-      sources: [netfile, calaccess]
-
-    "top donor employer":
-      query: getOfficialContributions
-      column: donors.employer
-      sources: [netfile, calaccess]
 
     "category breakdown":
       query: getOfficialCategoryBreakdown
@@ -3181,11 +3080,6 @@ field_map:
       sources: [netfile, calaccess, escribemeetings, minutes_extraction, form700]
       enrichment: conflict_scanning
 
-    "election history":
-      query: getOfficialElectionHistory
-      column: "election_candidates + elections joined per official"
-      sources: [elections]
-
   # ── Council Analytics (/council/analytics — tabbed) ──────────
   # Phase 2.6 consolidated /council/stats, /council/voting-patterns,
   # /council/patterns into a single tabbed page. The tabs are UX only;
@@ -3193,51 +3087,14 @@ field_map:
 
   "/council/analytics":
     # Default (voting patterns) tab
-    "pairwise agreement rate":
-      query: getCoalitionData
-      rpc: get_contested_votes
-      column: "votes.vote_choice pairwise comparison on contested motions"
-      sources: [minutes_extraction]
-
     "where members split (per-motion vote table)":
       query: getDivergentMotions
       rpc: get_divergent_motions_detail
       column: "votes.vote_choice grouped per motion with motion text + agenda item title + procedural flag"
       sources: [minutes_extraction]
-      note: "Headline section (Leisa S24.26 ask). Procedural votes hidden by default; user toggle reveals them with badge."
-
-    "category divergences":
-      query: getCoalitionData
-      column: "agenda_items.category × votes.vote_choice"
-      sources: [minutes_extraction, escribemeetings]
+      note: "Individual source records; no inferred absence, whole-item outcome or pairwise rate. Sources and recorded choices are visible per motion."
 
     # Stats tab (?tab=stats)
-    "total meetings count":
-      query: getMeetingStats
-      column: "COUNT(meetings.id)"
-      sources: [escribemeetings, minutes_extraction]
-
-    "total agenda items count":
-      query: getMeetingStats
-      column: "COUNT(agenda_items.id)"
-      sources: [escribemeetings, minutes_extraction]
-
-    "total votes count":
-      query: getMeetingStats
-      column: "COUNT(votes.id)"
-      sources: [minutes_extraction]
-
-    "total contributions count":
-      query: getMeetingStats
-      column: "COUNT(contributions.id)"
-      sources: [netfile, calaccess]
-
-    "total conflict flags count":
-      query: getMeetingStats
-      column: "COUNT(conflict_flags.id)"
-      sources: [netfile, calaccess, escribemeetings, minutes_extraction, form700]
-      enrichment: conflict_scanning
-
     "category stats":
       query: getCategoryStats
       rpc: get_category_stats
@@ -3377,42 +3234,11 @@ field_map:
   # ── Public Records (/public-records) ────────────────────────
 
   "/public-records":
-    "total requests":
-      query: getPublicRecordsStats
-      column: "COUNT(nextrequest_requests)"
+    "request records and observed status counts":
+      query: getPublicRecordsSnapshot
+      column: "nextrequest_requests complete source-valid rows; status counts and known closure-duration denominator from those same rows"
       sources: [nextrequest]
-
-    "avg response days":
-      query: getPublicRecordsStats
-      column: "AVG(nextrequest_requests.days_to_close)"
-      sources: [nextrequest]
-
-    "on time rate":
-      query: getPublicRecordsStats
-      column: "nextrequest_requests.days_to_close <= 10"
-      sources: [nextrequest]
-
-    "currently overdue":
-      query: getPublicRecordsStats
-      column: "nextrequest_requests.status + submitted_date"
-      sources: [nextrequest]
-
-    "department compliance":
-      query: getDepartmentCompliance
-      column: "nextrequest_requests grouped by department"
-      sources: [nextrequest]
-
-    "recent requests":
-      query: getRecentRequests
-      column: "nextrequest_requests.*"
-      sources: [nextrequest]
-
-    "all public records":
-      query: getAllPublicRecords
-      column: "nextrequest_requests.* (paginated)"
-      sources: [nextrequest]
-
-  # ── Search (/search) ────────────────────────────────────────
+      note: "Closed status and days_to_close do not establish first-response timing or legal compliance."
 
   "/search":
     "search results":
@@ -3654,11 +3480,8 @@ field_map:
   # ── Most Discussed (/meetings/most-discussed) ───────────────
 
   "/meetings/most-discussed":
-    "controversial items":
-      query: getControversialItems
-      rpc: get_controversial_items
-      column: "agenda_items.public_comment_count + motions + votes"
-      sources: [escribemeetings, minutes_extraction]
+    "redirect":
+      note: "Redirects to /council/analytics. No public numerical ranking."
 
   # ── Elections Index (/elections) ────────────────────────────
 
@@ -3727,33 +3550,16 @@ field_map:
   # ── Election Detail (/elections/[slug]) ─────────────────────
 
   "/elections/[slug]":
-    "election by slug":
+    "election identity":
       query: getElectionBySlug
-      column: "elections.* by year+type slug"
+      column: "elections.date, type and source"
       sources: [elections]
 
-    "candidates with fundraising":
+    "candidate roster and election date":
       query: getElectionWithCandidates
-      column: "elections + election_candidates joined"
+      column: "elections + election_candidates identities and source dates"
       sources: [elections]
-
-    "candidate fundraising detail":
-      query: getCandidateFundraisingDetails
-      column: "election_candidates + contributions + committees"
-      sources: [elections, netfile, calaccess]
-
-    "candidate top donors":
-      query: getCandidateTopDonors
-      column: "contributions + donors aggregated per candidate (top N by total)"
-      sources: [netfile, calaccess]
-
-    "candidate contribution matrix":
-      query: getCandidateFundraisingDetails
-      column: "contributions partitioned by amount bucket × contributor_type — populated inside the existing getCandidateFundraisingDetails round-trip"
-      sources: [netfile, calaccess]
-      note: "Bucket boundaries are anchored to regulatory thresholds (FPPC $100, SB 1439 $250, Form 497 $1000, Richmond MC $2500). See web/src/lib/contributionBuckets.ts (single source of truth) and /elections/methodology (public-facing explanation)."
-
-  # ── Candidate Detail (/elections/[slug]/candidates/[candidateSlug]) ──
+      note: "Candidate count does not establish an unopposed race. No legacy fundraising cache is queried on this public page."
 
   "/elections/[slug]/candidates/[candidateSlug]":
     "candidate election context":
@@ -3806,8 +3612,8 @@ field_map:
   # ── Elections Methodology (/elections/methodology) ──────────
 
   "/elections/methodology":
-    "contribution bucket boundaries":
-      column: "static — reads BUCKETS + SOURCE_TYPES constants from web/src/lib/contributionBuckets.ts"
+    "campaign record methodology":
+      column: "static definitions of dated summaries, typed transactions, historical entries and CSV provenance"
       note: "Public methodology page explaining the per-bucket regulatory anchors (FPPC $100, SB 1439 $250, Form 497 $1000, Richmond MC $2500). No DB queries. Pairs with the bucket display on candidate pages."
 
   # ── Subscribe Landing (/subscribe) ──────────────────────────
@@ -3947,12 +3753,6 @@ field_map:
       sources: [netfile, calaccess]
       note: "Money FROM the individual TO committees, with recipient candidate context."
 
-    "Donor per-cycle bars":
-      query: getDonorCycleBars
-      column: "contributions aggregated per election cycle for one donor"
-      sources: [netfile, calaccess]
-      note: "Per-cycle giving totals for the temporal layer."
-
   # ── Individual Donors Index (/donors) — S28.6 Public ───────────
 
   "/donors":
@@ -3960,7 +3760,7 @@ field_map:
       query: getDonorList
       column: "donors of entity_type = 'person' with total_contributed >= $5K"
       sources: [netfile, calaccess]
-      note: "S28.6: individual donor profiles. Sorted by total contributed."
+      note: "Alphabetical identity directory. Cached eligibility threshold is not displayed as verified giving."
 
 
 # ══════════════════════════════════════════════════════════════
@@ -4711,7 +4511,7 @@ expectations:
           SELECT 1
           FROM (
             SELECT lower(unnest(string_to_array(
-              regexp_replace(COALESCE(ai_inner.title, ''), '[^A-Za-z ]', ' ', 'g'),
+              regexp_replace(COALESCE(ai_inner.title, ''), '[^A-Za-z]', ' ', 'g'),
               ' '
             ))) AS w
             FROM agenda_items ai_inner
@@ -4841,7 +4641,7 @@ expectations:
       FROM motions mo
       JOIN agenda_items ai ON ai.id = mo.agenda_item_id
       JOIN meetings m ON m.id = ai.meeting_id
-      CROSS JOIN regexp_matches(mo.vote_explainer, '\$\s*([0-9](?:[0-9,]*[0-9])?(?:\.[0-9]+)?)', 'g') AS rm(captures)
+      CROSS JOIN regexp_matches(mo.vote_explainer, '\$\s*([0-9](?:[0-9, ]*[0-9])?(?:\.[0-9]+)?)', 'g') AS rm(captures)
       WHERE m.city_fips = '0660620'
         AND m.meeting_type = 'regular'
         AND mo.vote_explainer IS NOT NULL
@@ -4865,7 +4665,7 @@ expectations:
             COALESCE(ai.description, '') || ' ' ||
             COALESCE(ai.title, '') || ' ' ||
             COALESCE(ai.plain_language_summary, ''),
-            '\$\s*([0-9](?:[0-9,]*[0-9])?(?:\.[0-9]+)?)',
+            '\$\s*([0-9](?:[0-9, ]*[0-9])?(?:\.[0-9]+)?)',
             'g'
           ) AS source_rm(captures)
           WHERE ABS(
@@ -4882,7 +4682,7 @@ expectations:
             COALESCE(ai.description, '') || ' ' ||
             COALESCE(ai.title, '') || ' ' ||
             COALESCE(ai.plain_language_summary, ''),
-            '\$\s*([0-9](?:[0-9,]*[0-9])?(?:\.[0-9]+)?)',
+            '\$\s*([0-9](?:[0-9, ]*[0-9])?(?:\.[0-9]+)?)',
             'g'
           ) WITH ORDINALITY AS s1(captures, ord1)
           CROSS JOIN LATERAL regexp_matches(
@@ -4890,7 +4690,7 @@ expectations:
             COALESCE(ai.description, '') || ' ' ||
             COALESCE(ai.title, '') || ' ' ||
             COALESCE(ai.plain_language_summary, ''),
-            '\$\s*([0-9](?:[0-9,]*[0-9])?(?:\.[0-9]+)?)',
+            '\$\s*([0-9](?:[0-9, ]*[0-9])?(?:\.[0-9]+)?)',
             'g'
           ) WITH ORDINALITY AS s2(captures, ord2)
           WHERE s2.ord2 > s1.ord1  -- distinct pairs, unordered

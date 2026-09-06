@@ -1,84 +1,8 @@
-import {
-  supabase,
-  RICHMOND_FIPS,
-  warnIfEmpty,
-  nameToSlug,
-  isGovernmentEntity,
-  filterGovernmentEntityFlags,
-  COLS_MEETING_LIST,
-  COLS_MEETING_BANNER,
-  COLS_FLAG_SUMMARY,
-  COLS_PUBLIC_RECORD_LIST,
-} from './_shared'
-import RICHMOND_FILERS_DATA from '@/data/netfile-richmond-filers.json'
-import type {
-  Meeting,
-  Official,
-  AgendaItem,
-  Motion,
-  Vote,
-  MeetingAttendance,
-  ConflictFlag,
-  ClosedSessionItem,
-  NotableSpeaker,
-  AgendaItemWithMotions,
-  MotionWithVotes,
-  MeetingDetail,
-  DonorAggregate,
-  DonorContribution,
-  EconomicInterest,
-  NextRequestRequest,
-  PublicRecordsStats,
-  DepartmentCompliance,
-  Commission,
-  CommissionMember,
-  CommissionWithStats,
-  CommissionStaleness,
-  CategoryStats,
-  ControversyItem,
-  PairwiseAlignment,
-  CategoryDivergence,
-  DivergentMotionRow,
-  DivergentMotion,
-  DonorCategoryPattern,
-  DonorOverlap,
-  CategoryCount,
-  TopicLabelCount,
-  MeetingWithCounts,
-  FinancialConnectionFlag,
-  OfficialConnectionSummary,
-  SearchResult,
-  SearchResultType,
-  SimilarItem,
-  ContributionNarrativeData,
-  ContributionRecord,
-  BehstedPaymentNarrativeData,
-  ItemVoteContext,
-  RelatedAgendaItem,
-  ItemInfluenceMapData,
-  Election,
-  ElectionCandidate,
-  ElectionWithCandidates,
-  CandidateFundraising,
-  CandidateFundraisingDetail,
-  CandidateTopDonor,
-  CandidateDonorsByCycle,
-  PublicCommentDetail,
-  CommentTheme,
-  ThemeNarrative,
-  AgendaItemDetail,
-  AgendaItemRef,
-  AgendaItemSibling,
-  NeighborhoodCouncil,
-  Provenance,
-  FilingPeriodBriefing,
-  PACAggregate,
-  PACContributionRow,
-  PACOutgoingRow,
-  PACIndependentExpenditureRow,
-} from '../types'
+import { supabase, RICHMOND_FIPS, nameToSlug } from './_shared'
+import type { FinancialConnectionFlag, OfficialConnectionSummary, CandidateTopDonor, CandidateDonorsByCycle } from '../types'
 import { CONFIDENCE_PUBLISHED } from '../thresholds'
-import { commentSourceToProvenance } from '../provenance'
+import { contributionYear, historicalFilingUrl } from '../historical-donor-records'
+import { readCompleteRecords } from '../complete-record-read'
 
 // ─── Financial Connections (S10.4) ───────────────────────────
 
@@ -401,99 +325,27 @@ export async function getFullCandidateDonors(
  *  Resolved per S28.6 spec Option (b): $5,000 aggregate threshold. */
 const DONOR_PROFILE_THRESHOLD = 5_000
 
-/** Current election cycle (e.g. 2026). Odd years roll forward. */
-function currentElectionCycle(): number {
-  const y = new Date().getFullYear()
-  return y % 2 === 0 ? y : y + 1
-}
+const COLS_DONOR_DIRECTORY = 'id, name, employer, occupation, entity_slug'
+const COLS_DONOR_OUTGOING = 'id, amount, contribution_date, contribution_type, filing_id, source, committees!inner(id, name, candidate_name, filer_id)'
 
-/** First day of the current election cycle's contribution window (Jan 1 of year-1). */
-function currentCycleStart(): string {
-  return `${currentElectionCycle() - 1}-01-01`
-}
-
-/** Bucket a date into its election cycle (even year stays, odd year rolls forward). */
-function donorCycleOf(dateStr: string | null): number | null {
-  if (!dateStr) return null
-  const year = parseInt(dateStr.slice(0, 4), 10)
-  if (Number.isNaN(year)) return null
-  return year % 2 === 0 ? year : year + 1
-}
-
-/** List all individual donors above the $5K aggregate threshold. */
+/** The existing $5K cache threshold selects directory eligibility only, never a public money total. */
 export async function getDonorList(
   cityFips = RICHMOND_FIPS,
 ): Promise<import('../../lib/types').DonorProfile[]> {
-  const { data: donors } = await supabase
-    .from('donors')
-    .select('id, name, employer, occupation, entity_slug, total_contributed, distinct_recipients')
-    .eq('city_fips', cityFips)
-    .eq('entity_type', 'person')
-    .gte('total_contributed', DONOR_PROFILE_THRESHOLD)
-    .not('entity_slug', 'is', null)
-    .order('total_contributed', { ascending: false })
-
-  if (!donors || donors.length === 0) return []
-
-  // Fetch date bounds and current-cycle totals for all donors.
-  // No date filter — per-donor result sets are small and all-time means all-time.
-  const donorIds = donors.map((d) => d.id as string)
-  const dateMap = new Map<string, { earliest: string; latest: string }>()
-  const cycleStart = currentCycleStart()
-  const currentCycleByDonor = new Map<string, number>()
-
-  // ponytail: batch in groups of 300 to stay under Supabase URL length limits
-  for (let i = 0; i < donorIds.length; i += 300) {
-    const batch = donorIds.slice(i, i + 300)
-    const { data: dateRows } = await supabase
-      .from('contributions')
-      .select('donor_id, contribution_date, amount')
-      .in('donor_id', batch)
-      .eq('city_fips', cityFips)
-      .range(0, 99999)
-
-    if (dateRows) {
-      for (const r of dateRows) {
-        const did = r.donor_id as string
-        const date = r.contribution_date as string | null
-        const amount = Number(r.amount ?? 0)
-        if (!date) continue
-        const entry = dateMap.get(did)
-        if (entry) {
-          if (date < entry.earliest) entry.earliest = date
-          if (date > entry.latest) entry.latest = date
-        } else {
-          dateMap.set(did, { earliest: date, latest: date })
-        }
-        // Accumulate current-cycle total
-        if (date >= cycleStart) {
-          currentCycleByDonor.set(did, (currentCycleByDonor.get(did) ?? 0) + amount)
-        }
-      }
+  const rows = await readCompleteRecords('Donor directory', (from, to) =>
+    supabase.from('donors').select(COLS_DONOR_DIRECTORY, { count: 'exact' })
+      .eq('city_fips', cityFips).eq('entity_type', 'person')
+      .gte('total_contributed', DONOR_PROFILE_THRESHOLD).not('entity_slug', 'is', null)
+      .order('name').order('id').range(from, to), { maxRows: 2000 })
+  const slugs = new Set<string>()
+  return rows.map(row => {
+    if (!row.entity_slug || slugs.has(row.entity_slug) || !row.name?.trim()) {
+      throw new Error('Donor directory identity is ambiguous')
     }
-  }
-
-  return donors
-    .map((d) => {
-      const bounds = dateMap.get(d.id as string)
-      return {
-        slug: d.entity_slug as string,
-        display_name: d.name as string,
-        employer: d.employer as string | null,
-        occupation: d.occupation as string | null,
-        donor_id: d.id as string,
-        total_contributed: (d.total_contributed as number) ?? 0,
-        current_cycle_total: currentCycleByDonor.get(d.id as string) ?? 0,
-        recipient_count: (d.distinct_recipients as number) ?? 0,
-        earliest_contribution_date: bounds?.earliest ?? null,
-        latest_contribution_date: bounds?.latest ?? null,
-      }
-    })
-    .sort((a, b) => {
-      const da = b.current_cycle_total - a.current_cycle_total
-      if (da !== 0) return da
-      return b.total_contributed - a.total_contributed
-    })
+    slugs.add(row.entity_slug)
+    return { slug: row.entity_slug, display_name: row.name, employer: row.employer,
+      occupation: row.occupation, donor_id: row.id }
+  })
 }
 
 /** Get a single donor profile by entity_slug. */
@@ -505,61 +357,26 @@ export async function getDonorBySlug(
   return all.find((d) => d.slug === slug) ?? null
 }
 
-/** All contributions FROM this donor TO committees. */
+/** Complete bounded legacy entries, retaining original type, signed amount and filing identity. */
 export async function getDonorOutgoing(
   donorId: string,
   cityFips = RICHMOND_FIPS,
 ): Promise<import('../../lib/types').DonorOutgoingRow[]> {
-  const { data } = await supabase
-    .from('contributions')
-    .select(
-      'amount, contribution_date, contribution_type, filing_id, committees!inner(id, name, candidate_name)',
-    )
-    .eq('donor_id', donorId)
-    .eq('city_fips', cityFips)
-    .order('contribution_date', { ascending: false })
-    .range(0, 19999)
-
-  if (!data) return []
-  return data.map((row) => {
-    const committee = (row as Record<string, unknown>).committees as {
-      id: string; name: string; candidate_name: string | null
+  const rows = await readCompleteRecords('Donor records', (from, to) => supabase.from('contributions')
+    .select(COLS_DONOR_OUTGOING, { count: 'exact' }).eq('donor_id', donorId).eq('city_fips', cityFips)
+    .order('contribution_date', { ascending: false }).order('id').range(from, to))
+  return rows.map(row => {
+    const committee = row.committees as unknown as { id: string; name: string; candidate_name: string | null; filer_id: string | null }
+    const amount = Number(row.amount)
+    if (row.amount == null || !Number.isFinite(amount) || !Number.isSafeInteger(Math.round(amount * 100))
+        || !contributionYear(row.contribution_date) || !committee?.id || !committee.name?.trim()) {
+      throw new Error('Donor record identity, date or amount is invalid')
     }
-    return {
-      recipient_committee_name: committee.name,
-      recipient_committee_id: committee.id,
-      recipient_candidate_name: committee.candidate_name,
-      amount: Number(row.amount ?? 0),
-      contribution_date: row.contribution_date as string,
-      contribution_type: (row.contribution_type as string | null) ?? null,
-      filing_id: (row.filing_id as string | null) ?? null,
-    }
+    const source = typeof row.source === 'string' && row.source.trim() ? row.source : null
+    const filingId = typeof row.filing_id === 'string' && row.filing_id.trim() ? row.filing_id : null
+    return { record_id: row.id, recipient_committee_name: committee.name, recipient_committee_id: committee.id,
+      recipient_committee_fppc_id: committee.filer_id, recipient_candidate_name: committee.candidate_name,
+      amount, contribution_date: row.contribution_date, contribution_type: row.contribution_type ?? null,
+      filing_id: filingId, source, source_url: historicalFilingUrl(source, filingId) }
   })
 }
-
-/** Per-cycle aggregates for the timeline layer. */
-export async function getDonorCycleBars(
-  donorId: string,
-  cityFips = RICHMOND_FIPS,
-): Promise<Array<{ cycle: number; total: number }>> {
-  const { data } = await supabase
-    .from('contributions')
-    .select('amount, contribution_date')
-    .eq('donor_id', donorId)
-    .eq('city_fips', cityFips)
-    .range(0, 99999)
-
-  if (!data) return []
-
-  const buckets = new Map<number, number>()
-  for (const r of data) {
-    const cycle = donorCycleOf(r.contribution_date as string | null)
-    if (cycle === null) continue
-    buckets.set(cycle, (buckets.get(cycle) ?? 0) + Number(r.amount ?? 0))
-  }
-
-  return Array.from(buckets.entries())
-    .map(([cycle, total]) => ({ cycle, total }))
-    .sort((a, b) => a.cycle - b.cycle)
-}
-

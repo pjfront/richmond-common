@@ -1,100 +1,19 @@
 import { fetchMeetingCounts, applyMeetingCounts } from './meetings'
-import {
-  supabase,
-  RICHMOND_FIPS,
-  warnIfEmpty,
-  nameToSlug,
-  isGovernmentEntity,
-  filterGovernmentEntityFlags,
-  COLS_MEETING_LIST,
-  COLS_MEETING_BANNER,
-  COLS_FLAG_SUMMARY,
-  COLS_PUBLIC_RECORD_LIST,
-} from './_shared'
-import RICHMOND_FILERS_DATA from '@/data/netfile-richmond-filers.json'
-import type {
-  Meeting,
-  Official,
-  AgendaItem,
-  Motion,
-  Vote,
-  MeetingAttendance,
-  ConflictFlag,
-  ClosedSessionItem,
-  NotableSpeaker,
-  AgendaItemWithMotions,
-  MotionWithVotes,
-  MeetingDetail,
-  DonorAggregate,
-  DonorContribution,
-  EconomicInterest,
-  NextRequestRequest,
-  PublicRecordsStats,
-  DepartmentCompliance,
-  Commission,
-  CommissionMember,
-  CommissionWithStats,
-  CommissionStaleness,
-  CategoryStats,
-  ControversyItem,
-  PairwiseAlignment,
-  CategoryDivergence,
-  DivergentMotionRow,
-  DivergentMotion,
-  DonorCategoryPattern,
-  DonorOverlap,
-  CategoryCount,
-  TopicLabelCount,
-  MeetingWithCounts,
-  FinancialConnectionFlag,
-  OfficialConnectionSummary,
-  SearchResult,
-  SearchResultType,
-  SimilarItem,
-  ContributionNarrativeData,
-  ContributionRecord,
-  BehstedPaymentNarrativeData,
-  ItemVoteContext,
-  RelatedAgendaItem,
-  ItemInfluenceMapData,
-  Election,
-  ElectionCandidate,
-  ElectionWithCandidates,
-  CandidateFundraising,
-  CandidateFundraisingDetail,
-  CandidateTopDonor,
-  CandidateDonorsByCycle,
-  PublicCommentDetail,
-  CommentTheme,
-  ThemeNarrative,
-  AgendaItemDetail,
-  AgendaItemRef,
-  AgendaItemSibling,
-  NeighborhoodCouncil,
-  Provenance,
-  FilingPeriodBriefing,
-  PACAggregate,
-  PACContributionRow,
-  PACOutgoingRow,
-  PACIndependentExpenditureRow,
-} from '../types'
-import { CONFIDENCE_PUBLISHED } from '../thresholds'
-import { commentSourceToProvenance } from '../provenance'
-
-// ─── Commissions ─────────────────────────────────────────
+import { readCompleteRecords } from '../complete-record-read'
+import { supabase, RICHMOND_FIPS, warnIfEmpty, COLS_MEETING_LIST, COLS_COMMISSION, COLS_CURRENT_COMMISSION_MEMBER, COLS_COMMISSION_MEMBER } from './_shared'
+import type { Meeting, Commission, CommissionMember, CommissionWithStats, CommissionStaleness, MeetingWithCounts, NeighborhoodCouncil } from '../types'
 
 export async function getCommissions(
   cityFips = RICHMOND_FIPS
 ): Promise<CommissionWithStats[]> {
-  const { data: commissions, error } = await supabase
+  const { data: commissions, count, error } = await supabase
     .from('commissions')
-    .select('*')
+    .select(COLS_COMMISSION, { count: 'exact' })
     .eq('city_fips', cityFips)
-    .order('name')
+    .order('name').order('id').limit(100)
 
-  if (error) {
-    console.error('getCommissions query failed:', error)
-    return [] as CommissionWithStats[]
+  if (error || !commissions || count === null || count > 100 || commissions.length !== count) {
+    throw new Error('Commission roster unavailable or incomplete')
   }
   warnIfEmpty('getCommissions', commissions)
 
@@ -102,11 +21,14 @@ export async function getCommissions(
   if (commissionIds.length === 0) return []
 
   // Count current members per commission, separating active-term from holdovers
-  const { data: members } = await supabase
+  const { data: members, count: memberCount, error: memberError } = await supabase
     .from('commission_members')
-    .select('commission_id, term_end')
+    .select(COLS_CURRENT_COMMISSION_MEMBER, { count: 'exact' })
     .in('commission_id', commissionIds)
-    .eq('is_current', true)
+    .eq('is_current', true).order('id').limit(1000)
+  if (memberError || !members || memberCount === null || memberCount > 1000 || members.length !== memberCount) {
+    throw new Error('Current commission membership unavailable or incomplete')
+  }
 
   const today = new Date().toISOString().split('T')[0]
   const activeCountMap = new Map<string, number>()
@@ -124,14 +46,10 @@ export async function getCommissions(
     const commission = c as Commission
     const activeCount = activeCountMap.get(commission.id) ?? 0
     const holdoverCount = holdoverCountMap.get(commission.id) ?? 0
-    const vacancyCount = commission.num_seats
-      ? Math.max(0, commission.num_seats - activeCount)
-      : 0
     return {
       ...commission,
       member_count: activeCount,
       holdover_count: holdoverCount,
-      vacancy_count: vacancyCount,
     }
   })
 }
@@ -142,19 +60,23 @@ export async function getCommission(
 ): Promise<{ commission: Commission; members: CommissionMember[] } | null> {
   const { data: commission, error } = await supabase
     .from('commissions')
-    .select('*')
+    .select(COLS_COMMISSION)
     .eq('id', commissionId)
     .eq('city_fips', cityFips)
-    .single()
+    .maybeSingle()
 
-  if (error || !commission) return null
+  if (error) throw new Error('Commission details unavailable')
+  if (!commission) return null
 
-  const { data: members } = await supabase
+  const { data: members, count: memberCount, error: memberError } = await supabase
     .from('commission_members')
-    .select('*')
+    .select(COLS_COMMISSION_MEMBER, { count: 'exact' })
     .eq('commission_id', commissionId)
     .eq('is_current', true)
-    .order('name')
+    .order('name').order('id').limit(100)
+  if (memberError || !members || memberCount === null || memberCount > 100 || members.length !== memberCount) {
+    throw new Error('Commission detail membership unavailable or incomplete')
+  }
 
   return {
     commission: commission as Commission,
@@ -181,29 +103,19 @@ export async function getCommissionMeetings(
   commissionId: string,
   cityFips = RICHMOND_FIPS
 ): Promise<MeetingWithCounts[]> {
-  // Step 1: Find the body linked to this commission
-  const { data: body } = await supabase
-    .from('bodies')
-    .select('id')
-    .eq('commission_id', commissionId)
-    .eq('city_fips', cityFips)
-    .single()
+  // commission_id is not unique on bodies (migration 035); preserve every
+  // exact linked body rather than treating a multiple-row error as no meetings.
+  const bodies = await readCompleteRecords('Commission meeting bodies', (from, to) => supabase.from('bodies')
+    .select('id', { count: 'exact' }).eq('commission_id', commissionId).eq('city_fips', cityFips)
+    .order('id').range(from, to), { maxRows: 100 })
+  if (!bodies.length) return []
 
-  if (!body) return []
-
-  // Step 2: Fetch meetings for this body + counts (with RPC fallback)
-  const [{ data: meetings, error }, countMap] = await Promise.all([
-    supabase
-      .from('meetings')
-      .select(COLS_MEETING_LIST)
-      .eq('body_id', body.id)
-      .eq('city_fips', cityFips)
-      .order('meeting_date', { ascending: false }),
+  const [meetings, countMap] = await Promise.all([
+    readCompleteRecords('Commission meetings', (from, to) => supabase.from('meetings')
+      .select(COLS_MEETING_LIST, { count: 'exact' }).in('body_id', bodies.map(body => body.id))
+      .eq('city_fips', cityFips).order('meeting_date', { ascending: false }).order('id').range(from, to)),
     fetchMeetingCounts(cityFips),
   ])
-
-  if (error || !meetings) return []
-
   return applyMeetingCounts(meetings as Meeting[], countMap)
 }
 

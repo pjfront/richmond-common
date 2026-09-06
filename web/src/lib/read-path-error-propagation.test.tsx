@@ -67,6 +67,8 @@ describe('force-static read-path error propagation', () => {
     await expect(CouncilMemberPage({ params: Promise.resolve({ slug: 'claudia-jimenez' }) })).rejects.toBe(failure)
     expect(mocked.getOfficialComparativeStats).not.toHaveBeenCalled()
     expect(mocked.getPastElectionDates).not.toHaveBeenCalled()
+    expect(mocked.getOfficialWithStats).not.toHaveBeenCalled()
+    expect(mocked.getOfficialElectionHistory).not.toHaveBeenCalled()
   })
 
   it('keeps the agenda-item route static while letting detail failures abort the render', async () => {

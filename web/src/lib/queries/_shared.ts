@@ -117,3 +117,9 @@ export const COLS_OFFICIAL_CONTRIBUTIONS = 'id, committee_id, amount, contributi
  *  (source_url, source_tier, confidence_score, extracted_at — migration 122)
  *  and no_interests_declared, which is a meaningful Tier 1 fact on its own. */
 export const COLS_FORM700_FILING = 'id, city_fips, official_id, filer_name, filer_position, statement_type, period_start, period_end, filing_year, source, source_url, no_interests_declared, source_tier, confidence_score, extracted_at, created_at'
+
+/** Complete topic-source aggregation; ID allows stable pagination and duplicate detection. */
+export const COLS_TOPIC_COUNTS = 'id, topic_label, meeting_id, meetings!inner(meeting_date, city_fips)'
+export const COLS_COMMISSION = 'appointment_authority, archive_center_amid, city_fips, commission_type, created_at, escribemeetings_type, form700_required, id, last_website_scrape, meeting_schedule, name, num_seats, term_length_years, website_roster_url'
+export const COLS_CURRENT_COMMISSION_MEMBER = 'id, commission_id, term_end'
+export const COLS_COMMISSION_MEMBER = 'appointed_by, appointed_by_official_id, city_fips, commission_id, created_at, id, is_current, name, normalized_name, role, source, source_meeting_id, term_end, term_start, updated_at, website_stale_since'

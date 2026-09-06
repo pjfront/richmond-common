@@ -1,7 +1,7 @@
 import type { MotionWithVotes } from '@/lib/types'
 import VoteBadge from './VoteBadge'
 import ReportErrorLink from './ReportErrorLink'
-import { formalMotionResult, motionKindLabel, motionTallyLabel } from '@/lib/vote-records'
+import { formalMotionResult, motionKindLabel, motionTallyLabel, normalizeMotionVotes } from '@/lib/vote-records'
 
 /**
  * Compute vote tally from individual vote records rather than the stored
@@ -44,7 +44,7 @@ export default function VoteBreakdown({ motion }: { motion: MotionWithVotes }) {
 
       {motion.votes.length > 0 && (
         <div className="flex flex-wrap gap-2 mt-2">
-          {motion.votes.map((v) => (
+          {normalizeMotionVotes(motion.votes).map((v) => (
             <div key={v.id} className="flex items-center gap-1">
               <span className="text-xs text-slate-600">{v.official_name}</span>
               <VoteBadge choice={v.vote_choice} />

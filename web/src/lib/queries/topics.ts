@@ -1,86 +1,7 @@
-import {
-  supabase,
-  RICHMOND_FIPS,
-  warnIfEmpty,
-  nameToSlug,
-  isGovernmentEntity,
-  filterGovernmentEntityFlags,
-  COLS_MEETING_LIST,
-  COLS_MEETING_BANNER,
-  COLS_FLAG_SUMMARY,
-  COLS_PUBLIC_RECORD_LIST,
-} from './_shared'
-import RICHMOND_FILERS_DATA from '@/data/netfile-richmond-filers.json'
-import type {
-  Meeting,
-  Official,
-  AgendaItem,
-  Motion,
-  Vote,
-  MeetingAttendance,
-  ConflictFlag,
-  ClosedSessionItem,
-  NotableSpeaker,
-  AgendaItemWithMotions,
-  MotionWithVotes,
-  MeetingDetail,
-  DonorAggregate,
-  DonorContribution,
-  EconomicInterest,
-  NextRequestRequest,
-  PublicRecordsStats,
-  DepartmentCompliance,
-  Commission,
-  CommissionMember,
-  CommissionWithStats,
-  CommissionStaleness,
-  CategoryStats,
-  ControversyItem,
-  PairwiseAlignment,
-  CategoryDivergence,
-  DivergentMotionRow,
-  DivergentMotion,
-  DonorCategoryPattern,
-  DonorOverlap,
-  CategoryCount,
-  TopicLabelCount,
-  MeetingWithCounts,
-  FinancialConnectionFlag,
-  OfficialConnectionSummary,
-  SearchResult,
-  SearchResultType,
-  SimilarItem,
-  ContributionNarrativeData,
-  ContributionRecord,
-  BehstedPaymentNarrativeData,
-  ItemVoteContext,
-  RelatedAgendaItem,
-  ItemInfluenceMapData,
-  Election,
-  ElectionCandidate,
-  ElectionWithCandidates,
-  CandidateFundraising,
-  CandidateFundraisingDetail,
-  CandidateTopDonor,
-  CandidateDonorsByCycle,
-  PublicCommentDetail,
-  CommentTheme,
-  ThemeNarrative,
-  AgendaItemDetail,
-  AgendaItemRef,
-  AgendaItemSibling,
-  NeighborhoodCouncil,
-  Provenance,
-  FilingPeriodBriefing,
-  PACAggregate,
-  PACContributionRow,
-  PACOutgoingRow,
-  PACIndependentExpenditureRow,
-} from '../types'
-import { CONFIDENCE_PUBLISHED } from '../thresholds'
-import { commentSourceToProvenance } from '../provenance'
-
-// ─── Topic Browsing (S23.3) ─────────────────────────────────
+import { cache } from 'react'
+import { unstable_cache } from 'next/cache'
+import { readCompleteRecords } from '../complete-record-read'
+import { supabase, RICHMOND_FIPS, COLS_TOPIC_COUNTS } from './_shared'
 
 export interface TopicCount {
   topic_label: string
@@ -88,42 +9,37 @@ export interface TopicCount {
   latest_meeting_date: string
 }
 
-/** Get all topic labels with item counts and most recent meeting date. */
+interface TopicSourceRow {
+  id: string
+  topic_label: string
+  meeting_id: string
+  meetings: { meeting_date: string }
+}
+
+/** Persist only small aggregates, not the full source corpus; failed reads throw. */
+const getTopicAggregates = cache(unstable_cache(async (cityFips: string) => {
+  const rows = await readCompleteRecords('Topic records', (from, to) => supabase.from('agenda_items')
+    .select(COLS_TOPIC_COUNTS, { count: 'exact' }).is('agenda_source_retired_at', null)
+    .eq('meetings.city_fips', cityFips).not('topic_label', 'is', null)
+    .order('id', { ascending: true }).range(from, to), { maxRows: 20_000, maxPages: 40 })
+  const counts = new Map<string, { count: number; meetings: Set<string>; latest: string }>()
+  for (const raw of rows) {
+    const row = raw as unknown as TopicSourceRow
+    if (!row.topic_label?.trim() || !row.meeting_id || !row.meetings?.meeting_date) throw new Error('Incomplete topic source record')
+    const current = counts.get(row.topic_label) ?? { count: 0, meetings: new Set<string>(), latest: '' }
+    current.count++
+    current.meetings.add(row.meeting_id)
+    if (row.meetings.meeting_date > current.latest) current.latest = row.meetings.meeting_date
+    counts.set(row.topic_label, current)
+  }
+  return [...counts].map(([topic_label, group]) => ({ topic_label, item_count: group.count,
+    meeting_count: group.meetings.size, latest_meeting_date: group.latest }))
+}, ['complete-topic-aggregates-v1'], { revalidate: 3600, tags: ['agenda-items', 'topics'] }))
+
+/** All topic counts from the same complete cohort used for promotion. */
 export async function getTopicCounts(cityFips = RICHMOND_FIPS): Promise<TopicCount[]> {
-  const { data, error } = await supabase
-    .from('agenda_items')
-    .select('topic_label, meeting_id, meetings!inner(meeting_date, city_fips)')
-    .is('agenda_source_retired_at', null)
-    .eq('meetings.city_fips', cityFips)
-    .not('topic_label', 'is', null)
-
-  if (error) {
-    console.error('getTopicCounts query failed:', error)
-    return []
-  }
-
-  // Aggregate in JS since Supabase doesn't support GROUP BY directly
-  const counts = new Map<string, { count: number; latest: string }>()
-  for (const row of (data ?? []) as Array<Record<string, unknown>>) {
-    const label = row.topic_label as string
-    const meeting = row.meetings as unknown as { meeting_date: string }
-    const existing = counts.get(label)
-    if (!existing) {
-      counts.set(label, { count: 1, latest: meeting.meeting_date })
-    } else {
-      existing.count++
-      if (meeting.meeting_date > existing.latest) {
-        existing.latest = meeting.meeting_date
-      }
-    }
-  }
-
-  return Array.from(counts.entries())
-    .map(([label, { count, latest }]) => ({
-      topic_label: label,
-      item_count: count,
-      latest_meeting_date: latest,
-    }))
+  return (await getTopicAggregates(cityFips)).map(row => ({ topic_label: row.topic_label,
+    item_count: row.item_count, latest_meeting_date: row.latest_meeting_date }))
     .sort((a, b) => b.item_count - a.item_count)
 }
 
@@ -158,8 +74,7 @@ export async function getTopicItems(
     .limit(limit)
 
   if (error) {
-    console.error('getTopicItems query failed:', error)
-    return []
+    throw new Error('Topic items are temporarily unavailable')
   }
 
   return ((data ?? []) as Array<Record<string, unknown>>).map((row) => {
@@ -216,42 +131,10 @@ export async function getPromotedTopics(
   minMeetings = TOPIC_PROMOTION_MIN_MEETINGS,
   cityFips = RICHMOND_FIPS,
 ): Promise<PromotedTopic[]> {
-  const { data, error } = await supabase
-    .from('agenda_items')
-    .select('topic_label, meeting_id, meetings!inner(meeting_date, city_fips)')
-    .is('agenda_source_retired_at', null)
-    .eq('meetings.city_fips', cityFips)
-    .not('topic_label', 'is', null)
-
-  if (error) {
-    console.error('getPromotedTopics query failed:', error)
-    return []
-  }
-
-  const acc = new Map<string, { items: number; meetingIds: Set<string>; latest: string }>()
-  for (const row of (data ?? []) as Array<Record<string, unknown>>) {
-    const label = row.topic_label as string
-    const meetingId = row.meeting_id as string
-    const meeting = row.meetings as unknown as { meeting_date: string }
-    const existing = acc.get(label)
-    if (!existing) {
-      acc.set(label, { items: 1, meetingIds: new Set([meetingId]), latest: meeting.meeting_date })
-    } else {
-      existing.items++
-      existing.meetingIds.add(meetingId)
-      if (meeting.meeting_date > existing.latest) existing.latest = meeting.meeting_date
-    }
-  }
-
-  return Array.from(acc.entries())
-    .filter(([, v]) => v.items >= minItems && v.meetingIds.size >= minMeetings)
-    .map(([label, v]) => ({
-      label,
-      slug: topicLabelToSlug(label),
-      item_count: v.items,
-      meeting_count: v.meetingIds.size,
-      latest_meeting_date: v.latest,
-    }))
+  return (await getTopicAggregates(cityFips))
+    .filter(row => row.item_count >= minItems && row.meeting_count >= minMeetings)
+    .map(row => ({ label: row.topic_label, slug: topicLabelToSlug(row.topic_label), item_count: row.item_count,
+      meeting_count: row.meeting_count, latest_meeting_date: row.latest_meeting_date }))
     .sort((a, b) => b.latest_meeting_date.localeCompare(a.latest_meeting_date))
 }
 

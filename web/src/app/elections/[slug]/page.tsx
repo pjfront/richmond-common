@@ -4,13 +4,12 @@ import NovemberElection from '@/components/NovemberElection'
 import {
   getElectionBySlug,
   getElectionWithCandidates,
-  getCandidateFundraisingDetails,
 } from '@/lib/queries'
-import { buildElectionHeaderNarrative } from '@/lib/electionNarrative'
 import RaceSection from '@/components/RaceSection'
 import type { CandidateFinanceCoverageById } from '@/components/CandidateCard'
 import { ANDERSON_MONEY_PATH } from '@/lib/anderson-finance'
-import type { CandidateFundraisingDetail } from '@/lib/types'
+import type { ElectionCandidate } from '@/lib/types'
+import { JIMENEZ_FINANCE, JIMENEZ_MONEY_PATH } from '@/lib/jimenez-finance'
 import { S29_PUBLIC_TREATMENT_ENABLED } from '@/lib/s29-release-phase'
 import {
   canonicalUrl,
@@ -55,10 +54,10 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
     return {
       title: `${election.election_name}: Candidates & Campaign Finance | Richmond Commons`,
-      description: `Richmond ${election.election_name}: candidates, campaign fundraising, top donors, and voter information.${races}${candidateSnippet}`,
+      description: `Richmond ${election.election_name}: candidate records and voter information.${races}${candidateSnippet}`,
       openGraph: {
         title: `${election.election_name} | Richmond Commons`,
-        description: `Track candidates, fundraising, and voter information for the ${election.election_name}.`,
+        description: `Find candidate records and voter information for the ${election.election_name}.`,
       },
     }
   }
@@ -103,10 +102,8 @@ async function ElectionPageContent({ params }: PageProps) {
     )
   }
 
-  const [electionDetail, fundraising] = await Promise.all([
-    getElectionWithCandidates(election.id),
-    getCandidateFundraisingDetails(election.id, undefined, election.election_date),
-  ])
+  const electionDetail = await getElectionWithCandidates(election.id)
+  const candidates = electionDetail?.candidates ?? []
 
   const electionName = election.election_name
     ?? `${election.election_date.slice(0, 4)} ${election.election_type} election`
@@ -119,64 +116,30 @@ async function ElectionPageContent({ params }: PageProps) {
     day: 'numeric',
   })
   const isUpcoming = date >= new Date()
-  const daysUntil = Math.ceil(
-    (date.getTime() - Date.now()) / (1000 * 60 * 60 * 24),
-  )
-
-  // Voter registration deadline (15 days before election in CA for online reg)
-  const regDeadline = new Date(date)
-  regDeadline.setDate(regDeadline.getDate() - 15)
-  const regFormatted = regDeadline.toLocaleDateString('en-US', {
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-  })
-  const daysUntilReg = Math.ceil(
-    (regDeadline.getTime() - Date.now()) / (1000 * 60 * 60 * 24),
-  )
-
   // Group candidates by office
-  const byOffice = new Map<string, CandidateFundraisingDetail[]>()
-  for (const c of fundraising) {
+  const byOffice = new Map<string, ElectionCandidate[]>()
+  for (const c of candidates) {
     const existing = byOffice.get(c.office_sought) || []
     existing.push(c)
     byOffice.set(c.office_sought, existing)
   }
 
-  // Guard: general elections only show candidate data after the preceding
-  // primary has been certified and its candidates populated. If a general
-  // election has no linked candidates it means either (a) primary results
-  // haven't been certified yet or (b) the general candidate rows haven't
-  // been seeded yet. In either case, show a plain-language pending state
-  // rather than an empty or garbled race list.
-  //
-  // How this recovers automatically: once a future migration seeds the
-  // correct general-election candidates (with correct office_sought district
-  // suffixes), ISR revalidation clears this banner and the full page renders.
-  const isPendingGeneral =
-    election.election_type === 'general' && fundraising.length === 0
-
-  // Sort offices: Mayor first, then contested by district number, unopposed last
-  const sortedOffices = Array.from(byOffice.entries()).sort(([a, aCands], [b, bCands]) => {
+  const sortedOffices = Array.from(byOffice.entries()).sort(([a], [b]) => {
     if (a === 'Mayor') return -1
     if (b === 'Mayor') return 1
-    const aUnopposed = aCands.length === 1
-    const bUnopposed = bCands.length === 1
-    if (aUnopposed !== bUnopposed) return aUnopposed ? 1 : -1
     return a.localeCompare(b)
   })
-
-  const headerNarrative = buildElectionHeaderNarrative(byOffice)
 
   // Exact verified spellings in the primary roster and the source-checked
   // committee reports. Do not treat the Jan-Jun summary as primary-only money.
   const financeCoverage: CandidateFinanceCoverageById = slug === '2026-primary'
-    ? Object.fromEntries(fundraising
+    ? Object.fromEntries(candidates
       .filter(candidate => candidate.office_sought === 'Mayor'
-        && ['Ahmad J. Anderson', 'Ahmad Anderson'].includes(candidate.candidate_name))
+        && (['Ahmad J. Anderson', 'Ahmad Anderson'].includes(candidate.candidate_name)
+          || candidate.official_id === JIMENEZ_FINANCE.identity.official_id))
       .map(candidate => [candidate.id, {
         kind: 'source-checked-summary' as const,
-        href: ANDERSON_MONEY_PATH,
+        href: candidate.official_id === JIMENEZ_FINANCE.identity.official_id ? JIMENEZ_MONEY_PATH : ANDERSON_MONEY_PATH,
         scopeNote: 'The dated summary includes reports after this primary. Its figures are not primary-only totals.',
       }]))
     : {}
@@ -218,89 +181,18 @@ async function ElectionPageContent({ params }: PageProps) {
           )}
         </div>
 
-        {isUpcoming && daysUntil > 0 && (
-          <div className="mt-4 space-y-1">
-            <p className="text-sm font-medium text-civic-amber">
-              {daysUntil} days until election day
-            </p>
-            {daysUntilReg > 0 && (
-              <p className="text-sm text-slate-600">
-                Voter registration deadline: {regFormatted} ({daysUntilReg} days)
-              </p>
-            )}
-          </div>
-        )}
-
-        {/* Narrative lede. Graduated to public 2026-05-22 (D56b verification
-            PR). Header narrative dollar amounts are sourced from Form 460
-            cover totals via fundraising[].total_raised. */}
-        {fundraising.length > 0 && (
-          <p className="text-sm text-slate-600 leading-relaxed mt-4">
-            {headerNarrative}
-          </p>
-        )}
       </header>
 
-      {/* Pending state: general election before primary results are certified */}
-      {isPendingGeneral ? (
-        <div className="rounded-lg border border-slate-200 bg-slate-50 p-6 mb-8">
-          <h2 className="text-base font-semibold text-slate-800 mb-2">
-            Candidates will be listed after the primary is certified
-          </h2>
-          <p className="text-sm text-slate-600 leading-relaxed">
-            The candidates for this election are determined by the June 2026 primary.
-            Primary results are typically certified within a few weeks of election day.
-            This page will update automatically once the candidate list is confirmed.
-          </p>
-          <p className="text-sm text-slate-500 mt-3">
-            <Link href="/elections/2026-primary" className="text-civic-navy hover:underline">
-              View the June 2026 primary results →
-            </Link>
-          </p>
-        </div>
-      ) : (
-        <>
-          {/* Races — voter guide pattern */}
-          {sortedOffices.map(([office, candidates]) => (
-            <RaceSection
-              key={office}
-              office={office}
-              candidates={candidates}
-              isHeroRace={office === 'Mayor'}
-              id={officeToHashId(office)}
-              electionSlug={slug}
-              financeCoverage={financeCoverage}
-            />
-          ))}
-
-          {fundraising.length === 0 && electionDetail?.candidates && electionDetail.candidates.length > 0 && (
-            <p className="text-slate-500 italic mb-8">
-              Candidates have been identified but campaign finance data is still being linked.
-            </p>
-          )}
-        </>
-      )}
+      {slug === '2026-primary' && <p className="mb-6 rounded-lg border border-slate-200 p-4 leading-relaxed text-slate-700">This is the June candidate roster. <Link href="/elections/2026-general" className="text-civic-navy underline">Open the November guide</Link> for the mayoral runoff, current campaign reports and voting information.</p>}
+      {sortedOffices.map(([office, officeCandidates]) => <RaceSection key={office}
+        office={office} candidates={officeCandidates} id={officeToHashId(office)} electionSlug={slug} financeCoverage={financeCoverage} />)}
+      {candidates.length === 0 && <p className="mb-8 text-slate-600">No candidate roster has been published here for this election. See the official election source below.</p>}
 
       {/* Source attribution */}
       <footer className="mt-10 pt-6 border-t border-slate-200 space-y-2">
-        <p className="text-xs text-slate-400">
-          Election dates from the California Secretary of State. Campaign finance
-          data from{' '}
-          <a
-            href="https://public.netfile.com/pub2/?AID=RICH"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-civic-navy hover:underline"
-          >
-            NetFile
-          </a>{' '}
-          (City of Richmond e-filing system). Contribution totals reflect filings
-          linked to each candidate&apos;s committee and may not include all
-          fundraising activity.
-        </p>
-        <p className="text-xs text-slate-400">
-          Auto-generated from public filings · Last updated hourly
-        </p>
+        <p className="text-sm leading-relaxed text-slate-600">Candidates are listed alphabetically within each office. Having one name in our records does not establish that a race was unopposed. Campaign reports cover their stated dates; a report filed after an election is not a total for that election.</p>
+        <p className="text-sm text-slate-600"><a href={election.source_url || 'https://www.contracostavote.gov/'} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center text-civic-navy underline">Official election information</a></p>
+        <Link href="/elections/methodology" className="inline-flex min-h-11 items-center text-sm text-civic-navy underline">How we show campaign money</Link>
       </footer>
     </div>
   )

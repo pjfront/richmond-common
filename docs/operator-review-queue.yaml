@@ -97,7 +97,7 @@ gates:
 
   - id: meeting-recap-email-panel
     file: web/src/app/meetings/[id]/page.tsx
-    line: 211
+    line: 185
     category: permanent
     gated_at: '2026-04-01'
     reason: |
@@ -106,7 +106,7 @@ gates:
 
   - id: meeting-record-visit
     file: web/src/app/meetings/[id]/page.tsx
-    line: 106
+    line: 105
     category: permanent
     gated_at: '2026-04-01'
     reason: |
@@ -150,7 +150,7 @@ gates:
 
   - id: candidate-detail-link
     file: web/src/components/CandidateCard.tsx
-    line: 61
+    line: 49
     category: pending_graduation
     gated_at: '2026-08-23'
     view_at: /elections/2026-primary
@@ -169,7 +169,7 @@ gates:
 
   - id: meeting-conflict-flags-callout
     file: web/src/app/meetings/[id]/page.tsx
-    line: 232
+    line: 206
     category: pending_graduation
     gated_at: '2026-03-15'
     view_at: /meetings
@@ -186,7 +186,7 @@ gates:
 
   - id: meeting-full-conflicts-section
     file: web/src/app/meetings/[id]/page.tsx
-    line: 232
+    line: 206
     category: pending_graduation
     gated_at: '2026-03-15'
     view_at: /meetings
@@ -213,20 +213,6 @@ gates:
       Confirm the per-item finance context is accurate before graduating.
     graduates_to: public
 
-  - id: hero-item-finance-link
-    file: web/src/components/HeroItem.tsx
-    line: 139
-    category: pending_graduation
-    gated_at: '2026-03-15'
-    view_at: /
-    reason: |
-      "Campaign finance context available →" link on hero items.
-      Surfaces flag presence to viewers. Same scanner-validation gate.
-    what_to_validate: |
-      Confirm flag presence is accurate before exposing the link
-      publicly. Likely graduates with the meeting-level flag callout.
-    graduates_to: public
-
   - id: latest-meeting-card-flag-count
     file: web/src/components/LatestMeetingCard.tsx
     line: 66
@@ -244,7 +230,7 @@ gates:
 
   - id: council-analytics-stats-tab
     file: web/src/app/council/analytics/page.tsx
-    line: 79
+    line: 57
     category: pending_graduation
     gated_at: '2026-03-15'
     view_at: /council/analytics
@@ -261,7 +247,7 @@ gates:
 
   - id: council-analytics-patterns-tab
     file: web/src/app/council/analytics/page.tsx
-    line: 85
+    line: 63
     category: pending_graduation
     gated_at: '2026-03-15'
     view_at: /council/analytics
@@ -402,7 +388,7 @@ gates:
 
   - id: council-economic-interests-section
     file: web/src/app/council/[slug]/page.tsx
-    line: 246
+    line: 183
     category: pending_graduation
     gated_at: '2026-07-05'
     view_at: /council

@@ -14,6 +14,12 @@ MIRROR = (
 )
 
 
+PUBLIC_STATS_DEPENDENCIES = {
+    "public.get_meeting_flag_counts": {"meetings", "agenda_items", "conflict_flags"},
+    "public.get_controversial_items": {"meetings", "agenda_items", "motions", "votes"},
+}
+
+
 def test_public_stats_rpc_migration_is_mirrored_exactly():
     assert SOURCE.read_bytes() == MIRROR.read_bytes()
 
@@ -65,19 +71,14 @@ def test_flag_rpc_preserves_threshold_and_zero_flag_meeting_behavior():
     assert "FROM flag_agg fa\n  LEFT JOIN item_agg ia" in flag_body
 
 
-def test_future_public_policy_changes_redefine_both_definer_rpcs():
+def test_future_public_policy_changes_redefine_dependent_definer_rpcs():
     """A tighter RLS policy must not be bypassed by stale definer bodies."""
 
-    policy_tables = (
-        "meetings",
-        "agenda_items",
-        "motions",
-        "votes",
-        "conflict_flags",
-    )
+    dependencies = PUBLIC_STATS_DEPENDENCIES
+    policy_tables = sorted(set().union(*dependencies.values()))
     policy_pattern = re.compile(
         rf"(?:CREATE|ALTER)\s+POLICY\s+[^;]+?\s+ON\s+"
-        rf"(?:public\.)?(?:{'|'.join(policy_tables)})\b",
+        rf"(?:public\.)?({'|'.join(policy_tables)})\b",
         re.IGNORECASE,
     )
     baseline = "133_source_reconciliation_tombstones.sql"
@@ -93,13 +94,21 @@ def test_future_public_policy_changes_redefine_both_definer_rpcs():
         assert prefix > 135, (
             f"{migration.name} changes a public policy consumed by migration "
             "135 but sorts before/at the definer rewrite. Give the policy "
-            "migration a new prefix after 135 and redefine both RPCs there."
+            "migration a new prefix after 135 and redefine its dependent RPCs there."
         )
-        for function_name in (
-            "public.get_meeting_flag_counts",
-            "public.get_controversial_items",
-        ):
+        changed_tables = {match.group(1).lower() for match in policy_pattern.finditer(migration_sql)}
+        for function_name, tables in dependencies.items():
+            if not changed_tables.intersection(tables):
+                continue
             assert f"CREATE OR REPLACE FUNCTION {function_name}" in migration_sql, (
                 f"{migration.name} changes public RLS used by {function_name} "
                 "without updating the SECURITY DEFINER body in the same change."
             )
+
+
+def test_dependency_guard_matches_actual_definer_source_tables():
+    sql = SOURCE.read_text(encoding="utf-8")
+    for function, dependencies in PUBLIC_STATS_DEPENDENCIES.items():
+        body = sql.split(f"CREATE OR REPLACE FUNCTION {function}", 1)[1].split("$function$;", 1)[0]
+        actual = set(re.findall(r"(?:FROM|JOIN)\s+public\.(\w+)", body, re.IGNORECASE))
+        assert dependencies == actual

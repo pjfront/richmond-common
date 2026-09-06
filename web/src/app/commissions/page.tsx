@@ -15,21 +15,12 @@ export default async function CommissionsPage() {
 async function CommissionsContent() {
   const commissions = await getCommissions()
 
-  const totalSeats = commissions.reduce((sum, c) => sum + (c.num_seats ?? 0), 0)
-  const totalActive = commissions.reduce((sum, c) => sum + c.member_count, 0)
-  const totalHoldovers = commissions.reduce((sum, c) => sum + c.holdover_count, 0)
-  const totalVacancies = commissions.reduce((sum, c) => sum + c.vacancy_count, 0)
-  const form700Count = commissions.filter((c) => c.form700_required).length
-
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-slate-900 mb-2">Boards & Commissions</h1>
         <p className="text-slate-600">
-          Richmond has {commissions.length} boards and commissions with {totalActive} of {totalSeats} active seats filled.
-          {totalHoldovers > 0 && ` ${totalHoldovers} members serving past term expiration.`}
-          {totalVacancies > 0 && ` ${totalVacancies} vacancies across all bodies.`}
-          {form700Count > 0 && ` ${form700Count} require Form 700 financial disclosure.`}
+          Browse the boards and commissions in our records. Open a board for its listed members, recorded term dates and source links.
         </p>
       </div>
 

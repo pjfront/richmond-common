@@ -15,9 +15,11 @@ import VoteBadge from './VoteBadge'
 import CivicTerm from './CivicTerm'
 import { agendaItemPath } from '@/lib/format'
 import { normalizeRecordedChoice } from '@/lib/vote-records'
+import { officialMotionRecords } from '@/lib/observed-vote-records'
 
 interface VoteRecord {
   id: string
+  motion_id?: string
   vote_choice: string
   meeting_id: string
   agenda_item_id?: string
@@ -78,8 +80,8 @@ function formatCategory(cat: string): string {
  */
 function groupByItem(votes: VoteRecord[]): VoteRecord[] {
   const groups = new Map<string, VoteRecord[]>()
-  for (const v of votes) {
-    const key = v.agenda_item_id ?? v.id
+  for (const v of officialMotionRecords(votes)) {
+    const key = v.agenda_item_id ? `${v.meeting_id}:${v.agenda_item_id}` : v.id
     const existing = groups.get(key)
     if (existing) existing.push(v)
     else groups.set(key, [v])
@@ -187,7 +189,7 @@ export default function VotingRecordTable({ votes }: { votes: VoteRecord[] }) {
                 {row.motion_texts.slice(0, 3).map((m, i) => (
                   <li key={i} className="line-clamp-1">
                     <span className="text-slate-400">·</span>{' '}
-                    <span className="capitalize text-slate-600">{m.choice}</span>
+                    <span className="capitalize text-slate-600">{m.choice === 'not-recorded' ? 'Choice not established' : m.choice}</span>
                     {' on '}
                     <span>{shortMotion(m.text, 100)}</span>
                   </li>
@@ -215,36 +217,11 @@ export default function VotingRecordTable({ votes }: { votes: VoteRecord[] }) {
       },
       meta: { className: 'hidden md:table-cell' },
     }),
-    columnHelper.accessor((row) => row.public_comment_count ?? 0, {
-      id: 'comments',
-      header: ({ column }) => (
-        <SortableHeader column={column} label="Comments" className="hidden lg:table-cell" />
-      ),
-      cell: (info) => {
-        const count = info.getValue()
-        return count > 0 ? (
-          <span className="text-xs font-medium text-civic-navy">{count}</span>
-        ) : (
-          <span className="text-xs text-slate-300">{'\u2014'}</span>
-        )
-      },
-      meta: { className: 'hidden lg:table-cell' },
-      sortingFn: 'basic',
-    }),
     columnHelper.accessor('vote_choice', {
       header: ({ column }) => <SortableHeader column={column} label="Vote" />,
       cell: (info) => (info.row.original.motion_count ?? 1) > 1
         ? <span className="text-xs text-slate-600">Multiple motions; see individual votes</span>
         : <VoteBadge choice={info.getValue()} />,
-    }),
-    columnHelper.accessor('motion_result', {
-      header: ({ column }) => (
-        <SortableHeader column={column} label="Motion result" className="hidden sm:table-cell" />
-      ),
-      cell: (info) => (
-        <span className="text-xs text-slate-600">{(info.row.original.motion_count ?? 1) > 1 ? 'See each motion' : info.getValue() || 'Not recorded'}</span>
-      ),
-      meta: { className: 'hidden sm:table-cell' },
     }),
   ], [])
 
@@ -327,11 +304,9 @@ export default function VotingRecordTable({ votes }: { votes: VoteRecord[] }) {
           }}
           className="min-h-11 text-sm border border-slate-200 rounded px-2 py-1 text-slate-700 ml-auto"
         >
-          <option value="comments-desc">Most discussed first</option>
           <option value="meeting_date-desc">Most recent first</option>
           <option value="meeting_date-asc">Oldest first</option>
           <option value="vote_choice-asc">By vote</option>
-          <option value="motion_result-asc">By result</option>
         </select>
       </div>
 

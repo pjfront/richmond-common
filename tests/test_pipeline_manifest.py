@@ -8,6 +8,7 @@ These tests catch drift between the manifest and the codebase:
 """
 from __future__ import annotations
 
+import copy
 import re
 import sys
 from pathlib import Path
@@ -23,6 +24,7 @@ from pipeline_map import (
     load_manifest,
     _extract_sync_sources_from_code,
     _extract_query_functions_from_code,
+    _workflow_cli_enrichments,
 )
 
 
@@ -69,6 +71,49 @@ class TestSyncSourceCoverage:
             f"Manifest sources not in SYNC_SOURCES: {extra}. "
             f"Remove stale entries from docs/pipeline-manifest.yaml."
         )
+
+    def test_standalone_enrichment_has_exact_workflow_binding(self, manifest):
+        registered, issues = _workflow_cli_enrichments(manifest)
+        assert issues == []
+        assert registered == {"civic_review_packet_generation"}
+        extras = set(manifest["enrichments"]) - _extract_sync_sources_from_code()
+        assert extras == registered
+
+    @pytest.mark.parametrize("field,value", [
+        ("workflow", "../../outside.yml"),
+        ("job", "nonexistent-job"),
+        ("step", "nonexistent-step"),
+        ("command", "python src/civic_review_packets.py --apply"),
+        ("command", "python src/data_sync.py --apply"),
+    ])
+    def test_invalid_binding_cannot_hide_a_missing_sync_registration(self, manifest, field, value):
+        changed = copy.deepcopy(manifest)
+        changed["enrichments"]["civic_review_packet_generation"]["workflow_cli"][field] = value
+        registered, issues = _workflow_cli_enrichments(changed)
+        assert registered == set()
+        assert len(issues) == 1
+        assert "civic_review_packet_generation" in issues[0]
+
+    def test_manual_cascade_flag_does_not_exempt_registration(self, manifest):
+        changed = copy.deepcopy(manifest)
+        del changed["enrichments"]["civic_review_packet_generation"]["workflow_cli"]
+        assert changed["enrichments"]["civic_review_packet_generation"]["cascade_enabled"] is False
+        assert _workflow_cli_enrichments(changed) == (set(), [])
+
+    def test_actual_workflow_command_drift_is_detected(self, manifest, tmp_path, monkeypatch):
+        binding = manifest["enrichments"]["civic_review_packet_generation"]["workflow_cli"]
+        (tmp_path / "src").mkdir()
+        (tmp_path / "src" / "civic_review_packets.py").write_text("# fixture\n")
+        workflow = tmp_path / binding["workflow"]
+        workflow.parent.mkdir(parents=True)
+        original = (ROOT / binding["workflow"]).read_text(encoding="utf-8")
+        assert binding["command"] in original
+        workflow.write_text(original.replace(binding["command"], "python src/civic_review_packets.py --section finance"), encoding="utf-8")
+        monkeypatch.setattr("pipeline_map.ROOT", tmp_path)
+        registered, issues = _workflow_cli_enrichments(manifest)
+        assert registered == set()
+        assert len(issues) == 1
+        assert "exact named workflow step" in issues[0]
 
 
 # ── Query Function Coverage ───────────────────────────────────
