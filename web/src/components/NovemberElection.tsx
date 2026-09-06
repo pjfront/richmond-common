@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import SubscribeForm from '@/components/SubscribeForm'
 import SuggestCorrectionLink from '@/components/SuggestCorrectionLink'
+import PublishedCivicBriefs from '@/components/PublishedCivicBriefs'
 import { getPublicFinanceSnapshot, candidateMoney, type FinanceEvent, type PublicFinanceSnapshot } from '@/lib/finance-public'
 import { NOVEMBER_CANDIDATES, NOVEMBER_DATES, NOVEMBER_ELECTION as election, formatCivicDate } from '@/lib/november-election'
 
@@ -56,10 +57,12 @@ export default async function NovemberElection() {
           <p className="mt-3 leading-relaxed text-slate-700">The council placed borrowing for fire-station improvements on the ballot. The resolution requires two-thirds voter approval. Approval would authorize borrowing repaid through property taxes; it would not mean the construction was already delivered.</p>
           <p className="mt-3 leading-relaxed text-slate-700">The final county ballot designation is still being checked here. Use the official voter guide for the complete ballot wording.</p>
           <OfficialSource href={election.bondResolution}>City Resolution 143-26, July 28</OfficialSource>
-          <Link href="/stories/fire-station-bond" className={linkClass}>Follow the fire-station story →</Link>
+          <Link href="/stories/fire-stations-and-emergency-response" className={linkClass}>Follow the fire-station story →</Link>
         </article>
       </div>
     </section>
+
+    <PublishedCivicBriefs subjectKey="2026-general" />
 
     <section id="money" className="mt-12 scroll-mt-24 border-t border-slate-200 pt-8">
       <h2 className="text-2xl font-semibold text-civic-navy">Follow the money</h2>

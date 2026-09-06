@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server'
+import { revalidateTag } from 'next/cache'
 import { getSupabaseAdmin } from '@/lib/supabase-admin'
 import { withOperatorAuth } from '@/lib/operator-auth'
 import { REVIEW_ACTIONS, type ReviewAction, type ReviewDecision } from '@/lib/decision-review'
@@ -149,6 +150,9 @@ export const POST = withOperatorAuth(async (request: NextRequest) => {
       return NextResponse.json({ ok: false, code }, { status: error.code === '23505' ? 409 : 500 })
     }
     if (!data || typeof data.ok !== 'boolean') throw new Error('Invalid review response')
+    if (data.ok && ['brief_published', 'brief_withdrawn'].includes(data.effect)) {
+      revalidateTag('civic-briefs', 'max')
+    }
     const status = data.ok ? 200 : data.code === 'not_found' ? 404 : 409
     return NextResponse.json(data, { status, headers: { 'Cache-Control': 'private, no-store' } })
   } catch {

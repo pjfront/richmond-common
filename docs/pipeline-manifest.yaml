@@ -913,7 +913,8 @@ tables:
     layer: operational
     description: "Versioned story, meeting, and finance drafts; only approved versions are public, with sources attached to the exact reviewed text."
     written_by: {sources: [], enrichments: []}
-    read_by: {enrichments: [], queries: []}
+    read_by: {enrichments: [], queries: [getPublishedCivicBriefs]}
+    provenance: "Composite editorial artifact: sources[] carries each URL, title, source_tier and source_date; published_at/content_version identify the exact reviewed publication. No standalone confidence probability is claimed."
     api_routes: ["/api/operator/decisions"]
 
   operator_decision_events:
@@ -1329,6 +1330,17 @@ enrichments:
 # ══════════════════════════════════════════════════════════════
 
 queries:
+  getPublishedCivicBriefs:
+    file: components/PublishedCivicBriefs.tsx
+    tables: [civic_brief_candidates]
+    used_by: ["/stories/[slug]", "/elections/2026-general"]
+    description: "Only source-linked published briefs, public RLS plus explicit status predicate; private draft evidence never enters page props."
+
+  getPublicFinanceSnapshot:
+    file: finance-public.ts
+    tables: [finance_events, finance_source_coverage]
+    used_by: ["/elections/2026-general", "/elections/2026-general/money"]
+    description: "Bounded cached public projections with explicit source coverage; read errors are not cached as no activity."
   # ── Meetings ────────────────────────────────────────────────
   getMeetings:
     file: queries.ts

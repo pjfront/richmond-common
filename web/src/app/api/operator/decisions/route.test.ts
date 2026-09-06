@@ -9,6 +9,7 @@ const mock = vi.hoisted(() => ({
 }))
 
 vi.mock('next/headers', () => ({ cookies: async () => ({}) }))
+vi.mock('next/cache', () => ({ revalidateTag: vi.fn() }))
 vi.mock('iron-session', () => ({ getIronSession: async () => mock.session }))
 vi.mock('@/lib/operator-session', () => ({ getOperatorSessionOptions: () => ({}) }))
 vi.mock('@/lib/supabase-admin', () => ({ getSupabaseAdmin: mock.getAdmin }))

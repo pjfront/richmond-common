@@ -6,6 +6,7 @@ import { getResidentSnapshot } from '@/lib/queries/civic-stories'
 import { CivicLanguageScope, Localized } from '@/components/civic/CivicLanguage'
 import { civicLink, SourceNote, StoryAgenda, StorySources, StoryTimeline } from '@/components/civic/CivicStory'
 import SuggestCorrectionLink from '@/components/SuggestCorrectionLink'
+import PublishedCivicBriefs from '@/components/PublishedCivicBriefs'
 
 export const revalidate = 3600
 export const dynamicParams = false
@@ -33,6 +34,7 @@ export default async function StoryPage({ params }: { params: Promise<{ slug: st
       <div className="min-w-0 space-y-10">
         <section aria-labelledby="story-question-heading"><h2 id="story-question-heading" className="text-2xl font-semibold"><Localized {...story.question} /></h2><p className="mt-3 leading-7 text-slate-700"><Localized {...story.why} /></p></section>
         <StoryTimeline story={story} />
+        <PublishedCivicBriefs subjectKey={story.slug} />
         <StoryAgenda story={story} snapshot={snapshot} />
         <StorySources story={story} />
         <div className="flex min-h-11 items-center"><SuggestCorrectionLink /></div>
