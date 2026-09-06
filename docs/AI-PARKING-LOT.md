@@ -43,6 +43,15 @@ _Items from this parking lot that have been promoted to Phase 3 sprints. Kept he
 
 ## Research Topics
 
+### Preview startup read recovery (2026-09-06)
+
+PR165 bootstrap runs 34040435644 and 34040596425 exposed a database restart
+between readiness and the first catalog read. The controller now bounds retries
+for only recognized startup failures on enforced read-only queries; writes keep
+their single-attempt/reconciliation contract. Both failed branches were confirmed
+absent by the trusted watchdog. Local regression checks pass; the next trusted
+bootstrap is the live verification of the repair.
+
 ### R1. Entity Extraction for Civic Text ➜ Promoted to S9.5
 Gazetteer-based matching replaced noisy `extract_entity_names()`. Uses `city_expenditures.normalized_vendor` directly.
 
