@@ -98,13 +98,13 @@ export default async function NovemberElection() {
             </article>
           })}
         </div>
-        <div className="mt-7">
-          <h3 className="text-lg font-semibold text-civic-navy">What the source coverage includes</h3>
+        <details className="mt-7 rounded-lg border border-slate-200 p-4">
+          <summary className="min-h-11 cursor-pointer text-lg font-semibold text-civic-navy">Source coverage and limits</summary>
           <p className="mt-3 text-sm leading-relaxed text-slate-600">Richmond, California · calendar-year 2026 records. The dates below describe the activity window searched, not the period covered by every filing.</p>
           {snapshot.coverage.length ? <ul className="mt-3 space-y-3">{snapshot.coverage.slice(0, 8).map(row => <li key={`${row.source}:${row.form_type}:${row.scope_key}`} className="text-sm leading-relaxed text-slate-600">
             <a href={row.source_url} className={linkClass}>{row.source} · {row.form_type}</a>: {row.status.replaceAll('_', ' ')} · checked {formatCivicDate(row.checked_at)}{row.activity_from || row.activity_through ? ' · activity window searched' : ''}{row.activity_from ? ` from ${formatCivicDate(row.activity_from)}` : ''}{row.activity_through ? ` through ${formatCivicDate(row.activity_through)}` : ''}. {row.limitations.join(' ')}
           </li>)}</ul> : <p className="mt-3 text-slate-600">A complete source-coverage check has not yet been published. Treat the indexed records as a partial set.</p>}
-        </div>
+        </details>
       </>}
       {!snapshot && <div className="mt-6 grid gap-5 md:grid-cols-2">
         <article><h3 className="text-xl font-semibold text-civic-navy">Ahmad Anderson · FPPC 1481105</h3><AndersonFinanceSummary coverage={paperCoverage} /></article>
