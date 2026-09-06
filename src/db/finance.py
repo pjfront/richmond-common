@@ -1,8 +1,11 @@
 """Atomic, append-only finance evidence snapshots and public projections."""
 from __future__ import annotations
 
+from datetime import date
 from psycopg2 import sql
 from psycopg2.extras import Json
+
+from finance_ledger import FORMS
 
 
 def persist_finance_snapshot(conn, assertions: list[dict], events: list[dict], coverage: list[dict]) -> dict:
@@ -19,11 +22,18 @@ def persist_finance_snapshot(conn, assertions: list[dict], events: list[dict], c
         raise ValueError("A snapshot must have exactly one consistent scope")
     scope = next(iter(scopes))
     forms = [c["form_type"] for c in coverage]
+    if len(forms) != len(FORMS) or set(forms) != set(FORMS.values()):
+        raise ValueError("A calendar projection requires all supported forms; a partial form set cannot replace it")
     stats = {"assertions_inserted": 0, "assertions_retained": 0, "events_current": len(events)}
     identities = {}
     with conn.cursor() as cur:
         # Serializes projection rebuilds for a source. Transaction-level lock.
         cur.execute("SELECT pg_advisory_xact_lock(hashtext('finance:netfile'))")
+        cur.execute("SELECT max(activity_through) FROM finance_source_coverage WHERE source='netfile' AND scope_key=%s", (scope,))
+        previous_through = cur.fetchone()[0]
+        incoming_through = min(date.fromisoformat(str(c["activity_through"])[:10]) for c in coverage)
+        if previous_through and previous_through > incoming_through:
+            raise ValueError("Refusing to shrink a current calendar snapshot to an earlier cutoff")
         cur.execute("UPDATE finance_assertions SET is_current=false WHERE source='netfile' AND scope_key=%s AND form_type=ANY(%s)", (scope, forms))
         cur.execute("UPDATE finance_events SET is_current=false WHERE source='netfile' AND scope_key=%s", (scope,))
         for a in assertions:

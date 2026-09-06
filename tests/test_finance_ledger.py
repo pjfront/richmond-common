@@ -123,6 +123,8 @@ def test_incomplete_acquisition_cannot_change_database():
             raise AssertionError("No database operation is allowed")
     with pytest.raises(ValueError, match="incomplete"):
         persist_finance_snapshot(NeverWrite(), [], [], [{"snapshot_complete": False}])
+    with pytest.raises(ValueError, match="all supported forms"):
+        persist_finance_snapshot(NeverWrite(), [], [], [{"snapshot_complete": True, "form_type": "F497P2", "scope_key": "0660620:calendar-2026"}])
 
 
 def test_legacy_direction_repair_requires_full_source_match():
