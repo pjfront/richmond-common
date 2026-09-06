@@ -18,6 +18,7 @@ import {
 } from '@/lib/email-content-source'
 import { RICHMOND_LOCAL_ISSUES } from '@/lib/local-issues'
 import { loadPublishedDigestBriefs, selectSubscriberDigest, type DigestPreferenceRow, type DigestBrief } from '@/lib/digest-selection'
+import { PROVIDER_EMAIL_ID, readDigestCanaryProof } from '@/lib/digest-canary-proof'
 
 const RICHMOND_FIPS = '0660620'
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://richmondcommons.org'
@@ -53,16 +54,29 @@ function isAuthorized(request: NextRequest): boolean {
   return Boolean(secret && secret === process.env.API_SECRET)
 }
 
-/** Read-only handshake used before a workflow can invoke the canary path. */
+/** Read-only capability handshake, or redacted proof for the configured canary. */
 export async function GET(request: NextRequest) {
+  const headers = { 'Cache-Control': 'private, no-store' }
   if (!isAuthorized(request)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers })
+  }
+  const params = request.nextUrl.searchParams
+  if (params.size) {
+    const ids = params.getAll('provider_id')
+    const canaryEmail = configuredCanaryEmail()
+    if (params.size !== 1 || ids.length !== 1 || !PROVIDER_EMAIL_ID.test(ids[0]) || !canaryEmail) {
+      return NextResponse.json({ error: 'Canary provider proof unavailable' }, { status: 503, headers })
+    }
+    const proof = await readDigestCanaryProof(ids[0], canaryEmail)
+    return proof
+      ? NextResponse.json(proof, { headers })
+      : NextResponse.json({ error: 'Canary provider proof unavailable' }, { status: 503, headers })
   }
   return NextResponse.json({
     capability: DIGEST_CAPABILITY,
     canary_ready: configuredCanaryEmail() !== null,
     broadcast_ready: DIGEST_BROADCAST_ENABLED,
-  })
+  }, { headers })
 }
 
 /** Send the immediately completed calendar week's digest. */
@@ -137,15 +151,24 @@ export async function POST(request: NextRequest) {
         ...content,
         idempotencyKey: `rc:digest:canary:${period.contentKey}`,
       })
+      // Preserve the exact accepted message identity for read-only provider
+      // verification. A successful transport without an ID is ambiguous and
+      // must never authorize activation or another send.
+      const providerConfirmed = result.success && typeof result.providerId === 'string'
+        && PROVIDER_EMAIL_ID.test(result.providerId)
       return NextResponse.json({
         mode,
         period,
         meeting_count: meetings.length,
-        sent: result.success ? 1 : 0,
-        provider_confirmed: result.success,
-        ambiguous: result.ambiguous === true,
-        error: result.success ? undefined : result.error,
-      }, { status: result.success ? 200 : 503 })
+        reviewed_update_count: briefs.length,
+        sent: providerConfirmed ? 1 : 0,
+        provider_confirmed: providerConfirmed,
+        provider_id: providerConfirmed ? result.providerId : undefined,
+        ambiguous: result.ambiguous === true || (result.success && !providerConfirmed),
+        error: providerConfirmed ? undefined : result.success
+          ? 'Email provider acceptance could not be tied to a valid message ID'
+          : result.error,
+      }, { status: providerConfirmed ? 200 : 503 })
     }
 
     const subscribers = await loadActiveSubscribers(supabase, RICHMOND_FIPS)

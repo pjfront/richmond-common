@@ -32,6 +32,7 @@ import { GET, POST } from './route'
 function request(body: Record<string, unknown> = {}) {
   return {
     headers: new Headers({ authorization: 'Bearer test-secret' }),
+    nextUrl: new URL('https://example.test/api/email/send-digest'),
     json: vi.fn(async () => body),
   } as unknown as NextRequest
 }
@@ -97,7 +98,7 @@ describe('/api/email/send-digest canary control', () => {
       recap_emailed_at: null,
       transcript_recap_emailed_at: null,
     }]))
-    mocked.sendEmail.mockResolvedValue({ success: true, providerId: 'provider-1' })
+    mocked.sendEmail.mockResolvedValue({ success: true, providerId: 'aaaaaaaa-1111-4111-8111-111111111111' })
 
     const response = await POST(request({ mode: 'canary' }))
     const body = await response.json()
@@ -107,6 +108,8 @@ describe('/api/email/send-digest canary control', () => {
       mode: 'canary',
       sent: 1,
       provider_confirmed: true,
+      provider_id: 'aaaaaaaa-1111-4111-8111-111111111111',
+      reviewed_update_count: 0,
     }))
     expect(mocked.buildDigestEmail).toHaveBeenCalledWith(
       expect.any(Array),
@@ -133,12 +136,39 @@ describe('/api/email/send-digest canary control', () => {
       content_version: 2, published_at: '2026-09-01T12:00:00Z',
     }
     mocked.from.mockImplementation(table => digestMeetingQuery(table === 'civic_brief_candidates' ? [brief] : []))
-    mocked.sendEmail.mockResolvedValue({ success: true, providerId: 'provider-brief' })
+    mocked.sendEmail.mockResolvedValue({ success: true, providerId: 'bbbbbbbb-1111-4111-8111-111111111111' })
 
     const response = await POST(request({ mode: 'canary' }))
 
     expect(response.status).toBe(200)
+    expect(await response.json()).toEqual(expect.objectContaining({
+      provider_id: 'bbbbbbbb-1111-4111-8111-111111111111',
+      reviewed_update_count: 1,
+      meeting_count: 0,
+    }))
     expect(mocked.buildDigestEmail).toHaveBeenCalledWith([], expect.stringContaining('/subscribe'), undefined, { canary: true, briefs: [brief] })
+    expect(mocked.sendEmail).toHaveBeenCalledTimes(1)
+    expect(mocked.from.mock.calls.map(([table]) => table)).toEqual(['meetings', 'civic_brief_candidates'])
+  })
+
+  it.each([undefined, '', 'not-a-message-id', 'canary@example.test'])('stops on an accepted response without a valid provider identity: %s', async providerId => {
+    process.env.API_SECRET = 'test-secret'
+    process.env.SUBSCRIBER_CANARY_EMAIL = 'canary@example.test'
+    mocked.from.mockImplementation(table => digestMeetingQuery(table === 'civic_brief_candidates' ? [] : [{
+      id: '33333333-3333-4333-8333-333333333333',
+      meeting_date: '2026-08-05', meeting_type: 'regular',
+      meeting_recap: 'Council discussed an agenda item.', meeting_recap_provenance: null,
+      minutes_url: null, recap_emailed_at: null, transcript_recap_emailed_at: null,
+    }]))
+    mocked.sendEmail.mockResolvedValue({ success: true, providerId })
+
+    const response = await POST(request({ mode: 'canary' }))
+    const body = await response.json()
+
+    expect(response.status).toBe(503)
+    expect(body).toEqual(expect.objectContaining({ provider_confirmed: false, ambiguous: true, sent: 0 }))
+    expect(body).not.toHaveProperty('provider_id')
+    expect(JSON.stringify(body)).not.toContain('canary@example.test')
     expect(mocked.sendEmail).toHaveBeenCalledTimes(1)
     expect(mocked.from.mock.calls.map(([table]) => table)).toEqual(['meetings', 'civic_brief_candidates'])
   })
