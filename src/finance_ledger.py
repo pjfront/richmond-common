@@ -12,7 +12,7 @@ from decimal import Decimal, InvalidOperation
 import hashlib
 import json
 import re
-from typing import Any
+from typing import Any, Mapping
 
 FORMS = {0: "F460A", 1: "F460C", 4: "F496P3", 12: "F460B1", 19: "S496", 20: "F497P1", 21: "F497P2"}
 TYPES = tuple(FORMS)
@@ -118,6 +118,40 @@ def reconciliation_key(a: dict, name_ids: dict | None = None) -> tuple:
     return donor, recipient, a["amount"], a["activity_date"], a["amount_kind"]
 
 
+def rapid_noncash_counterpart(rapid: Mapping[str, Any], periodic: Mapping[str, Any]) -> bool:
+    """Exact source conflict for review, never proof of one economic event.
+
+    Form 497 Part 1 does not distinguish cash from noncash. A current Schedule C
+    with the same reported parties, value and day therefore prevents treating
+    that rapid assertion as an additional cash receipt without interpretation.
+    """
+    if (rapid.get("transaction_type") != 20 or periodic.get("transaction_type") != 1
+            or not rapid.get("is_current") or not periodic.get("is_current") or periodic.get("review_reason")
+            or rapid.get("source") != "netfile" or periodic.get("source") != "netfile"
+            or not rapid.get("scope_key") or rapid.get("scope_key") != periodic.get("scope_key")
+            or rapid.get("event_kind") != "receipt" or periodic.get("event_kind") != "noncash"
+            or rapid.get("amount_kind") != "monetary" or periodic.get("amount_kind") != "reported_noncash_value"):
+        return False
+    recipient_id = fppc_id(rapid.get("recipient_fppc_id"))
+    if (not recipient_id or recipient_id != fppc_id(periodic.get("recipient_fppc_id"))
+            or recipient_id != fppc_id(rapid.get("reporting_filer_fppc_id"))
+            or recipient_id != fppc_id(periodic.get("reporting_filer_fppc_id"))):
+        return False
+    rapid_donor_id, periodic_donor_id = fppc_id(rapid.get("donor_fppc_id")), fppc_id(periodic.get("donor_fppc_id"))
+    if rapid_donor_id and periodic_donor_id:
+        same_donor = rapid_donor_id == periodic_donor_id
+    else:
+        donor_name = normalized_name(rapid.get("donor_name"))
+        same_donor = bool(donor_name) and donor_name == normalized_name(periodic.get("donor_name"))
+    day = iso_date(rapid.get("activity_date"))
+    try:
+        amount, other_amount = Decimal(str(rapid.get("amount"))), Decimal(str(periodic.get("amount")))
+    except InvalidOperation:
+        return False
+    return bool(same_donor and day and day == iso_date(periodic.get("activity_date"))
+                and amount.is_finite() and other_amount.is_finite() and amount > 0 and amount == other_amount)
+
+
 def reconcile(assertions: list[dict]) -> list[dict]:
     """Keep same-role repeated gifts; match unique exact cross-report claims.
 
@@ -129,6 +163,19 @@ def reconcile(assertions: list[dict]) -> list[dict]:
     for a in assertions:
         if a["is_current"] and a.get("donor_fppc_id"):
             name_ids[normalized_name(a.get("donor_name"))].add(a["donor_fppc_id"])
+    noncash = defaultdict(list)
+    for a in assertions:
+        if a["is_current"] and not a["review_reason"] and a["transaction_type"] == 1:
+            noncash[(a.get("recipient_fppc_id"), a.get("amount"), iso_date(a.get("activity_date")))].append(a)
+    for a in assertions:
+        if a["is_current"] and not a["review_reason"] and a["transaction_type"] == 20:
+            candidates = noncash.get((a.get("recipient_fppc_id"), a.get("amount"), iso_date(a.get("activity_date"))), [])
+            if any(rapid_noncash_counterpart(a, candidate) for candidate in candidates):
+                # Retain the periodic noncash assertion and all immutable source
+                # payloads. Even a unique match is withheld, not auto-merged;
+                # repeated or mixed cash/noncash entries require source review.
+                a.update(reconciliation_status="pending_review", review_reason="rapid_report_noncash_conflict",
+                         canonical_event_key=None)
     # Timing proximity is an operator question, not proof of duplication. Keep
     # recipient periodic accounting visible; hold only the unmatched rapid or
     # outgoing claim that might repeat it, with both source assertions retained.

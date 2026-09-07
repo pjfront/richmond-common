@@ -891,7 +891,7 @@ def test_reconciliation_unknown_zero_cannot_hide_prior_uni_row():
     conn, cursor = _mock_connection()
     cursor.fetchone.return_value = None
     cursor.fetchall.return_value = [
-        ("unknown-zero-filing", "old-committee-id", "2026-06-30"),
+        ("unknown-zero-filing", "old-committee-id", "2026-06-30", 100),
     ]
     cache = {
         "unknown-zero-filing": _form460_summary(
@@ -905,18 +905,13 @@ def test_reconciliation_unknown_zero_cannot_hide_prior_uni_row():
         "_committees": {"unknown-zero-filing": "New Zero-Dollar Committee"},
     }
 
-    with pytest.raises(
-        FormSummaryCacheDurabilityError,
-        match="does not cover prior UNI filing",
-    ):
-        reconcile_paper_filings_to_forms(
-            conn,
-            form_summary_cache=cache,
-        )
+    result = reconcile_paper_filings_to_forms(conn, form_summary_cache=cache)
+    assert result["incomplete_count"] == 1
+    assert "does not cover prior UNI filing" in result["incomplete_reasons"][0]
 
     sql_statements = [call.args[0] for call in cursor.execute.call_args_list]
     assert all("DELETE FROM contributions" not in sql for sql in sql_statements)
-    conn.commit.assert_not_called()
+    conn.commit.assert_called_once()
 
 
 def test_reconciliation_accepts_finite_negative_form_correction():
@@ -965,34 +960,32 @@ def test_reconciliation_partial_cache_cannot_erase_prior_filing():
         (100.0,),
     ]
     cursor.fetchall.return_value = [
-        ("missing-prior-filing", "committee-id", "2025-12-31"),
+        ("missing-prior-filing", "committee-id", "2025-12-31", 200),
     ]
     cache = {
         "current-filing": _form460_summary(),
         "_committees": {"current-filing": "Richmond Neighbors"},
     }
 
-    with pytest.raises(FormSummaryCacheDurabilityError, match="missing-prior-filing"):
-        reconcile_paper_filings_to_forms(
-            conn,
-            form_summary_cache=cache,
-        )
+    result = reconcile_paper_filings_to_forms(conn, form_summary_cache=cache)
+    assert result["incomplete_count"] == 2
+    assert any("missing-prior-filing" in reason for reason in result["incomplete_reasons"])
 
     sql_statements = [call.args[0] for call in cursor.execute.call_args_list]
     assert all("DELETE FROM contributions" not in sql for sql in sql_statements)
-    conn.commit.assert_not_called()
+    conn.commit.assert_called_once()
 
 
-def test_reconciliation_amendment_period_covers_superseded_filing_id():
+def test_reconciliation_amendment_preserves_prior_row_for_explicit_repair():
     from load_paper_filings import reconcile_paper_filings_to_forms
 
     conn, cursor = _mock_connection()
     cursor.fetchone.side_effect = [
         ("committee-id",),
-        (100.0,),
+        (1000.0,),
     ]
     cursor.fetchall.return_value = [
-        ("superseded-filing", "committee-id", "2026-06-30"),
+        ("superseded-filing", "committee-id", "2026-06-30", 200),
     ]
     cursor.rowcount = 1
     cache = {
@@ -1006,19 +999,19 @@ def test_reconciliation_amendment_period_covers_superseded_filing_id():
             form_summary_cache=cache,
         )
 
-    assert result["rows_synthesized"] == 1
-    assert loader.call_args.kwargs["commit"] is False
+    assert result["rows_synthesized"] == 0
+    assert result["incomplete_count"] == 1
+    loader.assert_not_called()
     conn.commit.assert_called_once()
 
 
-def test_reconciliation_replacement_is_one_caller_owned_transaction():
+def test_reconciliation_new_explicit_aggregate_is_one_caller_owned_transaction():
     from load_paper_filings import reconcile_paper_filings_to_forms
 
     conn, cursor = _mock_connection()
     cursor.fetchone.side_effect = [
         ("committee-id",),  # complete-cache committee preflight
-        (100.0,),           # existing itemized monetary total
-        (1,),               # prior UNI count
+        (1000.0,),          # source-reconciled itemized monetary total
     ]
     cursor.rowcount = 1
     cache = {
@@ -1033,20 +1026,20 @@ def test_reconciliation_replacement_is_one_caller_owned_transaction():
         )
 
     assert result["rows_synthesized"] == 1
+    assert result["dollars_synthesized"] == 200
     loader.assert_called_once()
     assert loader.call_args.kwargs["commit"] is False
     conn.commit.assert_called_once()
     conn.rollback.assert_not_called()
 
 
-def test_reconciliation_rolls_back_delete_when_replacement_fails():
+def test_reconciliation_rolls_back_when_new_aggregate_insert_fails():
     from load_paper_filings import reconcile_paper_filings_to_forms
 
     conn, cursor = _mock_connection()
     cursor.fetchone.side_effect = [
         ("committee-id",),
-        (100.0,),
-        (1,),
+        (1000.0,),
     ]
     cursor.rowcount = 1
     cache = {

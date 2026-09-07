@@ -21,6 +21,8 @@ from typing import Any, Mapping, Sequence
 from urllib.parse import quote, urlsplit
 from zoneinfo import ZoneInfo
 
+from finance_ledger import rapid_noncash_counterpart
+
 
 PRODUCER = "civic_review_packets"
 MAX_FINANCE_ROWS = 5000
@@ -49,6 +51,7 @@ OFFICIAL_AGENDA_HOSTS = {
 REASONS = {
     "ambiguous_cross_report_multiplicity": "Several entries could describe the same transfer; their number differs across reports.",
     "cross_report_date_disagreement": "Possible counterpart reports give different activity dates within fourteen days.",
+    "rapid_report_noncash_conflict": "A rapid Form 497 report matches a current noncash Schedule C entry by reported parties, amount and exact date. The rapid form does not establish an additional cash receipt; compare both originals before changing the cash classification.",
     "missing_amount_date_or_reporting_filer": "An amount, activity date, or reporting filer is missing from the extracted record.",
     "missing_reported_counterparty": "A reported donor or recipient is missing from the extracted record.",
     "independent_expenditure_target_or_stance_unverified": "The candidate or measure, or support/opposition checkbox, has not been verified.",
@@ -132,6 +135,8 @@ def reported_entry(row: Mapping[str, Any]) -> dict[str, Any]:
 
 def possible_counterpart(left: Mapping[str, Any], right: Mapping[str, Any]) -> bool:
     """Package a comparison, never infer an entity match or economic event."""
+    if rapid_noncash_counterpart(left, right) or rapid_noncash_counterpart(right, left):
+        return True
     if left.get("transaction_type") not in {0, 4, 20, 21} or right.get("transaction_type") not in {0, 4, 20, 21}:
         return False
     if not left.get("recipient_fppc_id") or left.get("recipient_fppc_id") != right.get("recipient_fppc_id"):

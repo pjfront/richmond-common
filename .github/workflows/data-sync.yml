@@ -324,6 +324,14 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: python src/civic_review_packets.py --section all --apply --max-packets 6 --report tmp/finance/review-summary.json
+      - name: Install local paper-filing OCR
+        if: ${{ !cancelled() }}
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends tesseract-ocr
+      - name: Retain changed paper filings and prepare source review
+        if: ${{ !cancelled() }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python src/paper_finance_review.py --apply --report tmp/finance/paper-review-summary.json
       - name: Record finance acquisition counts
         if: always()
         run: |

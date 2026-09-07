@@ -5,7 +5,7 @@ from decimal import Decimal
 import pymupdf as fitz
 import pytest
 
-from finance_ledger import assertion_from_netfile, reconcile, parse_496_context
+from finance_ledger import assertion_from_netfile, reconcile, parse_496_context, rapid_noncash_counterpart
 from finance_repair_audit import direction_status
 from netfile_client import deduplicate_contributions, NetFileAPIError
 from db.finance import persist_finance_snapshot
@@ -88,6 +88,72 @@ def test_negative_adjustment_noncash_and_loan_not_cash_gifts():
     assert {e["event_kind"] for e in events} == {"receipt", "noncash", "loan"}
     assert next(e for e in events if e["event_kind"] == "receipt")["amount_kind"] == "negative_adjustment"
     assert sum(e["amount"] for e in events if e["event_kind"] == "receipt") == -100
+
+
+def noncash_conflict_fixture():
+    def reported(kind, filing):
+        return dict(transactionType=kind, filingId=filing, id=f"source-{kind}", date="2026-04-08", amount=2000,
+                    filerName="Claudia Jimenez for Mayor of Richmond 2026", filerFppcId="1488504",
+                    name="Diana Wear", transactionFppcId=None, description="Payment for speech coaching" if kind == 1 else "")
+    return [assertion(reported(1, "216815171"), amends="216686471", amendmentSequenceNumber=2), assertion(reported(20, "216668328"))]
+
+
+def test_actual_rapid_noncash_conflict_withholds_cash_but_preserves_both_original_assertions():
+    rows = noncash_conflict_fixture()
+    before = [(row["content_hash"], deepcopy(row["raw_payload"])) for row in rows]
+    events = reconcile(rows)
+    assert len(events) == 1 and events[0]["event_kind"] == "noncash"
+    assert events[0]["amount"] == Decimal("2000") and events[0]["filing_ids"] == ["216815171"]
+    assert rows[1]["review_reason"] == "rapid_report_noncash_conflict"
+    assert rows[1]["reconciliation_status"] == "pending_review" and rows[1]["canonical_event_key"] is None
+    assert [(row["content_hash"], row["raw_payload"]) for row in rows] == before
+
+
+@pytest.mark.parametrize("which,updates", [
+    (0, {"is_current": False}), (0, {"review_reason": "unverified_source"}),
+    (0, {"recipient_fppc_id": "1490887"}), (0, {"reporting_filer_fppc_id": "1490887"}),
+    (0, {"activity_date": "2026-04-09"}), (0, {"amount": Decimal("2000.01")}),
+    (0, {"donor_name": "Diana Wear LLC"}), (0, {"scope_key": "another-scope"}),
+    (0, {"amount_kind": "negative_adjustment"}), (0, {"amount": Decimal("-2000")}),
+    (1, {"transaction_type": 21}), (1, {"recipient_fppc_id": None}), (1, {"donor_name": None}),
+    (1, {"activity_date": None}), (1, {"amount": None}), (1, {"amount": Decimal("NaN")}),
+])
+def test_noncash_guard_requires_exact_current_source_identity_and_positive_value(which, updates):
+    periodic, rapid = noncash_conflict_fixture()
+    [periodic, rapid][which].update(updates)
+    assert not rapid_noncash_counterpart(rapid, periodic)
+
+
+def test_noncash_guard_uses_reported_ids_without_fuzzy_names_or_conflicting_ids():
+    periodic, rapid = noncash_conflict_fixture()
+    periodic["donor_name"] = " DIANA  WEAR "
+    assert rapid_noncash_counterpart(rapid, periodic)
+    periodic["donor_fppc_id"], rapid["donor_fppc_id"] = "1111111", "2222222"
+    assert not rapid_noncash_counterpart(rapid, periodic)
+    rapid["donor_fppc_id"] = "1111111"
+    rapid["donor_name"] = "Different reported spelling"
+    assert rapid_noncash_counterpart(rapid, periodic)
+
+
+def test_noncash_collision_with_multiple_possible_sources_never_auto_merges():
+    periodic, rapid = noncash_conflict_fixture()
+    second = deepcopy(periodic)
+    second.update(record_key="another-periodic-row", transaction_id="another")
+    extra_rapid = deepcopy(rapid)
+    extra_rapid.update(record_key="another-rapid-row", transaction_id="another")
+    events = reconcile([periodic, second, rapid, extra_rapid])
+    assert len(events) == 2 and all(event["event_kind"] == "noncash" for event in events)
+    assert all(row["review_reason"] == "rapid_report_noncash_conflict" for row in [rapid, extra_rapid])
+    assert all(len(event["assertion_keys"]) == 1 for event in events)
+
+
+def test_noncash_guard_preserves_a_separate_periodic_cash_receipt_with_identical_parties_and_value():
+    periodic, rapid = noncash_conflict_fixture()
+    cash = assertion({**rapid["raw_payload"]["transaction"], "transactionType": 0, "id": "cash", "filingId": "216815171"})
+    events = reconcile([periodic, rapid, cash])
+    assert len(events) == 2 and {event["event_kind"] for event in events} == {"receipt", "noncash"}
+    assert rapid["review_reason"] == "rapid_report_noncash_conflict"
+    assert all(len(event["assertion_keys"]) == 1 for event in events)
 
 
 def test_ie_does_not_infer_donor_support_or_election_from_committee_title():

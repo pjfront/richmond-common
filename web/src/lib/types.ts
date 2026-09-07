@@ -653,6 +653,11 @@ export interface DonorContribution {
   amount: number
   contribution_date: string
   source: string
+  committee_name?: string
+  committee_fppc_id?: string | null
+  filing_id?: string | null
+  source_url?: string | null
+  contribution_type?: string
 }
 
 // ─── Economic Interests (Form 700) ─────────────────────────

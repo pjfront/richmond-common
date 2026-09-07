@@ -11,18 +11,17 @@ Reconciliation to Form 460 cover totals: each Form 460 carries a
 with the candidate's own legal claim of total monetary contributions
 this period and cycle-to-date. After itemized rows are loaded and the
 dedup/merge enrichments have run, ``reconcile_paper_filings_to_forms``
-inserts one synthetic row per Form 460 with amount = (form total -
-itemized rows in that period). The synthetic row covers unitemized
-small donations (< $100, FPPC reports as a summary line) plus any
-extraction noise. This makes DB cycle totals match the form exactly,
-without falsely implying we have donor identity for the small-dollar
-gifts that FPPC rules let candidates report aggregated.
+may insert the form's explicit unitemized amount only after the extracted
+itemized rows match its itemized summary. Missing extraction is reported as
+incomplete; it is never classified as small donations. Existing UNI rows are
+preserved for a separately reviewed repair, including historical rows that
+incorrectly combined missing itemized extraction with unitemized receipts.
 
 Run order (handled automatically via SYNC_SOURCES enrichment cascade):
   1. load_paper_filings.py        — itemized rows from JSON
   2. donor_employer_merge          — collapse same-name donors
   3. donor_dedup                   — drop cross-filing 497 dups
-  4. paper_filing_reconciliation   — synthesize Form 460 deficit rows
+  4. paper_filing_reconciliation   — verify explicit Form 460 unitemized totals
 
 Usage:
     python load_paper_filings.py                     # load all JSON files
@@ -451,12 +450,11 @@ def _preflight_form_summary_cache(
     cache: dict,
     city_fips: str,
 ) -> list[dict]:
-    """Validate every reconciliation input before any destructive write.
+    """Validate reporting periods and committee identity before any insert.
 
     A successful DB read is not enough: historical cache rows predate the
-    strict extraction contract. Silently skipping one malformed or unmapped
-    row after deleting all UNI contributions would erase its last good
-    reconciliation, so the complete cache is validated and mapped first.
+    strict extraction contract. A malformed or unmapped row cannot establish
+    a source-backed reconciliation obligation; preserve it for review.
     """
     if not isinstance(cache, dict):
         raise FormSummaryCacheDurabilityError(
@@ -567,6 +565,8 @@ def _preflight_form_summary_cache(
             "period_start": period_start,
             "period_end": period_end,
             "monetary_form": monetary_form,
+            "itemized_form": summary.get("itemized_this_period"),
+            "unitemized_form": summary.get("unitemized_this_period"),
         })
     return validated
 
@@ -576,30 +576,14 @@ def reconcile_paper_filings_to_forms(
     city_fips: str = "0660620",
     form_summary_cache: dict | None = None,
 ) -> dict:
-    """Synthesize Form 460 reconciliation rows for ALL candidates with a
-    Form 460 in the persistent summary cache. Reconciles against
-    MONETARY (Line 1) — excludes loans (Schedule B/F) and non-monetary
-    (Schedule C) which are tracked separately.
+    """Insert only an explicit, reconciled Form 460 unitemized aggregate.
 
-    For each Form 460 in the cache:
-      * Compute gap = form.monetary_this_period - DB monetary in period
-      * If gap > $1: insert/update one synthetic row with that amount,
-        contributor_name=UNITEMIZED_DONOR_NAME, entity_code='UNI',
-        date=period_end. Represents unitemized small-donor contributions
-        FPPC rules let candidates aggregate rather than itemize.
-      * If gap < -$1: DB EXCEEDS form — flagged in the return stats so
-        the operator can investigate. NO negative synthesis.
-      * If |gap| <= $1: extraction already matches.
-
-    Idempotent: drops all UNI rows for the city before re-inserting,
-    so the resulting state reflects the latest summary cache + DB
-    state regardless of run history.
-
-    Designed to run AFTER donor_employer_merge and donor_dedup so the
-    DB period totals reflect the post-cleanup state. The caller (e.g.,
-    sync_paper_filing_reconciliation) typically also calls
-    discover_and_extract_all_form460_summaries first to ensure the
-    cache is fresh.
+    Both itemized and unitemized source amounts must be finite, their sum
+    must match monetary receipts, and retained non-UNI monetary rows must
+    match the itemized amount. A deficit alone proves no donor category.
+    Existing UNI rows are never deleted or rewritten: mismatches, uncovered
+    rows and amendment ambiguity require a separate source-backed repair.
+    The wrapper propagates these issues as incomplete work to monitoring.
     """
     stats = {
         "filings_examined": 0,
@@ -620,10 +604,27 @@ def reconcile_paper_filings_to_forms(
     )
     validated_filings = _preflight_form_summary_cache(conn, cache, city_fips)
     over_filings: list[dict] = []
+    issues: list[dict] = []
+    if not any(key != "_committees" for key in cache):
+        issues.append({"filing_id": "<cache>",
+                       "reason": "Empty summary cache cannot establish reconciliation coverage"})
     synth_records: list[dict] = []
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT filing_id, committee_id, contribution_date, amount
+                 FROM contributions
+                WHERE city_fips = %s AND entity_code = 'UNI'""",
+            (city_fips,),
+        )
+        prior_uni_rows = cur.fetchall()
+    prior_by_period: dict[tuple[str, str], list[tuple]] = {}
+    for prior_filing, prior_committee, prior_date, prior_amount in prior_uni_rows:
+        period_end = prior_date.isoformat() if hasattr(prior_date, "isoformat") else str(prior_date)
+        prior_by_period.setdefault((str(prior_committee), period_end), []).append(
+            (str(prior_filing or ""), float(prior_amount))
+        )
 
-    # Compute every replacement row before DELETE. Query/conversion failures
-    # therefore leave the currently published reconciliation untouched.
+    # Validate and inspect the complete input before performing any inserts.
     for filing in validated_filings:
         filing_id = filing["filing_id"]
         committee = filing["committee"]
@@ -632,6 +633,27 @@ def reconcile_paper_filings_to_forms(
         period_end = filing["period_end"]
         monetary_form = filing["monetary_form"]
         stats["filings_examined"] += 1
+
+        def unresolved(reason: str, **detail) -> None:
+            issues.append({"filing_id": filing_id, "committee": committee,
+                           "period_start": period_start, "period_end": period_end,
+                           "reason": reason, **detail})
+
+        raw_itemized = filing["itemized_form"]
+        raw_unitemized = filing["unitemized_form"]
+        try:
+            if isinstance(raw_itemized, bool) or isinstance(raw_unitemized, bool):
+                raise ValueError("Boolean source amount")
+            itemized_form = float(raw_itemized)
+            unitemized_form = float(raw_unitemized)
+        except (TypeError, ValueError):
+            unresolved("Explicit itemized and unitemized source amounts are missing or invalid")
+            continue
+        if (not math.isfinite(itemized_form) or not math.isfinite(unitemized_form)
+                or unitemized_form < 0
+                or round(itemized_form + unitemized_form - monetary_form, 2) != 0):
+            unresolved("Explicit source amounts do not reconcile to monetary receipts")
+            continue
 
         # Reconcile against MONETARY (Schedule A, Line 1) — excludes
         # loans (Schedule B, separate financial instrument) and
@@ -651,9 +673,12 @@ def reconcile_paper_filings_to_forms(
                 (committee_id, period_start, period_end),
             )
             db_monetary = float(cur.fetchone()[0])
+        if not math.isfinite(db_monetary):
+            unresolved("Retained monetary amount is invalid; preserved unchanged")
+            continue
 
         gap = round(monetary_form - db_monetary, 2)
-        if gap < -1.0:
+        if gap < 0:
             stats["filings_over"] += 1
             over_record = {
                 "filing_id": filing_id,
@@ -671,15 +696,29 @@ def reconcile_paper_filings_to_forms(
                 f"${monetary_form:,.2f} by ${-gap:,.2f} — "
                 f"flagged for operator review (data quality)"
             )
+        if round(itemized_form - db_monetary, 2) != 0 or round(gap - unitemized_form, 2) != 0:
+            unresolved("Itemized extraction does not match the source; the deficit is not an unitemized donation",
+                       itemized_form=itemized_form, db_itemized=db_monetary,
+                       unitemized_form=unitemized_form, monetary_gap=gap)
             continue
-        if gap < 1.0:
+
+        existing = prior_by_period.get((str(committee_id), period_end), [])
+        if existing:
+            if len(existing) == 1 and existing[0][0] == filing_id and round(existing[0][1] - unitemized_form, 2) == 0:
+                stats["filings_already_matched"] += 1
+            else:
+                unresolved("Existing UNI rows need a separate source-backed repair; preserved unchanged",
+                           retained_rows=len(existing), retained_total=sum(row[1] for row in existing),
+                           unitemized_form=unitemized_form)
+            continue
+        if unitemized_form == 0:
             stats["filings_already_matched"] += 1
             continue
 
         synth_records.append({
             "contributor_name": UNITEMIZED_DONOR_NAME,
             "contributor_employer": "",
-            "amount": gap,
+            "amount": unitemized_form,
             "date": period_end,
             "committee": committee,
             "occupation": "",
@@ -688,28 +727,18 @@ def reconcile_paper_filings_to_forms(
             "filer_fppc_id": "",
             "entity_code": "UNI",
         })
-        print(f"  {committee} filing {filing_id}: synthesizing ${gap:,.2f} unitemized")
+        print(f"  {committee} filing {filing_id}: recording ${unitemized_form:,.2f} source-reported unitemized")
         stats["rows_synthesized"] += 1
-        stats["dollars_synthesized"] += gap
+        stats["dollars_synthesized"] += unitemized_form
 
-    # Prove that the cache covers every already-published reconciliation row.
-    # Amendments legitimately replace filing IDs, so a prior row is covered by
-    # either its exact filing_id or the same committee/reporting-period end.
-    with conn.cursor() as cur:
-        cur.execute(
-            """SELECT filing_id, committee_id, contribution_date
-                 FROM contributions
-                WHERE city_fips = %s AND entity_code = 'UNI'""",
-            (city_fips,),
-        )
-        prior_uni_rows = cur.fetchall()
+    # Uncovered historical rows also remain intact. A partial cache cannot
+    # quietly claim that those source obligations were reconciled.
     validated_ids = {filing["filing_id"] for filing in validated_filings}
     validated_periods = {
         (str(filing["committee_id"]), filing["period_end"])
         for filing in validated_filings
     }
-    uncovered_prior: list[str] = []
-    for prior_filing_id, prior_committee_id, prior_date in prior_uni_rows:
+    for prior_filing_id, prior_committee_id, prior_date, _prior_amount in prior_uni_rows:
         rendered_id = str(prior_filing_id or "").strip()
         rendered_date = (
             prior_date.isoformat()
@@ -720,26 +749,12 @@ def reconcile_paper_filings_to_forms(
             continue
         if (str(prior_committee_id), rendered_date) in validated_periods:
             continue
-        uncovered_prior.append(rendered_id or "<missing filing_id>")
-    if uncovered_prior:
-        raise FormSummaryCacheDurabilityError(
-            "authoritative Form 460 cache does not cover prior UNI filing(s): "
-            + ", ".join(uncovered_prior[:5])
-        )
+        issues.append({"filing_id": rendered_id or "<missing filing_id>",
+                       "reason": "Summary cache does not cover prior UNI filing; preserved unchanged"})
 
-    # Replace as one transaction. The loader's normal internal commits and
-    # post-load dedup are disabled so a later deterministic failure cannot
-    # leave the global DELETE plus only a prefix of the replacement set.
+    # Only new, proven aggregates are written. No global UNI deletion and no
+    # implicit repair of existing rows during a routine observation.
     try:
-        with conn.cursor() as cur:
-            cur.execute(
-                """DELETE FROM contributions
-                    WHERE city_fips = %s AND entity_code = 'UNI'""",
-                (city_fips,),
-            )
-            deleted = cur.rowcount
-            if deleted:
-                print(f"  cleared {deleted} prior UNI rows")
         if synth_records:
             load_contributions_to_db(
                 conn,
@@ -753,6 +768,9 @@ def reconcile_paper_filings_to_forms(
         raise
 
     stats["over_filings"] = over_filings
+    stats["reconciliation_issues"] = issues
+    stats["incomplete_count"] = len(issues)
+    stats["incomplete_reasons"] = [f"Form 460 {issue['filing_id']}: {issue['reason']}" for issue in issues]
     return stats
 
 

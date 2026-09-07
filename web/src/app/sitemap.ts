@@ -45,6 +45,7 @@ export const PUBLIC_STATIC_PATHS = [
   ...CIVIC_STORIES.map(story => `/stories/${story.slug}`),
   '/elections/2026-general',
   '/elections/2026-general/money',
+  '/elections/2026-general/money/ahmad-anderson',
   '/support',
   '/meetings',
   '/meetings/most-discussed',

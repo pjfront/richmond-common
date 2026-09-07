@@ -1,0 +1,370 @@
+{
+  "schema_version": 1,
+  "committee": {
+    "fppc_id": "1481105",
+    "portal_filer_id": "214395297",
+    "name": "Anderson for Mayor 2026"
+  },
+  "reviewed_at": "2026-09-06T20:57:00Z",
+  "review_method": "AI visual check against original filed PDFs",
+  "sources": [
+    {
+      "filing_id": "217094857",
+      "form": "460",
+      "filed_at": "2026-07-29",
+      "period_start": "2026-05-29",
+      "period_end": "2026-06-30",
+      "source_url": "https://netfile.com/Connect2/api/public/image/217094857",
+      "pdf_sha256": "85b20da8b1281bb288ca9bc591cea5e35e7168ae3a85428d1cff104d7f06aede",
+      "metadata_sha256": "6669ac6a1fac6ebc6f8c3af42b9d0964f6c81c36a33b2517e8858446ba59e5a6",
+      "reviewed_pages": [
+        1,
+        3,
+        4,
+        5,
+        7
+      ]
+    },
+    {
+      "filing_id": "217352920",
+      "form": "497",
+      "filed_at": "2026-09-03",
+      "period_start": null,
+      "period_end": null,
+      "source_url": "https://netfile.com/Connect2/api/public/image/217352920",
+      "pdf_sha256": "fc9bfe2bfa8b4b74cac3df41e436bfd81648b8ac6e43cc94bf8861cde077e8de",
+      "metadata_sha256": "0fdb6fcd08d1c4f172cc14ca84b6ca510e9c0c217a495ac204f07f27d817f1ba",
+      "reviewed_pages": [
+        1
+      ]
+    },
+    {
+      "filing_id": "217332630",
+      "form": "497",
+      "filed_at": "2026-08-31",
+      "period_start": null,
+      "period_end": null,
+      "source_url": "https://netfile.com/Connect2/api/public/image/217332630",
+      "pdf_sha256": "82c8bb5fdc6b49016ee345878db00bdb055161471271f6c839da5942c274bb62",
+      "metadata_sha256": "115f73c18f4881eff86e6a0e15a1b57af4eb556e8a66e08c31147da4aaadcf69",
+      "reviewed_pages": [
+        1
+      ]
+    },
+    {
+      "filing_id": "217243030",
+      "form": "497",
+      "filed_at": "2026-08-17",
+      "period_start": null,
+      "period_end": null,
+      "source_url": "https://netfile.com/Connect2/api/public/image/217243030",
+      "pdf_sha256": "5934f38e8774e473bd3e6e4e5cfa00d56316a421c5dd4e24dc694a586ff1352d",
+      "metadata_sha256": "b218010341d52fe83931dd666a1e1fbb9993141168f8f821d902766c18f4ab0c",
+      "reviewed_pages": [
+        1
+      ]
+    },
+    {
+      "filing_id": "217243444",
+      "form": "497",
+      "filed_at": "2026-08-17",
+      "period_start": null,
+      "period_end": null,
+      "source_url": "https://netfile.com/Connect2/api/public/image/217243444",
+      "pdf_sha256": "f42bc34b74bc90c391eb05d466df49cd406acef3a190b68557b29f278330fda1",
+      "metadata_sha256": "a4253f69217cdcd8269c11de697647567cdd57d455d0b2c3d244ac61cc30459a",
+      "reviewed_pages": [
+        1
+      ]
+    },
+    {
+      "filing_id": "216695016",
+      "form": "460",
+      "filed_at": "2026-04-22",
+      "period_start": "2026-01-01",
+      "period_end": "2026-04-18",
+      "source_url": "https://netfile.com/Connect2/api/public/image/216695016",
+      "pdf_sha256": "ef5db3a5b07de4dfcf517d973216d5d872463bcfb88dbceb1c29cfb80abbf6fe",
+      "metadata_sha256": "baf15ffb8bf9bd04f5d64d1e4c22adc08cb4ba1585c0dd62a7c6530fff13d4a0",
+      "reviewed_pages": [
+        1,
+        3
+      ]
+    },
+    {
+      "filing_id": "216812159",
+      "form": "460",
+      "filed_at": "2026-05-21",
+      "period_start": "2026-04-19",
+      "period_end": "2026-05-16",
+      "source_url": "https://netfile.com/Connect2/api/public/image/216812159",
+      "pdf_sha256": "3e549d5646033ff2fa9a4b6ae733af1553c89175c9977f053762f2fb872ecd14",
+      "metadata_sha256": "95091eb3d8458cf984902c4ca764497401de6f49b57b52eb97c7241ee2ac0704",
+      "reviewed_pages": [
+        1,
+        3
+      ]
+    },
+    {
+      "filing_id": "216853551",
+      "form": "460",
+      "filed_at": "2026-06-02",
+      "period_start": "2026-05-17",
+      "period_end": "2026-05-28",
+      "source_url": "https://netfile.com/Connect2/api/public/image/216853551",
+      "pdf_sha256": "c74a5682ac049404423d65b721c2cf1736818968ad442b7d265f3aee50242bc6",
+      "metadata_sha256": "b6ca66130af3c31c416183c7fccd5e3645c6841db886faf3c647b56a7929a9f3",
+      "reviewed_pages": [
+        1,
+        3
+      ]
+    },
+    {
+      "filing_id": "217027183",
+      "form": "460",
+      "filed_at": "2026-04-22",
+      "period_start": "2026-01-01",
+      "period_end": "2026-04-18",
+      "source_url": "https://netfile.com/Connect2/api/public/image/217027183",
+      "pdf_sha256": "f3f22be9252cbaf3f0402e8bdeaf99bdfaa7ae85d83a00fab106cf01664bdd92",
+      "metadata_sha256": "3c0fd9992509d6f03a7188ca0ad918632611b996cbc2b2d7109ce79650d2d52d",
+      "reviewed_pages": [
+        1,
+        3
+      ]
+    },
+    {
+      "filing_id": "215523926",
+      "form": "460",
+      "filed_at": "2026-02-02",
+      "period_start": "2025-07-01",
+      "period_end": "2025-12-31",
+      "source_url": "https://netfile.com/Connect2/api/public/image/215523926",
+      "pdf_sha256": "dc29bb8ba676f026e05637356a6fa68289b3656902c015c093fa11ba4948e0aa",
+      "metadata_sha256": "3f45f19811cb6f294d56a4a25e0ddcc952da1e1a16b5e9f6af27814b7c07f812",
+      "reviewed_pages": [
+        1,
+        3
+      ]
+    }
+  ],
+  "periodic": {
+    "filing_id": "217094857",
+    "summary_page": 3,
+    "reported": {
+      "monetary_received": "9140.00",
+      "payments": "12612.00",
+      "beginning_cash": "16895.00",
+      "ending_cash": "13423.00",
+      "cumulative_monetary": "73300.00",
+      "cumulative_payments": "58071.00",
+      "loans_received": null,
+      "noncash_received": null,
+      "outstanding_debts": null
+    },
+    "notes": [
+      "These are the amounts printed on the summary page, not a reconstruction from individual donations.",
+      "The running totals and the separate calendar-year box do not agree. Do not describe the running total as verified 2026 fundraising.",
+      "The donor attachment includes dates before this reporting period. The donation schedule also has inconsistent totals; no small-donor share is calculated.",
+      "Blank loan, noncash and debt fields remain unknown, not zero."
+    ]
+  },
+  "periodic_history": [
+    {
+      "filing_id": "216695016",
+      "summary_page": 3,
+      "monetary_received": "21605.00",
+      "payments": null,
+      "same_period_sources": [
+        "217027183"
+      ]
+    },
+    {
+      "filing_id": "216812159",
+      "summary_page": 3,
+      "monetary_received": "19733.00",
+      "payments": null,
+      "same_period_sources": []
+    },
+    {
+      "filing_id": "216853551",
+      "summary_page": 3,
+      "monetary_received": "3825.00",
+      "payments": null,
+      "same_period_sources": []
+    },
+    {
+      "filing_id": "217094857",
+      "summary_page": 3,
+      "monetary_received": "9140.00",
+      "payments": "12612.00",
+      "same_period_sources": []
+    }
+  ],
+  "prior_year": {
+    "filing_id": "215523926",
+    "summary_page": 3,
+    "monetary_received": "18997.00",
+    "year": 2025
+  },
+  "payments": [
+    {
+      "filing_id": "217094857",
+      "page": 7,
+      "paid_date": "2026-05-29",
+      "payee_name": "Nationbuilder Fees",
+      "amount": "268.40",
+      "reported_description": "Admin Fees"
+    },
+    {
+      "filing_id": "217094857",
+      "page": 7,
+      "paid_date": "2026-06-29",
+      "payee_name": "Nationbuilder Fees",
+      "amount": "239.40",
+      "reported_description": "Admin Fees"
+    },
+    {
+      "filing_id": "217094857",
+      "page": 7,
+      "paid_date": "2026-06-01",
+      "payee_name": "The Next Generations",
+      "amount": "2300.00",
+      "reported_description": "Campaign Consultant"
+    },
+    {
+      "filing_id": "217094857",
+      "page": 7,
+      "paid_date": "2026-06-01",
+      "payee_name": "Donna Ricketts",
+      "amount": "350.00",
+      "reported_description": "Social Media"
+    },
+    {
+      "filing_id": "217094857",
+      "page": 7,
+      "paid_date": "2026-06-03",
+      "payee_name": "Crazy Party",
+      "amount": "63.10",
+      "reported_description": "Advertising & Marketing"
+    },
+    {
+      "filing_id": "217094857",
+      "page": 7,
+      "paid_date": "2026-06-03",
+      "payee_name": "Pacific Print",
+      "amount": "5211.40",
+      "reported_description": "Advertising & Marketing"
+    },
+    {
+      "filing_id": "217094857",
+      "page": 7,
+      "paid_date": "2026-06-05",
+      "payee_name": "The Next Generations",
+      "amount": "500.00",
+      "reported_description": "Campaign Consultant"
+    },
+    {
+      "filing_id": "217094857",
+      "page": 7,
+      "paid_date": "2026-06-05",
+      "payee_name": "The Next Generations",
+      "amount": "2535.60",
+      "reported_description": "Campaign Consultant"
+    },
+    {
+      "filing_id": "217094857",
+      "page": 7,
+      "paid_date": "2026-06-15",
+      "payee_name": "Fed Ex",
+      "amount": "238.70",
+      "reported_description": "Printing/Mail"
+    },
+    {
+      "filing_id": "217094857",
+      "page": 7,
+      "paid_date": "2026-06-22",
+      "payee_name": "Mechanics Bank",
+      "amount": "140.00",
+      "reported_description": "Misc"
+    },
+    {
+      "filing_id": "217094857",
+      "page": 7,
+      "paid_date": "2026-06-23",
+      "payee_name": "Fed Ex",
+      "amount": "55.30",
+      "reported_description": "Printing/Mail"
+    },
+    {
+      "filing_id": "217094857",
+      "page": 7,
+      "paid_date": "2026-06-23",
+      "payee_name": "Andre Davis",
+      "amount": "110.00",
+      "reported_description": "Misc"
+    },
+    {
+      "filing_id": "217094857",
+      "page": 7,
+      "paid_date": "2026-06-24",
+      "payee_name": "Donna Ricketts",
+      "amount": "400.00",
+      "reported_description": "Social Media"
+    },
+    {
+      "filing_id": "217094857",
+      "page": 7,
+      "paid_date": "2026-06-26",
+      "payee_name": "The Next Generations",
+      "amount": "200.00",
+      "reported_description": "Advertising & Marketing"
+    }
+  ],
+  "rapid_receipts": [
+    {
+      "filing_id": "217352920",
+      "page": 1,
+      "received_date": "2026-09-02",
+      "donor_name": "Thomas K. Butt",
+      "donor_fppc_id": null,
+      "amount": "1000.00",
+      "is_loan": false,
+      "reported_context": null,
+      "note": null
+    },
+    {
+      "filing_id": "217332630",
+      "page": 1,
+      "received_date": "2026-08-30",
+      "donor_name": "Davillier Sloan Inc",
+      "donor_fppc_id": null,
+      "amount": "1000.00",
+      "is_loan": false,
+      "reported_context": null,
+      "note": "The city received this report on August 31; the form itself is dated September 1."
+    },
+    {
+      "filing_id": "217243030",
+      "page": 1,
+      "received_date": "2026-05-16",
+      "donor_name": "Michael Bush",
+      "donor_fppc_id": null,
+      "amount": "2500.00",
+      "is_loan": false,
+      "reported_context": "Executive \u2014 Great Places to Work",
+      "note": "Reported in August, but the donation date is in May."
+    },
+    {
+      "filing_id": "217243444",
+      "page": 1,
+      "received_date": "2026-05-16",
+      "donor_name": "Eric Flett",
+      "donor_fppc_id": null,
+      "amount": "2500.00",
+      "is_loan": false,
+      "reported_context": "Financial Advisor \u2014 MAI Capital",
+      "note": "Reported in August, but the donation date is in May."
+    }
+  ]
+}

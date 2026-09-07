@@ -73,6 +73,12 @@ MAX_TYPEGEN_RETRY_SECONDS = 120.0
 # existing 120-second HTTP timeout. Writes remain single-attempt.
 DATABASE_READ_RETRY_DELAYS_SECONDS = (2.0, 4.0, 8.0)
 MAX_DATABASE_READ_RETRY_SECONDS = 30.0
+# Fresh branches have restarted 19-30 seconds after an initial healthy read.
+# Wait beyond that observed startup window, then confirm the same PostgreSQL
+# postmaster is mature on two consecutive healthy samples before schema writes.
+MIN_PREVIEW_STARTUP_AGE_SECONDS = 60.0
+MIN_PREVIEW_POSTMASTER_UPTIME_SECONDS = 30.0
+MAX_PREVIEW_STARTUP_WAIT_SECONDS = 180.0
 TYPEGEN_ACTIVE_TRANSIENT = (
     'failed to retrieve generated types: '
     '{"message":"Project must be active and healthy."}'
@@ -1639,24 +1645,82 @@ def wait_until(
     raise PreviewError(f"Timed out waiting for {description}.{detail}")
 
 
-def wait_for_database(
+_DATABASE_STARTUP_HEALTH_QUERY = (
+    "select pg_postmaster_start_time() as postmaster_started_at, "
+    "clock_timestamp() as observed_at, pg_is_in_recovery() as in_recovery"
+)
+
+
+def wait_for_stable_preview(
     client: SupabaseManagementClient,
-    branch: BranchRecord,
     *,
+    parent_ref: str,
+    pr_number: int,
+    git_branch: str,
+    branch: BranchRecord,
     timeout_seconds: float,
     interval_seconds: float,
-) -> None:
-    def ready() -> bool:
-        payload = client.query(branch.project_ref, "select 1 as ok", read_only=True)
-        rows = _rows(payload, context="database readiness")
-        return bool(rows) and int(rows[0].get("ok") or 0) == 1
+) -> BranchRecord:
+    """Bound startup before the first write; never retry a schema mutation.
 
-    wait_until(
-        ready,
-        timeout_seconds=timeout_seconds,
-        interval_seconds=interval_seconds,
-        description=f"Supabase branch {branch.project_ref} database readiness",
+    ACTIVE_HEALTHY and one SELECT can precede Supabase's automatic restart.
+    Branch age plus PostgreSQL uptime must exceed their startup floors on two
+    consecutive samples of the same postmaster. A restart or unhealthy sample
+    resets readiness. The polling deadline is bounded; an in-flight Management
+    API request retains the client's existing HTTP timeout.
+    """
+    expected_name = preview_branch_name(pr_number)
+    branch.assert_safe_preview(
+        parent_ref=parent_ref, expected_name=expected_name, git_branch=git_branch
     )
+    if branch.created_at is None:
+        raise PreviewError("Startup stability requires immutable branch creation time.")
+    deadline = time.monotonic() + min(max(timeout_seconds, 0.0), MAX_PREVIEW_STARTUP_WAIT_SECONDS)
+    previous_postmaster: datetime | None = None
+    last_condition = "no healthy database sample"
+    while time.monotonic() < deadline:
+        observed = _read_exact_branch_identity(client, parent_ref, branch)
+        observed.assert_safe_preview(
+            parent_ref=parent_ref, expected_name=expected_name, git_branch=git_branch
+        )
+        observed.assert_preview_adoption_boundaries()
+        if observed.created_at != branch.created_at:
+            raise PreviewError("Supabase branch creation time changed during startup.")
+        if observed.preview_project_status != "ACTIVE_HEALTHY":
+            previous_postmaster = None
+            last_condition = f"preview_project_status={observed.preview_project_status!r}"
+        else:
+            try:
+                payload = client.query(branch.project_ref, _DATABASE_STARTUP_HEALTH_QUERY, read_only=True)
+            except ApiError as error:
+                if not _is_database_startup_error(error):
+                    raise
+                previous_postmaster = None
+                last_condition = "database startup/restart in progress"
+            else:
+                rows = _rows(payload, context="startup stability")
+                if len(rows) != 1 or not isinstance(rows[0].get("in_recovery"), bool):
+                    raise PreviewError("Malformed PostgreSQL startup health sample.")
+                started_at = parse_api_timestamp(str(rows[0].get("postmaster_started_at") or ""))
+                sampled_at = parse_api_timestamp(str(rows[0].get("observed_at") or ""))
+                if (started_at > sampled_at or
+                        abs((sampled_at - datetime.now(timezone.utc)).total_seconds()) > MAX_CONTROL_PLANE_FUTURE_SKEW_SECONDS):
+                    raise PreviewError("PostgreSQL startup health clock is invalid or out of bounds.")
+                branch_age = (sampled_at - branch.created_at).total_seconds()
+                uptime = (sampled_at - started_at).total_seconds()
+                ready = (not rows[0]["in_recovery"]
+                         and branch_age >= MIN_PREVIEW_STARTUP_AGE_SECONDS
+                         and uptime >= MIN_PREVIEW_POSTMASTER_UPTIME_SECONDS)
+                if ready and started_at == previous_postmaster:
+                    return observed
+                previous_postmaster = started_at if ready else None
+                last_condition = (f"branch_age={branch_age:.0f}s; postmaster_uptime={uptime:.0f}s; "
+                                  f"in_recovery={rows[0]['in_recovery']}; confirming stable postmaster")
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        time.sleep(min(max(interval_seconds, 0.0), 5.0, remaining))
+    raise PreviewError(f"Timed out waiting for stable ACTIVE_HEALTHY Supabase Preview startup; {last_condition}.")
 
 
 _LEDGER_QUERY = (
@@ -3588,11 +3652,10 @@ def bootstrap_preview(
             )
         created = exact_created[0]
         created.assert_preview_adoption_boundaries()
-        # A transient successful SELECT 1 does not prove branch startup is
-        # complete. Require the authoritative service state on this immutable
-        # identity before catalog inspection or any baseline write. Keep the
-        # independent empty-catalog/clone guards and post-restore health gate.
-        created = wait_for_active_preview(
+        # Bound the automatic startup/restart window before catalog inspection
+        # or the first schema write. Keep empty-catalog/clone guards and the
+        # independent post-restore service health gate.
+        created = wait_for_stable_preview(
             supabase,
             parent_ref=parent_ref,
             pr_number=pr_number,
@@ -3601,13 +3664,6 @@ def bootstrap_preview(
             timeout_seconds=timeout_seconds,
             interval_seconds=interval_seconds,
         )
-        wait_for_database(
-            supabase,
-            created,
-            timeout_seconds=timeout_seconds,
-            interval_seconds=interval_seconds,
-        )
-
         apply_preview_baseline(supabase, created, baseline)
         applied_migrations = 0
         production_versions = set(production_ledger.applied_versions)

@@ -60,6 +60,15 @@ describe('force-static read-path error propagation', () => {
     await expect(SimilarDiscussions({ itemId: 'item-1' })).rejects.toBe(failure)
   })
 
+  it('lets donation failures abort revalidation rather than publishing an empty history', async () => {
+    mocked.getOfficialVotingRecord.mockResolvedValue([])
+    const failure = new Error('transient contribution timeout')
+    mocked.getOfficialContributions.mockRejectedValue(failure)
+    await expect(CouncilMemberPage({ params: Promise.resolve({ slug: 'claudia-jimenez' }) })).rejects.toBe(failure)
+    expect(mocked.getOfficialComparativeStats).not.toHaveBeenCalled()
+    expect(mocked.getPastElectionDates).not.toHaveBeenCalled()
+  })
+
   it('keeps the agenda-item route static while letting detail failures abort the render', async () => {
     const failure = new Error('transient related-topic timeout')
     mocked.getAgendaItemDetail.mockRejectedValue(failure)

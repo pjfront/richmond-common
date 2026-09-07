@@ -4,6 +4,15 @@ import { officialToSlug } from '@/lib/queries/_shared'
 import CandidateContributionBuckets from './CandidateContributionBuckets'
 import OperatorGate from './OperatorGate'
 
+/** A dated source summary replaces unreconciled legacy financial statistics. */
+export interface CandidateFinanceCoverage {
+  kind: 'source-checked-summary'
+  href: string
+  scopeNote: string
+}
+
+export type CandidateFinanceCoverageById = Readonly<Record<string, CandidateFinanceCoverage>>
+
 /** Format a date as "Mon YYYY" */
 function fmtDate(d: string): string {
   return new Date(d + 'T00:00:00').toLocaleDateString('en-US', {
@@ -15,9 +24,11 @@ function fmtDate(d: string): string {
 export default function CandidateCard({
   candidate,
   electionSlug,
+  financeCoverage,
 }: {
   candidate: CandidateFundraisingDetail
   electionSlug?: string
+  financeCoverage?: CandidateFinanceCoverage
 }) {
   const hasCycleData = candidate.contribution_count > 0
   const hasLifetimeOnly = !hasCycleData && candidate.lifetime_raised > 0
@@ -94,7 +105,15 @@ export default function CandidateCard({
           add up to the form headline within $1 — see bucket_grid_consistent
           in queries/elections.ts and the methodology page for the case
           where it doesn't (Form 497 late-filings, paper-filing reconciliation). */}
-      {hasCycleData ? (
+      {financeCoverage ? (
+        <div className="mt-3 text-sm text-slate-600 leading-relaxed">
+          <p>See the campaign&apos;s reported donations, cash balance and spending in the dated summary.</p>
+          <p className="mt-2">{financeCoverage.scopeNote}</p>
+          <Link href={financeCoverage.href} className="mt-2 inline-flex min-h-11 items-center text-civic-navy underline underline-offset-4">
+            Read the dated campaign-money summary &rarr;
+          </Link>
+        </div>
+      ) : hasCycleData ? (
         <div className="mt-3 text-sm text-slate-600 leading-relaxed">
           <p>
             Raised{' '}

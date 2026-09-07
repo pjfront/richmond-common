@@ -8,6 +8,8 @@ import {
 } from '@/lib/queries'
 import { buildElectionHeaderNarrative } from '@/lib/electionNarrative'
 import RaceSection from '@/components/RaceSection'
+import type { CandidateFinanceCoverageById } from '@/components/CandidateCard'
+import { ANDERSON_MONEY_PATH } from '@/lib/anderson-finance'
 import type { CandidateFundraisingDetail } from '@/lib/types'
 import { S29_PUBLIC_TREATMENT_ENABLED } from '@/lib/s29-release-phase'
 import {
@@ -166,6 +168,19 @@ async function ElectionPageContent({ params }: PageProps) {
 
   const headerNarrative = buildElectionHeaderNarrative(byOffice)
 
+  // Exact verified spellings in the primary roster and the source-checked
+  // committee reports. Do not treat the Jan-Jun summary as primary-only money.
+  const financeCoverage: CandidateFinanceCoverageById = slug === '2026-primary'
+    ? Object.fromEntries(fundraising
+      .filter(candidate => candidate.office_sought === 'Mayor'
+        && ['Ahmad J. Anderson', 'Ahmad Anderson'].includes(candidate.candidate_name))
+      .map(candidate => [candidate.id, {
+        kind: 'source-checked-summary' as const,
+        href: ANDERSON_MONEY_PATH,
+        scopeNote: 'The dated summary includes reports after this primary. Its figures are not primary-only totals.',
+      }]))
+    : {}
+
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       {S29_PUBLIC_TREATMENT_ENABLED && (
@@ -254,6 +269,7 @@ async function ElectionPageContent({ params }: PageProps) {
               isHeroRace={office === 'Mayor'}
               id={officeToHashId(office)}
               electionSlug={slug}
+              financeCoverage={financeCoverage}
             />
           ))}
 
