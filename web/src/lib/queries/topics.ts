@@ -52,11 +52,9 @@ export interface TopicItem {
   title: string
   summary_headline: string | null
   category: string | null
-  financial_amount: string | null
-  public_comment_count: number
 }
 
-const COLS_TOPIC_ITEM = 'id, meeting_id, item_number, title, summary_headline, category, financial_amount, public_comment_count, meetings!inner(meeting_date, meeting_type, city_fips)'
+const COLS_TOPIC_ITEM = 'id, meeting_id, item_number, title, summary_headline, category, meetings!inner(meeting_date, meeting_type, city_fips)'
 
 /** Get agenda items for a specific topic label, newest first. */
 export async function getTopicItems(
@@ -71,13 +69,14 @@ export async function getTopicItems(
     .eq('topic_label', topicLabel)
     .eq('meetings.city_fips', cityFips)
     .order('meetings(meeting_date)', { ascending: false })
+    .order('id', { ascending: true })
     .limit(limit)
 
-  if (error) {
+  if (error || !data) {
     throw new Error('Topic items are temporarily unavailable')
   }
 
-  return ((data ?? []) as Array<Record<string, unknown>>).map((row) => {
+  return (data as Array<Record<string, unknown>>).map((row) => {
     const meeting = row.meetings as unknown as { meeting_date: string; meeting_type: string }
     return {
       id: row.id as string,
@@ -88,8 +87,6 @@ export async function getTopicItems(
       title: row.title as string,
       summary_headline: row.summary_headline as string | null,
       category: row.category as string | null,
-      financial_amount: row.financial_amount as string | null,
-      public_comment_count: Number(row.public_comment_count),
     }
   })
 }
