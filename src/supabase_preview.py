@@ -1998,7 +1998,13 @@ def verify_production_ledger(
     trusted_migrations: Sequence[Migration],
     pr_migrations: Sequence[Migration],
 ) -> ProductionLedgerState:
-    """Verify the live production history prefix without ever mutating it."""
+    """Verify applied history against trusted main or exact production SQL proof.
+
+    A reviewed migration may be applied before its PR merges. In that case,
+    production must contain all of trusted main followed by an ordered prefix
+    of this PR, and each additional entry needs a matching single-artifact SQL
+    hash from production. PR SQL remains inert; this function never applies it.
+    """
     if parent_ref != PRODUCTION_PROJECT_REF:
         raise PreviewError("Refusing production ledger verification for an unknown ref.")
     payload = client.query(parent_ref, _LEDGER_QUERY, read_only=True)
@@ -2032,7 +2038,8 @@ def verify_production_ledger(
     trusted_identities = [
         (migration.version, migration.name) for migration in trusted_suffix
     ]
-    if observed_suffix != trusted_identities[: len(observed_suffix)]:
+    shared_length = min(len(observed_suffix), len(trusted_identities))
+    if observed_suffix[:shared_length] != trusted_identities[:shared_length]:
         raise PreviewError(
             "Production post-cutoff ledger is not an ordered prefix of trusted main."
         )
@@ -2047,6 +2054,32 @@ def verify_production_ledger(
                 "PR does not contain the exact trusted production migration "
                 f"{trusted_migration.version}."
             )
+    if len(observed_suffix) > len(trusted_identities):
+        pr_suffix = [m for m in pr_migrations if m.version > baseline.cutoff_version]
+        if observed_suffix != [(m.version, m.name) for m in pr_suffix[:len(observed_suffix)]]:
+            raise PreviewError("Production-ahead history is not an ordered prefix of this exact PR.")
+        extra = pr_suffix[len(trusted_identities):len(observed_suffix)]
+        # Only validated 14-digit identities enter this fixed read-only query.
+        versions = ", ".join("'" + m.version + "'" for m in extra)
+        proof_sql = (
+            "select version, coalesce(name, '') as name, "
+            "case when array_ndims(statements) = 1 and cardinality(statements) = 1 "
+            "and array_lower(statements, 1) = 1 then "
+            "encode(sha256(convert_to(replace(replace(statements[1], "
+            "chr(13) || chr(10), chr(10)), chr(13), chr(10)), 'UTF8')), 'hex') "
+            "else null end as sql_sha256 "
+            "from supabase_migrations.schema_migrations "
+            f"where version in ({versions}) order by version"
+        )
+        proof_rows = _rows(client.query(parent_ref, proof_sql, read_only=True),
+                           context="production migration SQL hashes")
+        expected = [(m.version, m.name, m.sha256) for m in extra]
+        actual = [(r.get("version"), r.get("name"), r.get("sql_sha256")) for r in proof_rows]
+        if actual != expected:
+            raise PreviewError("Production-ahead migration lacks exact single-artifact SQL proof.")
+        if _rows(client.query(parent_ref, _LEDGER_QUERY, read_only=True),
+                 context="production migration ledger recheck") != rows:
+            raise PreviewError("Production migration history changed during SQL verification.")
     return ProductionLedgerState(
         tuple(str(row.get("version") or "") for row in rows)
     )

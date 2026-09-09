@@ -2251,6 +2251,60 @@ def test_production_name_exception_is_narrow_and_filename_seeded(tmp_path: Path)
         )
 
 
+@pytest.mark.parametrize("mode", ["valid", "wrong-hash", "missing-hash", "missing-row",
+                                  "duplicate-row", "wrong-name", "ledger-drift",
+                                  "missing-pr", "changed-trusted", "skipped-trusted",
+                                  "out-of-order-pr"])
+def test_production_ahead_requires_exact_inert_sql_proof(tmp_path: Path, mode: str):
+    absorbed = _migration(tmp_path, "20260807013300", "baseline")
+    trusted = _migration(tmp_path, "20260807013500", "trusted")
+    applied = _migration(tmp_path, "20260807013600", "applied")
+    pending = _migration(tmp_path, "20260807013700", "pending")
+    snapshot = _baseline(tmp_path, [absorbed])
+
+    class ProofClient(FakeSupabase):
+        def __init__(self):
+            super().__init__(snapshot)
+            self.production_ledger.update({trusted.version: trusted.name, applied.version: applied.name})
+            if mode == "skipped-trusted":
+                del self.production_ledger[trusted.version]
+            self.proof_queries = []
+
+        def query(self, project_ref, sql, *, read_only):
+            assert project_ref == PARENT_REF and read_only is True
+            if "as sql_sha256" not in sql:
+                return super().query(project_ref, sql, read_only=read_only)
+            self.proof_queries.append(sql)
+            assert "array_ndims(statements) = 1" in sql
+            assert "cardinality(statements) = 1" in sql
+            assert "array_lower(statements, 1) = 1" in sql
+            assert "statements[1]" in sql and "sha256(convert_to" in sql
+            assert f"where version in ('{applied.version}')" in sql
+            row = {"version": applied.version, "name": applied.name, "sql_sha256": applied.sha256}
+            if mode == "wrong-hash": row["sql_sha256"] = "0" * 64
+            if mode == "missing-hash": row["sql_sha256"] = None
+            if mode == "wrong-name": row["name"] = "different"
+            if mode == "ledger-drift": self.production_ledger[pending.version] = pending.name
+            if mode == "missing-row": return []
+            return [row, row] if mode == "duplicate-row" else [row]
+
+    client = ProofClient()
+    candidate = [absorbed, trusted, applied, pending]
+    if mode == "missing-pr": candidate.remove(applied)
+    if mode == "changed-trusted": candidate[1] = replace(trusted, sha256="0" * 64)
+    if mode == "out-of-order-pr": candidate[1:3] = [applied, trusted]
+    if mode == "valid":
+        state = preview.verify_production_ledger(client, PARENT_REF, snapshot,
+                                                  [absorbed, trusted], candidate)
+        assert state.applied_versions == (absorbed.version, trusted.version, applied.version)
+        assert len(client.proof_queries) == 1
+    else:
+        with pytest.raises(preview.PreviewError):
+            preview.verify_production_ledger(client, PARENT_REF, snapshot,
+                                              [absorbed, trusted], candidate)
+    assert client.write_queries == []
+
+
 def test_ambiguous_baseline_restore_reconciles_once_without_replay(tmp_path: Path):
     absorbed = _migration(tmp_path, "20260807013300", "baseline")
     snapshot = _baseline(tmp_path, [absorbed])
