@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({ from: vi.fn() }))
-vi.mock('./meetings', () => ({ fetchMeetingCounts: vi.fn(), applyMeetingCounts: vi.fn() }))
+vi.mock('./agenda-metadata', () => ({ getAgendaMetadata: vi.fn(), meetingCards: vi.fn() }))
 vi.mock('./_shared', () => ({ supabase: { from: mocks.from }, RICHMOND_FIPS: '0660620', warnIfEmpty: vi.fn(), COLS_COMMISSION: 'id,name,num_seats', COLS_CURRENT_COMMISSION_MEMBER: 'id,commission_id,term_end', COLS_COMMISSION_MEMBER: 'id,name,commission_id' }))
 import { getCommissions, getCommission } from './commissions'
 function query(data: object | null, count: number | null = null, error: object | null = null) {

@@ -12,6 +12,10 @@ export const OFFICIALS_CACHE_SECONDS = 24 * 60 * 60
 export const SPLIT_MOTIONS_CACHE_SECONDS = 60 * 60
 export const SPLIT_MOTIONS_CACHE_TAG = 'split-motion-source-records'
 
+/** One compact meeting/topic snapshot derived from complete active agenda metadata. */
+export const AGENDA_METADATA_CACHE_SECONDS = 60 * 60
+export const AGENDA_METADATA_CACHE_TAG = 'active-agenda-metadata'
+
 /**
  * The upcoming election is shared navigation data. Cache it across route
  * renders so a crawler enumerating unique detail paths does not repeat the

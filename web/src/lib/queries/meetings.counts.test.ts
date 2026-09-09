@@ -1,107 +1,64 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-const mocks = vi.hoisted(() => ({ from: vi.fn(), rpc: vi.fn() }))
+const mocks = vi.hoisted(() => ({ from: vi.fn(), rpc: vi.fn(), snapshot: vi.fn() }))
 vi.mock('./_shared', async original => ({ ...await original<typeof import('./_shared')>(), supabase: { from: mocks.from, rpc: mocks.rpc } }))
 vi.mock('./council', () => ({ getOfficials: vi.fn() }))
-import { getMeetings, fetchMeetingCounts, applyMeetingCounts, getMeetingsWithCounts } from './meetings'
+vi.mock('./agenda-metadata', async original => ({ ...await original<typeof import('./agenda-metadata')>(), getAgendaMetadata: mocks.snapshot }))
+vi.mock('next/cache', () => ({ unstable_cache: (fn: unknown) => fn }))
+import { getMeetings, getMeetingsWithCounts } from './meetings'
 import { getCommissionMeetings } from './commissions'
-import type { Meeting } from '../types'
-function builder(data: object[] | null, count: number | null = data?.length ?? 0, error: object | null = null) {
+function page(data: object[] | null, count: number | null = data?.length ?? 0, error: object | null = null) {
   const q = { select: vi.fn(), eq: vi.fn(), in: vi.fn(), order: vi.fn(), range: vi.fn(),
     then: (resolve: (value: object) => unknown) => Promise.resolve({ data, count, error }).then(resolve) }
   for (const method of [q.select, q.eq, q.in, q.order, q.range]) method.mockReturnValue(q)
-  return q
+  mocks.from.mockReturnValueOnce(q); return q
 }
-function fromPage(data: object[] | null, count: number | null = data?.length ?? 0, error: object | null = null) {
-  const q = builder(data, count, error); mocks.from.mockReturnValueOnce(q); return q
-}
-function rpcPage(data: object[] | null, count: number | null = data?.length ?? 0, error: object | null = null) {
-  const q = builder(data, count, error); mocks.rpc.mockReturnValueOnce(q); return q
-}
-const meeting = (id: string, stored = 999): Meeting => ({ id, meeting_date: '2026-06-02', agenda_item_count: stored } as Meeting)
-const counts = (id: string, override = {}) => ({ meeting_id: id, agenda_item_count: 2, vote_count: 3,
-  categories: [{ category: 'housing', count: 2 }], topic_labels: [{ label: 'Housing', count: 1 }], ...override })
-beforeEach(() => { mocks.from.mockReset(); mocks.rpc.mockReset() })
+const meeting = (id: string, body = 'body-one', count = 2) => ({ id, body_id: body, meeting_date: '2026-06-02',
+  agenda_item_count: count, all_categories: count ? [{ category: 'housing', count }] : [],
+  all_topic_labels: count ? [{ label: 'Housing', count }] : [] })
+beforeEach(() => { vi.clearAllMocks(); mocks.from.mockReset(); mocks.snapshot.mockReset() })
 
-describe('meeting index uses one complete count source', () => {
-  it('paginates list and RPC by their actual returned rows even below the server page limit', async () => {
-    const firstList = fromPage([meeting('one')], 2)
-    const secondList = fromPage([meeting('two')], 2)
-    const firstCounts = rpcPage([counts('one')], 2)
-    const secondCounts = rpcPage([counts('two')], 2)
-    const result = await getMeetingsWithCounts()
-    expect(result).toHaveLength(2)
-    expect(result[0]).toMatchObject({ agenda_item_count: 2, vote_count: 3, top_categories: [{ category: 'housing', count: 2 }], all_topic_labels: [{ label: 'Housing', count: 1 }] })
-    expect(firstList.range).toHaveBeenCalledWith(0, 499)
-    expect(secondList.range).toHaveBeenCalledWith(1, 500)
-    expect(firstCounts.order).toHaveBeenCalledWith('meeting_id')
-    expect(secondCounts.range).toHaveBeenCalledWith(1, 500)
-    expect(mocks.rpc).toHaveBeenCalledWith('get_meeting_counts', { p_city_fips: '0660620' }, { count: 'exact' })
-    expect(mocks.from.mock.calls).toEqual([['meetings'], ['meetings']])
-  })
-  it('throws on an RPC error without falling back to a partial agenda read or invented vote zeros', async () => {
-    rpcPage(null, null, { code: '57014' })
-    await expect(fetchMeetingCounts('0660620')).rejects.toThrow('temporarily unavailable')
-    expect(mocks.from).not.toHaveBeenCalled()
-  })
-  it('requires an explicit source row even when the stored meeting count is zero', async () => {
-    expect(() => applyMeetingCounts([meeting('missing', 0)], new Map())).toThrow('temporarily unavailable')
-    rpcPage([counts('empty', { agenda_item_count: 0, vote_count: 0, categories: [], topic_labels: [] })])
-    expect(applyMeetingCounts([meeting('empty', 999)], await fetchMeetingCounts('0660620'))).toMatchObject([
-      { agenda_item_count: 0, vote_count: 0, top_categories: [], all_topic_labels: [] },
+describe('meeting index uses the shared agenda snapshot', () => {
+  it('uses its inventory and derived counts without a second meeting list or vote RPC', async () => {
+    mocks.snapshot.mockResolvedValue({ meetings: [meeting('one'), meeting('empty', 'body-two', 0)], topics: [] })
+    expect(await getMeetingsWithCounts()).toMatchObject([
+      { id: 'one', agenda_item_count: 2, top_categories: [{ category: 'housing', count: 2 }] },
+      { id: 'empty', agenda_item_count: 0, top_categories: [], all_topic_labels: [] },
     ])
+    expect(mocks.snapshot).toHaveBeenCalledWith('0660620')
+    expect(mocks.from).not.toHaveBeenCalled(); expect(mocks.rpc).not.toHaveBeenCalled()
   })
-  it('does not turn missing or failed list data into no meetings', async () => {
-    fromPage(null, 0)
-    await expect(getMeetings()).rejects.toThrow('temporarily unavailable')
-    fromPage([], 0, { code: 'timeout' })
-    await expect(getMeetings()).rejects.toThrow('temporarily unavailable')
-    fromPage([], 0)
-    expect(await getMeetings()).toEqual([])
+  it('propagates a failed snapshot without fallback to stored counts or invented zeros', async () => {
+    mocks.snapshot.mockRejectedValue(new Error('Agenda metadata temporarily unavailable'))
+    await expect(getMeetingsWithCounts()).rejects.toThrow('temporarily unavailable')
+    expect(mocks.from).not.toHaveBeenCalled(); expect(mocks.rpc).not.toHaveBeenCalled()
   })
-  it('rejects count drift, duplicate meeting identities, and incomplete RPC pages', async () => {
-    rpcPage([counts('one')], 2); rpcPage([counts('two')], 3)
-    await expect(fetchMeetingCounts('0660620')).rejects.toThrow('temporarily unavailable')
-    rpcPage([counts('one')], 2); rpcPage([counts('one')], 2)
-    await expect(fetchMeetingCounts('0660620')).rejects.toThrow('temporarily unavailable')
-    rpcPage([counts('one')], 2); rpcPage([], 2)
-    await expect(fetchMeetingCounts('0660620')).rejects.toThrow('temporarily unavailable')
-    rpcPage(null, 0)
-    await expect(fetchMeetingCounts('0660620')).rejects.toThrow('temporarily unavailable')
-  })
-  it.each([
-    { agenda_item_count: null }, { vote_count: -1 }, { agenda_item_count: 1.5 }, { categories: null },
-    { categories: [{ category: 'housing', count: 3 }] },
-    { categories: [{ category: 'housing', count: 1 }, { category: 'housing', count: 1 }] },
-    { topic_labels: [{ label: 'Housing', count: null }] },
-  ])('rejects invalid source counts rather than coercing them: %j', async override => {
-    rpcPage([counts('invalid', override)])
-    await expect(fetchMeetingCounts('0660620')).rejects.toThrow('temporarily unavailable')
+  it('retains complete independent getMeetings reads for callers that need full metadata', async () => {
+    page([{ id: 'one' }], 2); const later = page([{ id: 'two' }], 2)
+    expect(await getMeetings()).toHaveLength(2)
+    expect(later.range).toHaveBeenCalledWith(1, 500)
+    page(null, 0); await expect(getMeetings()).rejects.toThrow('temporarily unavailable')
+    page([], 0, { code: 'timeout' }); await expect(getMeetings()).rejects.toThrow('temporarily unavailable')
+    page([], 0); expect(await getMeetings()).toEqual([])
   })
 })
 
-describe('complete commission meeting reads', () => {
-  it('keeps every exact linked body and applies the same count source', async () => {
-    fromPage([{ id: 'body-one' }], 2)
-    fromPage([{ id: 'body-two' }], 2)
-    const query = fromPage([meeting('one')])
-    rpcPage([counts('one')])
-    expect(await getCommissionMeetings('commission-id')).toMatchObject([{ id: 'one', agenda_item_count: 2, vote_count: 3 }])
-    expect(query.in).toHaveBeenCalledWith('body_id', ['body-one', 'body-two'])
-    expect(query.select.mock.calls[0][1]).toEqual({ count: 'exact' })
+describe('commission meeting selection shares the checked inventory', () => {
+  it('keeps every exact linked body and selects only its snapshot meetings', async () => {
+    page([{ id: 'body-one' }], 2); const second = page([{ id: 'body-two' }], 2)
+    mocks.snapshot.mockResolvedValue({ meetings: [meeting('one'), meeting('two', 'body-two', 0), meeting('other', 'body-other'), { ...meeting('unknown'), body_id: null }], topics: [] })
+    expect((await getCommissionMeetings('commission-id')).map(row => row.id)).toEqual(['one', 'two'])
+    expect(second.range).toHaveBeenCalledWith(1, 99)
+    expect(mocks.from.mock.calls).toEqual([['bodies'], ['bodies']])
+    expect(mocks.rpc).not.toHaveBeenCalled()
   })
   it('returns no meetings only for an established empty body lookup', async () => {
-    fromPage([], 0)
-    expect(await getCommissionMeetings('commission-id')).toEqual([])
-    expect(mocks.rpc).not.toHaveBeenCalled()
-    fromPage(null, 0)
-    await expect(getCommissionMeetings('commission-id')).rejects.toThrow('temporarily unavailable')
-    fromPage([], 0, { code: 'timeout' })
-    await expect(getCommissionMeetings('commission-id')).rejects.toThrow('temporarily unavailable')
+    page([], 0); expect(await getCommissionMeetings('commission-id')).toEqual([])
+    expect(mocks.snapshot).not.toHaveBeenCalled()
+    page(null, 0); await expect(getCommissionMeetings('commission-id')).rejects.toThrow('temporarily unavailable')
+    page([], 0, { code: 'timeout' }); await expect(getCommissionMeetings('commission-id')).rejects.toThrow('temporarily unavailable')
   })
-  it('propagates meeting read failures and missing count rows rather than returning empty or zero', async () => {
-    fromPage([{ id: 'body' }]); fromPage(null, null, { code: 'timeout' }); rpcPage([counts('one')])
-    await expect(getCommissionMeetings('commission-id')).rejects.toThrow('temporarily unavailable')
-    fromPage([{ id: 'body' }]); fromPage([meeting('one')]); rpcPage([], 0)
+  it('propagates snapshot failure rather than returning an empty commission history', async () => {
+    page([{ id: 'body-one' }]); mocks.snapshot.mockRejectedValue(new Error('Agenda metadata temporarily unavailable'))
     await expect(getCommissionMeetings('commission-id')).rejects.toThrow('temporarily unavailable')
   })
 })

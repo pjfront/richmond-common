@@ -1,7 +1,5 @@
-import { cache } from 'react'
-import { unstable_cache } from 'next/cache'
-import { readCompleteRecords } from '../complete-record-read'
-import { supabase, RICHMOND_FIPS, COLS_TOPIC_COUNTS } from './_shared'
+import { supabase, RICHMOND_FIPS } from './_shared'
+import { getAgendaMetadata } from './agenda-metadata'
 
 export interface TopicCount {
   topic_label: string
@@ -9,36 +7,9 @@ export interface TopicCount {
   latest_meeting_date: string
 }
 
-interface TopicSourceRow {
-  id: string
-  topic_label: string
-  meeting_id: string
-  meetings: { meeting_date: string }
-}
-
-/** Persist only small aggregates, not the full source corpus; failed reads throw. */
-const getTopicAggregates = cache(unstable_cache(async (cityFips: string) => {
-  const rows = await readCompleteRecords('Topic records', (from, to) => supabase.from('agenda_items')
-    .select(COLS_TOPIC_COUNTS, { count: 'exact' }).is('agenda_source_retired_at', null)
-    .eq('meetings.city_fips', cityFips).not('topic_label', 'is', null)
-    .order('id', { ascending: true }).range(from, to), { maxRows: 20_000, maxPages: 40 })
-  const counts = new Map<string, { count: number; meetings: Set<string>; latest: string }>()
-  for (const raw of rows) {
-    const row = raw as unknown as TopicSourceRow
-    if (!row.topic_label?.trim() || !row.meeting_id || !row.meetings?.meeting_date) throw new Error('Incomplete topic source record')
-    const current = counts.get(row.topic_label) ?? { count: 0, meetings: new Set<string>(), latest: '' }
-    current.count++
-    current.meetings.add(row.meeting_id)
-    if (row.meetings.meeting_date > current.latest) current.latest = row.meetings.meeting_date
-    counts.set(row.topic_label, current)
-  }
-  return [...counts].map(([topic_label, group]) => ({ topic_label, item_count: group.count,
-    meeting_count: group.meetings.size, latest_meeting_date: group.latest }))
-}, ['complete-topic-aggregates-v1'], { revalidate: 3600, tags: ['agenda-items', 'topics'] }))
-
 /** All topic counts from the same complete cohort used for promotion. */
 export async function getTopicCounts(cityFips = RICHMOND_FIPS): Promise<TopicCount[]> {
-  return (await getTopicAggregates(cityFips)).map(row => ({ topic_label: row.topic_label,
+  return (await getAgendaMetadata(cityFips)).topics.map(row => ({ topic_label: row.topic_label,
     item_count: row.item_count, latest_meeting_date: row.latest_meeting_date }))
     .sort((a, b) => b.item_count - a.item_count)
 }
@@ -128,7 +99,7 @@ export async function getPromotedTopics(
   minMeetings = TOPIC_PROMOTION_MIN_MEETINGS,
   cityFips = RICHMOND_FIPS,
 ): Promise<PromotedTopic[]> {
-  return (await getTopicAggregates(cityFips))
+  return (await getAgendaMetadata(cityFips)).topics
     .filter(row => row.item_count >= minItems && row.meeting_count >= minMeetings)
     .map(row => ({ label: row.topic_label, slug: topicLabelToSlug(row.topic_label), item_count: row.item_count,
       meeting_count: row.meeting_count, latest_meeting_date: row.latest_meeting_date }))

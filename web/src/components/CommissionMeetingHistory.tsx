@@ -15,7 +15,7 @@ export default function CommissionMeetingHistory({ meetings }: CommissionMeeting
   if (meetings.length === 0) {
     return (
       <div className="text-sm text-slate-500 italic">
-        No meeting records available yet. Commission meeting minutes are being added.
+        No meeting records are available in this archive.
       </div>
     )
   }
@@ -39,7 +39,6 @@ export default function CommissionMeetingHistory({ meetings }: CommissionMeeting
             meetingType={m.meeting_type}
             presidingOfficer={m.presiding_officer}
             agendaItemCount={m.agenda_item_count}
-            voteCount={m.vote_count}
             topCategories={m.top_categories}
           />
         ))}
@@ -47,7 +46,7 @@ export default function CommissionMeetingHistory({ meetings }: CommissionMeeting
       {hasMore && !showAll && (
         <button
           onClick={() => setShowAll(true)}
-          className="mt-3 text-sm text-civic-navy hover:text-civic-navy-light font-medium"
+          className="mt-3 min-h-11 min-w-11 rounded px-2 text-sm text-civic-navy hover:text-civic-navy-light font-medium focus-visible:outline-2 focus-visible:outline-civic-navy"
         >
           Show all {meetings.length} meetings
         </button>
@@ -55,7 +54,7 @@ export default function CommissionMeetingHistory({ meetings }: CommissionMeeting
       {showAll && hasMore && (
         <button
           onClick={() => setShowAll(false)}
-          className="mt-3 text-sm text-civic-navy hover:text-civic-navy-light font-medium"
+          className="mt-3 min-h-11 min-w-11 rounded px-2 text-sm text-civic-navy hover:text-civic-navy-light font-medium focus-visible:outline-2 focus-visible:outline-civic-navy"
         >
           Show fewer
         </button>

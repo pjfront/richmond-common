@@ -1,8 +1,8 @@
-import { fetchMeetingCounts, applyMeetingCounts } from './meetings'
+import { getAgendaMetadata, meetingCards } from './agenda-metadata'
 import { readCompleteRecords } from '../complete-record-read'
 import { isInertBuild } from '../read-path-cache'
-import { supabase, RICHMOND_FIPS, warnIfEmpty, COLS_MEETING_LIST, COLS_COMMISSION, COLS_CURRENT_COMMISSION_MEMBER, COLS_COMMISSION_MEMBER } from './_shared'
-import type { Meeting, Commission, CommissionMember, CommissionWithStats, CommissionStaleness, MeetingWithCounts, NeighborhoodCouncil } from '../types'
+import { supabase, RICHMOND_FIPS, warnIfEmpty, COLS_COMMISSION, COLS_CURRENT_COMMISSION_MEMBER, COLS_COMMISSION_MEMBER } from './_shared'
+import type { Commission, CommissionMember, CommissionWithStats, CommissionStaleness, MeetingWithCounts, NeighborhoodCouncil } from '../types'
 
 export async function getCommissions(
   cityFips = RICHMOND_FIPS
@@ -112,13 +112,8 @@ export async function getCommissionMeetings(
     .order('id').range(from, to), { maxRows: 100 })
   if (!bodies.length) return []
 
-  const [meetings, countMap] = await Promise.all([
-    readCompleteRecords('Commission meetings', (from, to) => supabase.from('meetings')
-      .select(COLS_MEETING_LIST, { count: 'exact' }).in('body_id', bodies.map(body => body.id))
-      .eq('city_fips', cityFips).order('meeting_date', { ascending: false }).order('id').range(from, to)),
-    fetchMeetingCounts(cityFips),
-  ])
-  return applyMeetingCounts(meetings as Meeting[], countMap)
+  const bodyIds = new Set(bodies.map(body => body.id))
+  return meetingCards(await getAgendaMetadata(cityFips)).filter(meeting => meeting.body_id !== null && bodyIds.has(meeting.body_id))
 }
 
 

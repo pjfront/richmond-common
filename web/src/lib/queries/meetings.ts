@@ -1,4 +1,5 @@
 import { readCompleteRecords } from '../complete-record-read'
+import { getAgendaMetadata, meetingCards } from './agenda-metadata'
 import { failReadPath } from '../read-path-unavailable'
 import {
   supabase,
@@ -17,19 +18,13 @@ import type {
   MeetingAttendance,
   ConflictFlag,
   ClosedSessionItem,
-  NotableSpeaker,
   AgendaItemWithMotions,
   MotionWithVotes,
   MeetingDetail,
-  CategoryCount,
-  TopicLabelCount,
   PublicCommentDetail,
-  CommentTheme,
-  ThemeNarrative,
   AgendaItemDetail,
   AgendaItemSibling,
 } from '../types'
-import { getOfficials } from './council'
 
 // ─── Meetings ────────────────────────────────────────────────
 
@@ -57,78 +52,9 @@ export async function getMeetings(cityFips = RICHMOND_FIPS) {
     .order('meeting_date', { ascending: false }).order('id').range(from, to)) as Meeting[]
 }
 
-interface MeetingCounts {
-  meeting_id: string
-  agenda_item_count: number
-  vote_count: number
-  categories: CategoryCount[]
-  topic_labels: TopicLabelCount[]
-}
-
-/** One complete invoker-RLS source for item, motion-with-vote and category counts.
- * Migration 064 returns every visible meeting, including explicit zero rows.
- * Migration 133's RLS excludes cancelled meetings and retired agenda entries.
- */
-export async function fetchMeetingCounts(cityFips: string): Promise<Map<string, MeetingCounts>> {
-  const counts = await readCompleteRecords('Meeting counts', async (from, to) => {
-    const page = await supabase.rpc('get_meeting_counts', { p_city_fips: cityFips }, { count: 'exact' })
-      .order('meeting_id').range(from, to)
-    return { ...page, data: page.data === null ? null : (page.data as MeetingCounts[]).map(row => ({ ...row, id: row.meeting_id })) }
-  })
-  const validCount = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
-  const validGroups = (groups: unknown, key: 'category' | 'label', itemCount: number): boolean => {
-    if (!Array.isArray(groups)) return false
-    const names = new Set<string>()
-    let sum = 0
-    for (const entry of groups as unknown[]) {
-      if (!entry || typeof entry !== 'object') return false
-      const group = entry as Record<string, unknown>
-      const name = group[key]
-      const count = group.count
-      if (typeof name !== 'string' || !name.trim() || names.has(name) || !validCount(count) || count === 0) return false
-      names.add(name)
-      sum += count
-      if (!Number.isSafeInteger(sum) || sum > itemCount) return false
-    }
-    return true
-  }
-  return new Map(counts.map(row => {
-    if (!validCount(row.agenda_item_count) || !validCount(row.vote_count)
-      || !validGroups(row.categories, 'category', row.agenda_item_count)
-      || !validGroups(row.topic_labels, 'label', row.agenda_item_count)) {
-      failReadPath('Meeting counts', 'Invalid source count or category rows')
-    }
-    return [row.meeting_id, { meeting_id: row.meeting_id, agenda_item_count: row.agenda_item_count,
-      vote_count: row.vote_count, categories: row.categories, topic_labels: row.topic_labels }]
-  }))
-}
-
-/** Use the same checked RPC row for every displayed count; absence is not zero. */
-export function applyMeetingCounts(meetings: Meeting[], countMap: Map<string, MeetingCounts>) {
-  return meetings.map((m) => {
-    const c = countMap.get(m.id)
-    if (!c) failReadPath('Meeting counts', 'A visible meeting has no source count row')
-    const allCats = c.categories
-    const allLabels = c.topic_labels
-    return {
-      ...m,
-      agenda_item_count: c.agenda_item_count,
-      vote_count: c.vote_count,
-      top_categories: allCats.slice(0, 4),
-      all_categories: allCats,
-      top_topic_labels: allLabels.slice(0, 5),
-      all_topic_labels: allLabels,
-    }
-  })
-}
-
+/** Meeting cards and topics share one complete, source-checked agenda snapshot. */
 export async function getMeetingsWithCounts(cityFips = RICHMOND_FIPS) {
-  const [meetings, countMap] = await Promise.all([
-    getMeetings(cityFips),
-    fetchMeetingCounts(cityFips),
-  ])
-
-  return applyMeetingCounts(meetings, countMap)
+  return meetingCards(await getAgendaMetadata(cityFips))
 }
 
 export const getMeeting = cache(async function getMeeting(
@@ -390,178 +316,105 @@ export const getAgendaItemDetail = cache(async function getAgendaItemDetail(
 ): Promise<AgendaItemDetail | null> {
   if (!isUuid(meetingId)) return null
 
-  // 1. Fetch item + meeting context
   const { data: itemRow, error: itemError } = await supabase
     .from('agenda_items')
-    .select('*, meetings!inner(meeting_date, meeting_type, agenda_url, minutes_url, city_fips)')
-    .is('agenda_source_retired_at', null)
-    .eq('meeting_id', meetingId)
-    .eq('meetings.city_fips', cityFips)
-    .ilike('item_number', itemNumber)
-    .single()
-
-  if (itemError || !itemRow) return null
-
+    .select('*, meetings!inner(id, meeting_date, meeting_type, agenda_url, minutes_url, city_fips, source_cancelled_at)')
+    .is('agenda_source_retired_at', null).is('meetings.source_cancelled_at', null)
+    .eq('meeting_id', meetingId).eq('meetings.city_fips', cityFips)
+    .ilike('item_number', itemNumber.replace(/[\\%_]/g, '\\$&'))
+    .maybeSingle()
+  if (itemError) failReadPath('Agenda item', itemError)
+  if (!itemRow) return null
   const meeting = itemRow.meetings as unknown as {
-    meeting_date: string
-    meeting_type: string
-    agenda_url: string | null
-    minutes_url: string | null
+    id: string; city_fips: string; source_cancelled_at: string | null;
+    meeting_date: string; meeting_type: string; agenda_url: string | null; minutes_url: string | null
   }
   const item = itemRow as unknown as AgendaItem
+  if (!meeting || meeting.id !== meetingId || meeting.city_fips !== cityFips || item.meeting_id !== meetingId
+    || item.item_number?.toLowerCase() !== itemNumber.toLowerCase()
+    || item.agenda_source_retired_at || meeting.source_cancelled_at) {
+    failReadPath('Agenda item', 'Item and meeting source identity differ')
+  }
 
-  // Motions and comments are independent once the item is known.
-  const [{ data: motions }, { data: commentRows }] = await Promise.all([
-    supabase
-      .from('motions')
-      .select('*')
-      .eq('agenda_item_id', item.id)
-      .order('sequence_number'),
-    supabase
-      .from('public_comments')
-      .select('id, speaker_name, method, comment_type, summary, source, extracted_at')
-      .eq('agenda_item_id', item.id)
-      .order('created_at'),
+  // Counts and visible lists come from complete records, not stored estimates.
+  // The optional generated theme/name-match enrichment is intentionally absent.
+  const [motions, commentRows, siblings] = await Promise.all([
+    readCompleteRecords('Agenda item motions', (from, to) => supabase.from('motions')
+      .select('*', { count: 'exact' }).eq('agenda_item_id', item.id)
+      .order('sequence_number').order('id').range(from, to), { maxRows: 1000 }),
+    readCompleteRecords('Agenda item comment records', (from, to) => supabase.from('public_comments')
+      .select('id, agenda_item_id, meeting_id, speaker_name, method, comment_type, summary, source, extracted_at', { count: 'exact' })
+      .eq('agenda_item_id', item.id).order('created_at').order('id').range(from, to)),
+    readCompleteRecords('Agenda item navigation', (from, to) => supabase.from('agenda_items')
+      .select('id, meeting_id, item_number, summary_headline, title', { count: 'exact' })
+      .is('agenda_source_retired_at', null).eq('meeting_id', meetingId)
+      .order('item_number').order('id').range(from, to)),
   ])
-
-  const motionIds = (motions ?? []).map((m) => m.id as string)
-  const commentIds = (commentRows ?? []).map((c) => c.id as string)
-  const [votesResult, narrativeResult, assignmentResult] = await Promise.all([
-    motionIds.length > 0
-      ? supabase.from('votes').select('*').in('motion_id', motionIds)
-      : Promise.resolve({ data: [] }),
-    supabase.from('item_theme_narratives')
-      .select('narrative, comment_count, confidence, generated_at, comment_themes(id, slug, label, description)')
-      .eq('agenda_item_id', item.id)
-      .order('comment_count', { ascending: false }),
-    commentIds.length > 0
-      ? supabase.from('comment_theme_assignments')
-          .select('comment_id, confidence, comment_themes(slug)')
-          .in('comment_id', commentIds)
-      : Promise.resolve({ data: [] }),
-  ])
-  const votes = votesResult.data
-  const narrativeRows = narrativeResult.data
-  const assignmentRows = assignmentResult.data
-
+  if (motions.some(motion => motion.agenda_item_id !== item.id)
+    || commentRows.some(comment => comment.agenda_item_id !== item.id || comment.meeting_id !== meetingId)
+    || siblings.some(sibling => sibling.meeting_id !== meetingId || !sibling.item_number)) {
+    failReadPath('Agenda item records', 'A child record belongs to another source')
+  }
+  const motionIds = motions.map(motion => motion.id)
   const votesByMotion = new Map<string, Vote[]>()
-  for (const v of (votes ?? []) as Vote[]) {
-    const arr = votesByMotion.get(v.motion_id) ?? []
-    arr.push(v)
-    votesByMotion.set(v.motion_id, arr)
+  const seenVotes = new Set<string>()
+  for (let offset = 0; offset < motionIds.length; offset += 200) {
+    const ids = motionIds.slice(offset, offset + 200)
+    const votes = await readCompleteRecords('Agenda item vote records', (from, to) => supabase.from('votes')
+      .select('*', { count: 'exact' }).in('motion_id', ids).order('id').range(from, to))
+    for (const vote of votes as Vote[]) {
+      if (!ids.includes(vote.motion_id) || seenVotes.has(vote.id)) failReadPath('Agenda item vote records', 'Vote source identity differs')
+      seenVotes.add(vote.id)
+      if (seenVotes.size > 10_000) failReadPath('Agenda item vote records', 'Vote records exceeded their bound')
+      const records = votesByMotion.get(vote.motion_id) ?? []
+      records.push(vote)
+      votesByMotion.set(vote.motion_id, records)
+    }
   }
-
-  const motionsWithVotes: MotionWithVotes[] = ((motions ?? []) as Motion[]).map((m) => ({
-    ...m,
-    votes: votesByMotion.get(m.id) ?? [],
+  const motionsWithVotes: MotionWithVotes[] = (motions as Motion[]).map(motion => ({
+    ...motion, votes: votesByMotion.get(motion.id) ?? [],
   }))
-
-  // Build theme assignment lookup: comment_id → { slug, confidence }
-  const themeAssignmentMap = new Map<string, { slug: string; confidence: number }>()
-  for (const a of assignmentRows ?? []) {
-    const theme = a.comment_themes as unknown as { slug: string } | null
-    if (theme?.slug) {
-      themeAssignmentMap.set(a.comment_id as string, {
-        slug: theme.slug,
-        confidence: a.confidence as number,
-      })
-    }
-  }
-
-  // Build ThemeNarrative[] from narrative rows
-  const themeNarratives: ThemeNarrative[] = (narrativeRows ?? []).map((r) => {
-    const theme = r.comment_themes as unknown as CommentTheme
-    return {
-      theme,
-      narrative: r.narrative as string,
-      comment_count: r.comment_count as number,
-      confidence: r.confidence as number,
-      generated_at: r.generated_at as string,
-    }
-  })
-
-  // Derive comment source metadata from first comment
-  const firstComment = commentRows?.[0]
-  const commentSource = (firstComment?.source as string | null) ?? null
-  const commentExtractedAt = (firstComment?.extracted_at as string | null) ?? null
-
-  // 4. Notable speaker detection
-  const allOfficials = await getOfficials(cityFips)
-  const officialNameMap = new Map(
-    allOfficials.map((o) => [o.name.toLowerCase(), o])
-  )
-
+  const comments: PublicCommentDetail[] = commentRows.map(comment => ({
+    id: comment.id as string,
+    speaker_name: comment.speaker_name as string,
+    method: comment.method as string,
+    comment_type: comment.comment_type as string,
+    summary: comment.summary as string | null,
+    is_notable: false,
+  }))
+  // These legacy compatibility fields are not used for the displayed count.
+  // Unknown or conflicting channel evidence never increments either channel.
   let spokenCount = 0
   let writtenCount = 0
-  const comments: PublicCommentDetail[] = (commentRows ?? []).map((c) => {
-    const commentType = c.comment_type as string
-    if (commentType === 'written') writtenCount++
-    else spokenCount++
-
-    const official = officialNameMap.get((c.speaker_name as string).toLowerCase())
-    const themeAssignment = themeAssignmentMap.get(c.id as string)
-    return {
-      id: c.id as string,
-      speaker_name: c.speaker_name as string,
-      method: c.method as string,
-      comment_type: commentType,
-      summary: c.summary as string | null,
-      is_notable: !!official,
-      notable_role: official
-        ? (official.is_current
-            ? official.role.replace(/_/g, ' ')
-            : `former ${official.role.replace(/_/g, ' ')}`)
-        : undefined,
-      theme_slug: themeAssignment?.slug,
-      theme_confidence: themeAssignment?.confidence,
-    }
-  })
-
-  // `continued_from` and `continued_to` are extraction-owned descriptive
-  // labels (usually dates or phrases such as "future meeting"), not agenda
-  // item numbers or foreign keys. Do not turn them into item-number lookups:
-  // those reads cannot identify a target and only produce PostgREST 406s.
-
-  // 7. Sibling items for prev/next navigation
-  const { data: siblings } = await supabase
-    .from('agenda_items')
-    .select('item_number, summary_headline, title')
-    .is('agenda_source_retired_at', null)
-    .eq('meeting_id', meetingId)
-    .order('item_number')
-
-  let prevItem: AgendaItemSibling | null = null
-  let nextItem: AgendaItemSibling | null = null
-  if (siblings) {
-    const idx = siblings.findIndex(
-      (s) => (s.item_number as string).toLowerCase() === item.item_number.toLowerCase()
-    )
-    if (idx > 0) {
-      const s = siblings[idx - 1]
-      prevItem = { item_number: s.item_number as string, summary_headline: s.summary_headline as string | null, title: s.title as string }
-    }
-    if (idx >= 0 && idx < siblings.length - 1) {
-      const s = siblings[idx + 1]
-      nextItem = { item_number: s.item_number as string, summary_headline: s.summary_headline as string | null, title: s.title as string }
-    }
+  for (const comment of comments) {
+    const method = comment.method?.trim().toLowerCase()
+    const type = comment.comment_type?.trim().toLowerCase()
+    const spoken = ['in_person', 'zoom', 'phone'].includes(method)
+    const written = type === 'written' || ['email', 'ecomment', 'mail'].includes(method)
+    if (spoken && !written) spokenCount++
+    if (written && !spoken) writtenCount++
   }
+  const sources = new Set(commentRows.map(comment => comment.source as string | null))
+  const extractionDates = new Set(commentRows.map(comment => comment.extracted_at as string | null))
+  // A mixed set cannot inherit one arbitrary first record's provenance.
+  const commentSource = sources.size === 1 ? [...sources][0] ?? null : null
+  const commentExtractedAt = extractionDates.size === 1 ? [...extractionDates][0] ?? null : null
 
-  // Build comment summary for the base type
-  const notableSpeakers: NotableSpeaker[] = []
-  for (const c of comments) {
-    if (c.is_notable && c.notable_role && !notableSpeakers.some(n => n.name === c.speaker_name)) {
-      notableSpeakers.push({ name: c.speaker_name, role: c.notable_role })
-    }
+  const index = siblings.findIndex(sibling => sibling.id === item.id)
+  if (index < 0 || siblings[index].item_number.toLowerCase() !== item.item_number.toLowerCase()) {
+    failReadPath('Agenda item navigation', 'Selected item is missing or changed in the source list')
+  }
+  const sibling = (position: number): AgendaItemSibling | null => {
+    const row = siblings[position]
+    return row ? { item_number: row.item_number, summary_headline: row.summary_headline, title: row.title } : null
   }
   return {
     ...item,
     motions: motionsWithVotes,
-    // S20: only use YouTube-sourced count from agenda_items.public_comment_count.
-    // Don't fall back to public_comments JOIN (unreliable agenda_item_id linkage).
-    public_comment_count: item.public_comment_count ?? 0,
-    comment_summary: (item.public_comment_count ?? 0) > 0
-      ? { total: item.public_comment_count!, notable_speakers: notableSpeakers }
-      : undefined,
+    // Keep a nullable legacy estimate as raw data; never promote it to a count
+    // or create a comment_summary that competes with the actual record list.
+    public_comment_count: item.public_comment_count,
+    comment_summary: undefined,
     meeting_date: meeting.meeting_date,
     meeting_type: meeting.meeting_type,
     meeting_agenda_url: meeting.agenda_url,
@@ -569,18 +422,18 @@ export const getAgendaItemDetail = cache(async function getAgendaItemDetail(
     comments,
     written_comment_count: writtenCount,
     spoken_comment_count: spokenCount,
-    theme_narratives: themeNarratives,
+    theme_narratives: [],
     comment_source: commentSource,
     comment_extracted_at: commentExtractedAt,
-    // Operator-only scanner data is fetched through an authenticated endpoint.
     conflict_flags: [],
-    // No stable target identity exists for the descriptive continuation labels.
+    // Extraction-owned continuation labels are not stable target identities.
     continued_from_item: null,
     continued_to_item: null,
-    prev_item: prevItem,
-    next_item: nextItem,
+    prev_item: sibling(index - 1),
+    next_item: sibling(index + 1),
   }
 })
+
 
 /**
  * Lightweight query for sitemap generation — just IDs and item numbers.

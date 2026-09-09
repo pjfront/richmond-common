@@ -4,7 +4,7 @@ const mocks = vi.hoisted(() => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn(
 vi.mock('next/cache', () => ({ revalidatePath: mocks.revalidatePath, revalidateTag: mocks.revalidateTag }))
 vi.mock('@/lib/rate-limit', () => ({ clientKey: () => 'test', enforceRateLimit: mocks.enforceRateLimit }))
 import { POST } from './route'
-import { SPLIT_MOTIONS_CACHE_TAG } from '@/lib/read-path-cache'
+import { AGENDA_METADATA_CACHE_TAG, SPLIT_MOTIONS_CACHE_TAG } from '@/lib/read-path-cache'
 
 function request(body: object) {
   return new NextRequest('https://example.test/api/revalidate', {
@@ -20,12 +20,17 @@ describe('source revalidation expires the compact split-motion projection', () =
   it('uses the existing source-sync all contract to expire the tag immediately and include analytics', async () => {
     const response = await POST(request({ all: true, secret: 'fixture-secret' }))
     expect(response.status).toBe(200)
-    expect(mocks.revalidateTag).toHaveBeenCalledExactlyOnceWith(SPLIT_MOTIONS_CACHE_TAG, { expire: 0 })
+    expect(mocks.revalidateTag).toHaveBeenCalledWith(SPLIT_MOTIONS_CACHE_TAG, { expire: 0 })
+    expect(mocks.revalidateTag).toHaveBeenCalledWith(AGENDA_METADATA_CACHE_TAG, { expire: 0 })
     expect(mocks.revalidatePath).toHaveBeenCalledWith('/council/analytics')
   })
   it.each(['/meetings/meeting-id', '/council/member', '/council/analytics'])('expires source-sensitive records for %s', async path => {
     expect((await POST(request({ paths: [path], secret: 'fixture-secret' }))).status).toBe(200)
-    expect(mocks.revalidateTag).toHaveBeenCalledExactlyOnceWith(SPLIT_MOTIONS_CACHE_TAG, { expire: 0 })
+    expect(mocks.revalidateTag).toHaveBeenCalledWith(SPLIT_MOTIONS_CACHE_TAG, { expire: 0 })
+  })
+  it.each(['/meetings/id', '/agenda/id', '/topics/housing', '/commissions/id'])('expires shared agenda and topic totals for %s', async path => {
+    expect((await POST(request({ paths: [path], secret: 'fixture-secret' }))).status).toBe(200)
+    expect(mocks.revalidateTag).toHaveBeenCalledWith(AGENDA_METADATA_CACHE_TAG, { expire: 0 })
   })
   it('does not invalidate the projection for unrelated pages or rejected credentials', async () => {
     expect((await POST(request({ paths: ['/about'], secret: 'fixture-secret' }))).status).toBe(200)

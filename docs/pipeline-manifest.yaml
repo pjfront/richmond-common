@@ -1422,17 +1422,29 @@ queries:
   getMeetings:
     file: queries.ts
     tables: [meetings]
-    used_by: []  # Internal helper — called by getMeetingsWithCounts, not used directly by pages
+    used_by: ["/sitemap.xml"]
 
   getNextMeeting:
     file: queries.ts
     tables: [meetings]
-    used_by: ["/"]  # UpcomingMeetingBanner component
+    used_by: []  # Legacy UpcomingMeetingBanner has no active page import.
 
   getMeetingsWithCounts:
     file: queries.ts
-    tables: [meetings]  # Uses RPC get_meeting_counts
-    used_by: ["/"]
+    tables: [meetings, agenda_items]
+    used_by: ["/meetings"]
+
+  getAgendaMetadata:
+    file: queries/agenda-metadata.ts
+    tables: [meetings, agenda_items]
+    used_by: []
+    description: "One complete active meeting/agenda cohort supplies compact cached archive counts, categories and topic recurrence; no vote scan or stored-count fallback."
+
+  meetingCards:
+    file: queries/agenda-metadata.ts
+    tables: []
+    used_by: []
+    description: "Adds small top-topic/category previews after the shared persistent-cache boundary."
 
   getMeeting:
     file: queries.ts
@@ -1547,9 +1559,7 @@ queries:
 
   getAgendaItemDetail:
     file: queries.ts
-    tables: [agenda_items, meetings, motions, votes, public_comments,
-             conflict_flags, officials, comment_themes,
-             comment_theme_assignments, item_theme_narratives]
+    tables: [agenda_items, meetings, motions, votes, public_comments]
     used_by: ["/meetings/[id]/items/[itemNumber]"]
 
   getAgendaItemSlugs:
@@ -1704,7 +1714,7 @@ queries:
 
   getCommissionMeetings:
     file: queries.ts
-    tables: [bodies, meetings]
+    tables: [bodies, meetings, agenda_items]
     used_by: ["/commissions/[id]"]
 
   # ── Neighborhood Councils ──────────────────────────────────
@@ -1950,8 +1960,8 @@ pages:
               electionToSlug]
 
   "/":
-    description: "Home — upcoming meetings with summary counts"
-    queries: [getMeetingsWithCounts]
+    description: "Home — sourced civic stories, upcoming council meetings and November choices"
+    queries: [getResidentSnapshot]
 
   "/meetings":
     description: "Meeting discovery — month-grouped list and mini-calendar; no scanner aggregation on the public path"
@@ -2305,12 +2315,6 @@ schedules:
 # ══════════════════════════════════════════════════════════════
 
 rpcs:
-  get_meeting_counts:
-    migration: "038"
-    reads_from: [meetings, agenda_items, motions, votes]
-    returns: "{meeting_id, agenda_item_count, vote_count, categories[]}"
-    used_by_queries: [getMeetingsWithCounts, getCommissionMeetings]
-
   get_category_stats:
     migration: "085"
     reads_from: [agenda_items, motions, votes]
@@ -2687,6 +2691,12 @@ field_map:
   # ── Public sitemap (/sitemap.xml) ────────────────────────────
 
   "/sitemap.xml":
+    "legacy inventory meeting URLs":
+      query: getMeetings
+      column: meetings.id
+      sources: [escribemeetings, minutes_extraction]
+      note: "Current default inventory; the bounded replacement below is source-held behind the rollout switch."
+
     "meeting detail URLs":
       query: getSitemapMeetings
       column: meetings.id
@@ -2732,55 +2742,14 @@ field_map:
   # ── Home Page (/) ───────────────────────────────────────────
 
   "/":
-    "meeting date":
-      query: getMeetingsWithCounts
+    "upcoming meeting date":
+      query: getResidentSnapshot
       column: meetings.meeting_date
-      sources: [escribemeetings, minutes_extraction]
+      sources: [escribemeetings]
 
-    "meeting type":
-      query: getMeetingsWithCounts
-      column: meetings.meeting_type
-      sources: [escribemeetings, minutes_extraction]
-
-    "agenda item count":
-      query: getMeetingsWithCounts
-      rpc: get_meeting_counts
-      column: "COUNT(agenda_items.meeting_id)"
-      sources: [escribemeetings, minutes_extraction]
-
-    "vote count":
-      query: getMeetingsWithCounts
-      rpc: get_meeting_counts
-      column: "COUNT(votes via motions)"
-      sources: [minutes_extraction]
-
-    "top categories":
-      query: getMeetingsWithCounts
-      rpc: get_meeting_counts
-      column: agenda_items.category
-      sources: [escribemeetings, minutes_extraction]
-      enrichment: "rules-based categorization in load_meeting_to_db"
-
-    "latest meeting flags":
-      query: getConflictFlags
-      column: "conflict_flags.* for latest meeting"
-      sources: []
-      enrichment: conflict_scanning
-
-    "official cards on home":
-      query: getOfficials
-      column: officials.name
-      sources: []
-      enrichment: commission_seeding
-
-    "current candidacies on home":
-      query: getCurrentCandidacies
-      column: "election_candidates joined with elections"
-      sources: [elections]
-
-    "upcoming meeting banner":
-      query: getNextMeeting
-      column: "meetings.meeting_date (next future meeting)"
+    "official agenda link":
+      query: getResidentSnapshot
+      column: meetings.agenda_url
       sources: [escribemeetings]
 
   # ── Meeting List (/meetings) ────────────────────────────────
@@ -2796,15 +2765,14 @@ field_map:
       column: meetings.meeting_type
       sources: [escribemeetings, minutes_extraction]
 
-    "body name":
-      query: getMeetingsWithCounts
-      column: meetings.body_name
-      sources: [escribemeetings]
-
     "meeting agenda item count":
       query: getMeetingsWithCounts
-      rpc: get_meeting_counts
-      column: "COUNT(agenda_items.meeting_id)"
+      column: "Count of complete active agenda_items IDs in the shared meeting inventory"
+      sources: [escribemeetings, minutes_extraction]
+
+    "assigned topics":
+      query: getMeetingsWithCounts
+      column: agenda_items.topic_label
       sources: [escribemeetings, minutes_extraction]
 
   # ── Meeting Detail (/meetings/[id]) ─────────────────────────

@@ -458,8 +458,12 @@ export interface TopicLabelCount {
   count: number
 }
 
-export interface MeetingWithCounts extends Meeting {
-  vote_count: number
+/** Compact meeting inventory with counts derived from current agenda entries. */
+export interface MeetingWithCounts extends Pick<Meeting,
+  'id' | 'city_fips' | 'body_id' | 'meeting_date' | 'meeting_type' |
+  'presiding_officer' | 'agenda_url' | 'minutes_url' | 'created_at'
+> {
+  agenda_item_count: number
   top_categories: CategoryCount[]
   all_categories: CategoryCount[]
   top_topic_labels: TopicLabelCount[]
