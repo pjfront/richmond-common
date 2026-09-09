@@ -6,6 +6,11 @@
 # <OperatorGate> without removing the entry also fails (so the registry
 # stays honest).
 #
+# /financial-connections remains permanently operator-only through its
+# server requireOperatorPage check and authenticated bulk API. Its redundant
+# client OperatorGate was removed; server access is tested separately in
+# web/src/lib/operator-page-routes.test.tsx. It has not graduated to public.
+#
 # Two categories:
 #
 #   - permanent: operator-only by design (operator workflow tooling,
@@ -58,17 +63,6 @@ gates:
     reason: |
       Operational dashboard for pipeline data quality. Not citizen-facing
       by design — surfaces internal anomaly counts, stale records, etc.
-
-  - id: financial-connections-page
-    file: web/src/app/financial-connections/page.tsx
-    line: 50
-    category: permanent
-    gated_at: '2026-04-01'
-    reason: |
-      Wider financial-connections audit tooling. The server rejects public
-      requests before its heavy multi-table query, and the client gate keeps
-      the rendered tool inside operator mode. If it should ever graduate,
-      re-categorize it with a validation checklist first.
 
   - id: operator-decisions-page
     file: web/src/app/operator/decisions/OperatorDecisionsPage.tsx
@@ -201,7 +195,7 @@ gates:
 
   - id: meeting-item-finance-section
     file: web/src/app/meetings/[id]/items/[itemNumber]/page.tsx
-    line: 211
+    line: 205
     category: pending_graduation
     gated_at: '2026-03-15'
     view_at: /meetings
