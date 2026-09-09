@@ -121,11 +121,12 @@ describe('CandidateCard detail link containment', () => {
 
   it.each([false, true])('replaces disputed statistics with the scoped summary (operator: %s)', (isOperator) => {
     operatorState.isOperator = isOperator
+    const legacyRecord = { ...candidate, candidate_name: 'Ahmad J. Anderson', total_raised: 73300,
+      donor_count: 161, contribution_count: 198, avg_contribution: 370,
+      largest_contribution: 9140, lifetime_raised: 73300, bucket_grid_consistent: false }
     const markup = renderToStaticMarkup(
       <CandidateCard
-        candidate={{ ...candidate, candidate_name: 'Ahmad J. Anderson', total_raised: 73300,
-          donor_count: 161, contribution_count: 198, avg_contribution: 370,
-          largest_contribution: 9140, lifetime_raised: 73300, bucket_grid_consistent: false }}
+        candidate={legacyRecord}
         electionSlug="2026-primary"
         financeCoverage={{ kind: 'source-checked-summary',
           href: '/elections/2026-general/money/ahmad-anderson',

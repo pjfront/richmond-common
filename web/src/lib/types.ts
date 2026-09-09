@@ -289,21 +289,14 @@ export interface DonorProfile {
   occupation: string | null
   /** The donor.id for this profile */
   donor_id: string
-  /** Aggregate total contributed across all cycles (all-time) */
-  total_contributed: number
-  /** Total contributed in the current election cycle (e.g. 2025-01-01 through today).
-   *  Computed from contributions table. Primary sort key for listing. */
-  current_cycle_total: number
-  /** Number of distinct recipient committees */
-  recipient_count: number
-  /** Earliest contribution date on file */
-  earliest_contribution_date: string | null
-  /** Latest contribution date on file */
-  latest_contribution_date: string | null
 }
 
 /** One contribution FROM an individual donor TO a committee. */
 export interface DonorOutgoingRow {
+  record_id: string
+  source: string | null
+  source_url: string | null
+  recipient_committee_fppc_id: string | null
   /** Committee that received the money */
   recipient_committee_name: string
   /** Committee id for linking */
@@ -465,8 +458,12 @@ export interface TopicLabelCount {
   count: number
 }
 
-export interface MeetingWithCounts extends Meeting {
-  vote_count: number
+/** Compact meeting inventory with counts derived from current agenda entries. */
+export interface MeetingWithCounts extends Pick<Meeting,
+  'id' | 'city_fips' | 'body_id' | 'meeting_date' | 'meeting_type' |
+  'presiding_officer' | 'agenda_url' | 'minutes_url' | 'created_at'
+> {
+  agenda_item_count: number
   top_categories: CategoryCount[]
   all_categories: CategoryCount[]
   top_topic_labels: TopicLabelCount[]
@@ -485,8 +482,8 @@ export interface CommentSummary {
 
 export interface AgendaItemWithMotions extends AgendaItem {
   motions: MotionWithVotes[]
-  /** Number of public comments on this item (0 if none or open forum) */
-  public_comment_count: number
+  /** Legacy extracted estimate; null is unknown. Public views use comment records. */
+  public_comment_count: number | null
   /** Aggregated comment summary with notable speaker detection */
   comment_summary?: CommentSummary
   /** Theme narratives for inline community voice display */
@@ -805,17 +802,18 @@ export interface NextRequestRequest {
 
 export interface PublicRecordsStats {
   totalRequests: number
-  avgResponseDays: number
-  onTimeRate: number
-  currentlyOverdue: number
+  closedRequests: number
+  notClosedRequests: number
+  closureTimingCount: number
+  avgClosureDays: number | null
 }
 
 export interface DepartmentCompliance {
   department: string
   requestCount: number
-  avgDays: number
-  onTimeRate: number
-  slowestDays: number
+  closedCount: number
+  closureTimingCount: number
+  avgClosureDays: number | null
 }
 
 // ─── Governing Bodies ────────────────────────────────────
@@ -845,7 +843,6 @@ export type CommissionMember = Tables<'commission_members'>
 export interface CommissionWithStats extends Commission {
   member_count: number
   holdover_count: number
-  vacancy_count: number
 }
 
 export interface CommissionStaleness {
@@ -1032,6 +1029,10 @@ export interface DivergentMotionRow {
  * Built client-side from DivergentMotionRow[] for table rendering.
  */
 export interface DivergentMotion {
+  source?: string | null
+  source_url?: string | null
+  extracted_at?: string | null
+  source_tier?: number | null
   motion_id: string
   motion_text: string | null
   motion_result: string | null

@@ -2,10 +2,10 @@ import { describe, expect, it, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { AgendaItemWithMotions, MotionWithVotes, Vote } from './types'
 import { didSplitVotePass, getCompactTally, getItemResultLabel, getOverallResult, getSignificance, getSplitVoteMargin, getVoteTallySummary, hasSplitVote } from './significance'
-import { formalMotionResult, motionTallyLabel, recordedVoteCounts } from './vote-records'
+import { formalMotionResult, motionTallyLabel, normalizeMotionVotes, recordedVoteCounts } from './vote-records'
 import AgendaItemCard from '@/components/AgendaItemCard'
-import HeroItem from '@/components/HeroItem'
 import VoteRollCall from '@/components/VoteRollCall'
+import VoteBreakdown from '@/components/VoteBreakdown'
 import { isSplitVote } from '@/components/VotingRecordTable'
 
 vi.mock('@/components/ReportErrorLink', () => ({ default: () => <button>Report an error</button> }))
@@ -75,7 +75,7 @@ describe('motion-specific outcomes and recorded significance', () => {
   it('separates abstentions, absences, recusals and unspecified records from yes/no votes', () => {
     const votes = ['yes', 'yea', 'no', 'noe', 'abstained', 'absent', 'recused', 'present'].map(vote)
     expect(recordedVoteCounts(votes)).toEqual({ aye: 2, nay: 2, abstain: 1, absent: 1, recused: 1, 'not-recorded': 1 })
-    expect(motionTallyLabel(votes)).toBe('2 aye · 2 nay · 1 abstain · 1 absent · 1 recused · 1 unspecified')
+    expect(motionTallyLabel(votes)).toBe('2 aye · 2 nay · 1 abstain · 1 absent · 1 recused · Incomplete: 1 choice not established')
     expect(formalMotionResult(motion([], { source: 'transcript' }))).toBe('unknown')
   })
 
@@ -90,12 +90,48 @@ describe('motion-specific outcomes and recorded significance', () => {
     expect(html).not.toContain(': Absent')
   })
 
-  it('describes public comments as observed records, not a measure of community opinion', () => {
-    const html = renderToStaticMarkup(<HeroItem items={[item([], { public_comment_count: 12 })]} flags={[]} />)
-    expect(html).toContain('12 public comments are recorded')
-    expect(html).toContain('Most recorded public comments')
-    expect(html).not.toContain('people spoke')
-    expect(html).not.toContain('Most Contested')
+  it('counts same-member duplicates once without merging distinct IDs or matching only a surname', () => {
+    const a = { ...vote('aye', 1), official_id: 'person-a', official_name: 'Anna Lee' }
+    const b = { ...vote('nay', 2), official_id: 'person-b', official_name: 'Ben Lee' }
+    const votes: Vote[] = [a, { ...a, id: 'second-source-row', vote_choice: 'yes' }, b]
+    expect(normalizeMotionVotes(votes)).toHaveLength(2)
+    expect(motionTallyLabel(votes)).toBe('1 aye · 1 nay')
+    const record = motion([], { votes })
+    const html = renderToStaticMarkup(<VoteRollCall motions={[record]} />)
+    expect(html).toContain('Anna Lee: Aye')
+    expect(html).toContain('Ben Lee: Nay')
+    expect(html.match(/aria-label="Anna Lee: Aye"/g)).toHaveLength(1)
+    expect(normalizeMotionVotes([a, { ...a, official_id: 'different-person' }])).toHaveLength(2)
+    expect(normalizeMotionVotes([{ ...a, official_id: null }, { ...b, official_id: null }])).toHaveLength(2)
+    const breakdown = renderToStaticMarkup(<VoteBreakdown motion={record} />)
+    expect(breakdown.match(/Anna Lee/g)).toHaveLength(1)
+    expect(breakdown).toContain('1 aye · 1 nay')
+  })
+
+  it('keeps conflicting member choices unresolved in circles and counts, without an apparent close-vote tally', () => {
+    const a = { ...vote('aye', 1), official_id: 'person-a', official_name: 'Anna Lee' }
+    const votes: Vote[] = [a, { ...a, id: 'conflict', vote_choice: 'nay' }, { ...a, id: 'later-repeat' }, vote('aye', 2), vote('nay', 3)]
+    expect(recordedVoteCounts(votes)).toMatchObject({ aye: 1, nay: 1, 'not-recorded': 1 })
+    expect(motionTallyLabel(votes)).toBe('1 aye · 1 nay · Incomplete: 1 choice not established')
+    const record = motion([], { votes })
+    const html = renderToStaticMarkup(<VoteRollCall motions={[record]} />)
+    expect(html).toContain('Anna Lee: Choice not established in the records')
+    expect(html).not.toContain('Anna Lee: Nay')
+    expect(html).not.toContain('Anna Lee: Aye')
+    expect(renderToStaticMarkup(<VoteBreakdown motion={record} />)).toContain('Not established')
+    expect(getCompactTally(item([record]))).toBeNull()
+    expect(getVoteTallySummary(item([record]))).toBeNull()
+    expect(getSplitVoteMargin(item([record]))).toBeNull()
+    expect(hasSplitVote(item([record]))).toBe(true) // The two other recorded choices still differ.
+  })
+
+  it('does not promote an AI speaker estimate to a count or engagement ranking on agenda cards', () => {
+    const record = item([], { public_comment_count: 987, description: 'Original agenda text' })
+    for (const expanded of [false, true]) {
+      const html = renderToStaticMarkup(<AgendaItemCard item={record} forceExpanded={expanded} />)
+      expect(html).not.toMatch(/987|people spoke|Most public comments|Most recorded|comment details will/i)
+      if (expanded) expect(html).toContain('available comment records')
+    }
   })
 
   it('does not let an old generated explainer assert passage beneath an unverified transcript outcome', () => {

@@ -1,5 +1,3 @@
-'use client'
-
 import type { PublicCommentDetail, ThemeNarrative } from '@/lib/types'
 import { commentSourceToProvenance } from '@/lib/provenance'
 import { ThemeAttribution } from './SourceAttribution'
@@ -7,191 +5,72 @@ import { ThemeAttribution } from './SourceAttribution'
 interface CommunityVoiceSectionProps {
   comments: PublicCommentDetail[]
   themeNarratives: ThemeNarrative[]
-  spokenCount: number
-  writtenCount: number
+  // Retained for callers; all displayed counts now come from comments below.
+  spokenCount?: number
+  writtenCount?: number
   commentSource: string | null
   commentExtractedAt: string | null
 }
 
-/** Channel-aware count label: "5 spoke · 3 wrote" or "8 spoke" or "4 wrote" */
-function channelLabel(spoken: number, written: number): string {
-  if (spoken > 0 && written > 0) return `${spoken} spoke · ${written} wrote`
-  if (written > 0) return `${written} wrote`
-  return `${spoken} spoke`
+type Channel = 'spoken' | 'written' | 'unknown'
+function channel(record: PublicCommentDetail): Channel {
+  const method = record.method?.trim().toLowerCase()
+  const type = record.comment_type?.trim().toLowerCase()
+  const spoken = ['in_person', 'zoom', 'phone'].includes(method)
+  const written = type === 'written' || ['email', 'ecomment', 'mail'].includes(method)
+  if (spoken && written) return 'unknown'
+  return spoken ? 'spoken' : written ? 'written' : 'unknown'
 }
 
-/** Compute spoken/written breakdown for a theme from individual comments */
-function themeChannelCounts(
-  themeSlug: string,
-  comments: PublicCommentDetail[],
-): { spoken: number; written: number } {
-  let spoken = 0
-  let written = 0
-  for (const c of comments) {
-    if (c.theme_slug !== themeSlug) continue
-    if (c.comment_type === 'written') written++
-    else spoken++
-  }
-  return { spoken, written }
+/** Count source-record IDs, never unique people. Conflicting channels stay unknown. */
+export function commentRecordCounts(comments: PublicCommentDetail[]) {
+  const channels = new Map<string, Channel>()
+  comments.forEach((comment, index) => {
+    const key = comment.id || `missing:${index}`
+    const value = channel(comment)
+    const previous = channels.get(key)
+    channels.set(key, previous && previous !== value ? 'unknown' : value)
+  })
+  const counts = { total: channels.size, spoken: 0, written: 0, unknown: 0 }
+  for (const value of channels.values()) counts[value]++
+  return counts
 }
 
-const KCRT_URL = 'https://www.ci.richmond.ca.us/1604/KCRT-702'
-
-function formatExtractedDate(iso: string | null): string {
-  if (!iso) return ''
-  const d = new Date(iso)
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+function channelLabel(counts: ReturnType<typeof commentRecordCounts>): string {
+  const parts = []
+  if (counts.spoken) parts.push(`${counts.spoken} recorded as spoken`)
+  if (counts.written) parts.push(`${counts.written} recorded as written`)
+  if (counts.unknown) parts.push(`${counts.unknown} with channel not established`)
+  return parts.join(' · ')
 }
 
-/**
- * Community Voice: theme-grouped public comment display (S21).
- * Progressively enhances: themes → speaker list → nothing.
- */
-export default function CommunityVoiceSection({
-  comments,
-  themeNarratives,
-  spokenCount,
-  writtenCount,
-  commentSource,
-  commentExtractedAt,
-}: CommunityVoiceSectionProps) {
-  if (comments.length === 0) return null
-
-  // ── Theme-grouped view ────────────────────────────────────
-  if (themeNarratives.length > 0) {
-    return (
-      <ThemeView
-        comments={comments}
-        themeNarratives={themeNarratives}
-        spokenCount={spokenCount}
-        writtenCount={writtenCount}
-        commentSource={commentSource}
-        commentExtractedAt={commentExtractedAt}
-      />
-    )
-  }
-
-  // ── Fallback: spoken/written split ────────────────────────
-  return (
-    <FallbackView
-      comments={comments}
-      spokenCount={spokenCount}
-      writtenCount={writtenCount}
-    />
-  )
-}
-
-// ── Theme-grouped view ──────────────────────────────────────
-
-function ThemeView({
-  comments,
-  themeNarratives,
-  spokenCount,
-  writtenCount,
-  commentSource,
-  commentExtractedAt,
-}: CommunityVoiceSectionProps) {
-  const total = comments.length
-
-  // Summary line
-  const parts: string[] = []
-  if (spokenCount > 0) parts.push(`${spokenCount} spoke at the meeting`)
-  if (writtenCount > 0) parts.push(`${writtenCount} submitted written comments`)
-
-  return (
-    <section>
-      <h2 className="text-lg font-semibold text-civic-navy mb-1">
-        Themes From Comments
-      </h2>
-      <p className="text-sm text-slate-600 mb-4">
-        {total} {total === 1 ? 'person' : 'people'} raised {themeNarratives.length}{' '}
-        {themeNarratives.length === 1 ? 'topic' : 'topics'}
-        {parts.length > 0 && <> ({parts.join(', ')})</>}
+export default function CommunityVoiceSection({ comments, themeNarratives, commentSource, commentExtractedAt }: CommunityVoiceSectionProps) {
+  if (!comments.length) return null
+  const counts = commentRecordCounts(comments)
+  const extractedDate = commentExtractedAt ? new Date(commentExtractedAt) : null
+  return <section>
+    <h2 className="mb-2 text-lg font-semibold text-civic-navy">Comment records</h2>
+    <p className="text-sm leading-relaxed text-slate-600">
+      {counts.total} comment {counts.total === 1 ? 'record' : 'records'} available here. {channelLabel(counts)}.
+      {' '}One person can appear in several records; this is not a count of residents or a measure of public opinion.
+    </p>
+    {themeNarratives.length > 0 && <>
+      <h3 className="mb-3 mt-5 font-medium text-slate-700">AI-grouped themes</h3>
+      <div className="space-y-3">{themeNarratives.map(narrative => {
+        const assigned = comments.filter(comment => comment.theme_slug === narrative.theme.slug)
+        const assignedCounts = commentRecordCounts(assigned)
+        return <div key={narrative.theme.slug} className="rounded-lg border border-slate-200 p-4">
+          <h4 className="font-medium text-civic-navy">{narrative.theme.label}</h4>
+          <p className="mt-1 text-xs text-slate-500">{assignedCounts.total > 0
+            ? `${assignedCounts.total} assigned comment ${assignedCounts.total === 1 ? 'record' : 'records'} · ${channelLabel(assignedCounts)}`
+            : 'Assigned comment records are not available in this view.'}</p>
+          <p className="mt-2 text-sm leading-relaxed text-slate-600">{narrative.narrative}</p>
+          {narrative.confidence < 0.9 && <p className="mt-2 text-xs text-amber-700">This AI grouping has lower confidence.</p>}
+        </div>
+      })}</div>
+      <p className="mt-4 text-xs leading-relaxed text-slate-500"><ThemeAttribution p={commentSourceToProvenance(commentSource)} /> A record may belong to more than one theme.
+        {extractedDate && Number.isFinite(extractedDate.valueOf()) && <> Extracted {extractedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}.</>}
       </p>
-
-      <div className="space-y-3">
-        {themeNarratives.map((tn) => (
-          <ThemeCard key={tn.theme.slug} narrative={tn} comments={comments} />
-        ))}
-      </div>
-
-      {/* AI attribution (U8) + source (U1) + recording link */}
-      <p className="text-xs text-slate-400 mt-4 italic">
-        <ThemeAttribution p={commentSourceToProvenance(commentSource)} />
-        {commentExtractedAt && <> Extracted {formatExtractedDate(commentExtractedAt)}.</>}
-      </p>
-      {commentSource === 'youtube_transcript' && (
-        <p className="text-xs mt-1">
-          <a
-            href={KCRT_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-civic-navy-light hover:text-civic-navy underline"
-          >
-            Watch meeting recordings on KCRT
-          </a>
-        </p>
-      )}
-    </section>
-  )
-}
-
-// ── Theme card (narrative + count, no individual names) ─────
-
-function ThemeCard({ narrative: tn, comments }: { narrative: ThemeNarrative; comments: PublicCommentDetail[] }) {
-  const lowConfidence = tn.confidence < 0.9
-  const { spoken, written } = themeChannelCounts(tn.theme.slug, comments)
-
-  return (
-    <div className="border border-slate-200 rounded-lg p-4">
-      <div className="flex items-center gap-2 mb-2">
-        <h3 className="text-sm font-semibold text-civic-navy">
-          {tn.theme.label}
-        </h3>
-        <span className="text-xs text-slate-400">
-          {channelLabel(spoken, written)}
-        </span>
-      </div>
-
-      <p className="text-sm text-slate-600 leading-relaxed">
-        {tn.narrative}
-      </p>
-
-      {lowConfidence && (
-        <p className="text-xs text-amber-600 mt-1">
-          Lower confidence grouping. Review recommended.
-        </p>
-      )}
-    </div>
-  )
-}
-
-// ── Fallback: spoken/written split (no themes) ──────────────
-
-function FallbackView({
-  comments,
-  spokenCount,
-  writtenCount,
-}: {
-  comments: PublicCommentDetail[]
-  spokenCount: number
-  writtenCount: number
-}) {
-  const total = comments.length
-
-  const parts: string[] = []
-  if (spokenCount > 0) parts.push(`${spokenCount} spoke at the meeting`)
-  if (writtenCount > 0) parts.push(`${writtenCount} submitted written comments`)
-
-  return (
-    <section>
-      <h2 className="text-lg font-semibold text-civic-navy mb-3">
-        Public Comments
-      </h2>
-      <p className="text-sm text-slate-600">
-        {total} {total === 1 ? 'person' : 'people'} commented
-        {parts.length > 0 && <> ({parts.join(', ')})</>}.
-      </p>
-    </section>
-  )
+    </>}
+  </section>
 }

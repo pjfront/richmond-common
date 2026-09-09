@@ -11,8 +11,7 @@ export interface NextElectionLink { slug: string; label: string; description?: s
 const moreItems = [
   { href: '/elections/find-my-district', label: 'Find my district' },
   { href: '/topics', label: 'Browse topics' },
-  { href: '/meetings/most-discussed', label: 'Most discussed' },
-  { href: '/council/analytics', label: 'How the council votes' },
+  { href: '/council/analytics', label: 'Recorded split votes' },
   { href: '/about', label: 'About Richmond Commons' },
 ]
 const operatorItems = [

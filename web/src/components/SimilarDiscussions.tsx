@@ -51,9 +51,6 @@ export default async function SimilarDiscussions({
               </p>
               <div className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
                 <span>{formatShortDate(si.meeting_date)}</span>
-                {si.financial_amount && (
-                  <span className="text-civic-amber">{si.financial_amount}</span>
-                )}
                 {si.public_comment_count > 0 && (
                   <span>{si.public_comment_count} comment{si.public_comment_count !== 1 ? 's' : ''} recorded</span>
                 )}

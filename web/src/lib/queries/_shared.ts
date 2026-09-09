@@ -81,6 +81,10 @@ export function filterGovernmentEntityFlags<T extends { flag_type: string; evide
 /** Meeting columns for listing/card views (excludes metadata JSONB, description TEXT) */
 export const COLS_MEETING_LIST = 'id, city_fips, document_id, body_id, meeting_date, meeting_type, call_to_order_time, adjournment_time, presiding_officer, minutes_url, agenda_url, video_url, adjourned_in_memory_of, next_meeting_date, meeting_summary, agenda_item_count, created_at'
 
+/** Complete list inventory for the shared agenda projection; no stored counts or summaries. */
+export const COLS_MEETING_METADATA = 'id, city_fips, body_id, meeting_date, meeting_type, presiding_officer, agenda_url, minutes_url, created_at, source_cancelled_at'
+export const COLS_AGENDA_METADATA = 'id, meeting_id, category, topic_label, agenda_source_retired_at, meetings!inner(meeting_date, city_fips, source_cancelled_at)'
+
 /** Meeting columns for banner/CTA — minimal */
 export const COLS_MEETING_BANNER = 'id, meeting_date, meeting_type, body_id, agenda_url'
 
@@ -117,3 +121,7 @@ export const COLS_OFFICIAL_CONTRIBUTIONS = 'id, committee_id, amount, contributi
  *  (source_url, source_tier, confidence_score, extracted_at — migration 122)
  *  and no_interests_declared, which is a meaningful Tier 1 fact on its own. */
 export const COLS_FORM700_FILING = 'id, city_fips, official_id, filer_name, filer_position, statement_type, period_start, period_end, filing_year, source, source_url, no_interests_declared, source_tier, confidence_score, extracted_at, created_at'
+
+export const COLS_COMMISSION = 'appointment_authority, archive_center_amid, city_fips, commission_type, created_at, escribemeetings_type, form700_required, id, last_website_scrape, meeting_schedule, name, num_seats, term_length_years, website_roster_url'
+export const COLS_CURRENT_COMMISSION_MEMBER = 'id, commission_id, term_end'
+export const COLS_COMMISSION_MEMBER = 'appointed_by, appointed_by_official_id, city_fips, commission_id, created_at, id, is_current, name, normalized_name, role, source, source_meeting_id, term_end, term_start, updated_at, website_stale_since'

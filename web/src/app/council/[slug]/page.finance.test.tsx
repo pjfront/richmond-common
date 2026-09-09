@@ -37,7 +37,7 @@ describe('council profile campaign identity and date boundaries', () => {
     expect(html).toContain('2026 campaign for mayor')
     expect(html).toContain('$60,365')
     expect(html).toContain('Jan 1–Jun 30, 2026')
-    expect(html).toContain('Council campaign donation records')
+    expect(html).toContain('Council campaign records')
     expect(html).toContain('$335')
     expect(html).toContain('Jan 5, 2025')
     expect(html).not.toContain('2026 Election')

@@ -12,7 +12,7 @@ interface TabDef {
 }
 
 const TABS: TabDef[] = [
-  { id: 'voting', label: 'How the Council Votes', operatorOnly: false },
+  { id: 'voting', label: 'Recorded split votes', operatorOnly: false },
   { id: 'stats', label: 'Topics & Trends', operatorOnly: true },
   { id: 'patterns', label: 'Donor Patterns', operatorOnly: true },
 ]
@@ -33,6 +33,7 @@ const TABS: TabDef[] = [
 export default function AnalyticsTabs({ activeTab }: { activeTab: AnalyticsTab }) {
   const { isOperator } = useOperatorMode()
   const visibleTabs = TABS.filter((t) => !t.operatorOnly || isOperator)
+  if (!isOperator) return null
 
   return (
     <div

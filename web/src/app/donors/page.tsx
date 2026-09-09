@@ -1,10 +1,6 @@
 /**
- * Individual donor index — S28.6, Graduated tier.
- *
- * Lists all individual donors whose aggregate giving across all cycles
- * exceeds $5,000 (Option b, resolved 2026-07-06 per #72).
- *
- * Follows the /unions and /corporations pattern (S28.3).
+ * Selected historical names from the legacy donor index. Its cached eligibility
+ * rule is not a verified giving total or proof that a name identifies a person.
  */
 
 import type { Metadata } from 'next'
@@ -12,9 +8,9 @@ import { getDonorList } from '@/lib/queries'
 import DonorList from './DonorList'
 
 export const metadata: Metadata = {
-  title: 'Individual Donors | Richmond Commons',
+  title: 'Historical donor records',
   description:
-    'Individual donors who have contributed $5,000 or more to Richmond political campaigns. All data from public campaign-finance filings.',
+    'Browse reported names and source-linked historical entries in Richmond campaign filings.',
 }
 
 export default async function DonorsPage() {
@@ -26,8 +22,7 @@ export default async function DonorsPage() {
 
       <footer className="mt-12 pt-6 border-t border-slate-100 space-y-2">
         <p className="text-xs text-slate-400 leading-relaxed">
-          Showing individual donors with at least $5,000 in total tracked
-          contributions. All contribution data from{' '}
+          Historical records imported from{' '}
           <a
             href="https://public.netfile.com/pub2/?AID=RICH"
             target="_blank"
@@ -36,12 +31,11 @@ export default async function DonorsPage() {
           >
             NetFile
           </a>{' '}
-          (City of Richmond e-filing system, Tier 1 source) and CAL-ACCESS
-          (California Secretary of State, Tier 1 source).
+          (City of Richmond e-filing system) and CAL-ACCESS
+          (California Secretary of State).
         </p>
         <p className="text-xs text-slate-400">
-          Auto-generated from public records &middot; Updated within ~15
-          minutes of any new filing
+          The original report links on each profile show what was filed. This historical directory is not a live filing feed.
         </p>
       </footer>
     </div>

@@ -55,31 +55,52 @@ const EVENT_COLUMNS = 'event_key,scope_key,event_kind,donor_name,donor_fppc_id,r
 /** Bounded, cached public projection; an error is thrown, never cached as zero activity. */
 export const getPublicFinanceSnapshot = unstable_cache(async (): Promise<PublicFinanceSnapshot> => {
   const events: FinanceEvent[] = []
-  let truncated = false
-  for (let offset = 0; offset < 5000; offset += 1000) {
-    const { data, error } = await supabase.from('finance_public_events').select(EVENT_COLUMNS)
+  const identities = new Set<string>()
+  let offset = 0
+  let expected: number | null = null
+  let pages = 0
+  do {
+    if (++pages > 20) throw new Error('Finance projection page budget exhausted')
+    const end = Math.min(offset + 999, 4999)
+    const { data, error, count } = await supabase.from('finance_public_events').select(EVENT_COLUMNS, { count: 'exact' })
       .eq('scope_key', PUBLIC_FINANCE_SCOPE)
       .gte('activity_date', '2026-01-01').lte('activity_date', '2026-11-03')
       .order('activity_date', { ascending: false }).order('event_key')
-      .range(offset, offset + 999)
+      .range(offset, end)
     if (error) throw new Error(`Finance projection unavailable (${error.code ?? 'query error'})`)
+    if (!data || count == null || !Number.isSafeInteger(count) || count < 0 || (expected !== null && expected !== count)) {
+      throw new Error('Finance projection count unavailable or changed')
+    }
+    expected = count
+    if ((data?.length ?? 0) > end - offset + 1 || offset + (data?.length ?? 0) > count || (!data?.length && offset < count)) {
+      throw new Error('Finance projection page was incomplete')
+    }
     for (const row of (data ?? []) as unknown as FinanceEvent[]) {
       const amount = Number(row.amount)
-      if (!Number.isFinite(amount) || !row.amount_kind || !row.source_url || !row.extracted_at) {
+      if (row.amount == null || !Number.isFinite(amount) || !row.amount_kind || !row.source_url || !row.extracted_at) {
         throw new Error('Finance projection contains incomplete provenance or amount')
       }
+      if (!row.event_key || identities.has(row.event_key) || row.scope_key !== PUBLIC_FINANCE_SCOPE) {
+        throw new Error('Finance projection identity was repeated or outside its scope')
+      }
+      identities.add(row.event_key)
       events.push({ ...row, amount })
     }
-    if ((data?.length ?? 0) < 1000) break
-    if (offset === 4000) truncated = true
-  }
-  const { data, error } = await supabase.from('finance_public_coverage')
-    .select('source,form_type,scope_key,status,checked_at,activity_from,activity_through,filing_count,assertion_count,pending_count,limitations,source_url')
+    // A lower server row cap is not an end-of-results marker. The exact count
+    // decides completion; advancing by actual rows avoids dropping a page.
+    offset += data?.length ?? 0
+  } while (offset < expected && offset < 5000)
+  const truncated = offset < expected
+  const { data, error, count } = await supabase.from('finance_public_coverage')
+    .select('source,form_type,scope_key,status,checked_at,activity_from,activity_through,filing_count,assertion_count,pending_count,limitations,source_url', { count: 'exact' })
     .eq('scope_key', PUBLIC_FINANCE_SCOPE)
     .order('checked_at', { ascending: false }).limit(40)
   if (error) throw new Error(`Finance source coverage unavailable (${error.code ?? 'query error'})`)
+  if (!data || count == null || !Number.isSafeInteger(count) || count < 0 || count > 40 || data.length !== count) {
+    throw new Error('Finance source coverage was incomplete')
+  }
   return { events, coverage: (data ?? []) as unknown as FinanceCoverage[], truncated }
-}, ['finance-public-2026-v2'], { revalidate: 900, tags: ['finance-public'] })
+}, ['finance-public-2026-v3'], { revalidate: 900, tags: ['finance-public'] })
 
 export function candidateMoney(events: FinanceEvent[], committeeId: string, candidateName: string) {
   const receipts = events.filter(row => row.recipient_fppc_id === committeeId && row.event_kind === 'receipt')

@@ -15,7 +15,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   if (!topic) return { title: 'Topic Not Found' }
   return {
     title: topic.label,
-    description: `Richmond City Council agenda items tagged with "${topic.label}", across ${topic.meeting_count} meeting${topic.meeting_count === 1 ? '' : 's'}.`,
+    description: `Recent Richmond City Council agenda entries tagged with "${topic.label}".`,
   }
 }
 
@@ -26,6 +26,7 @@ export default async function TopicDetailPage({ params }: Props) {
   if (!topic) notFound()
 
   const items = await getTopicItems(topic.label, 100)
+  const meetingCount = new Set(items.map(item => item.meeting_id)).size
 
   const grouped = new Map<string, typeof items>()
   for (const item of items) {
@@ -46,7 +47,8 @@ export default async function TopicDetailPage({ params }: Props) {
         </Link>
         <h1 className="text-3xl font-bold text-slate-900 mb-2">{topic.label}</h1>
         <p className="text-sm text-slate-500">
-          {items.length} agenda item{items.length === 1 ? '' : 's'} across {grouped.size} meeting{grouped.size === 1 ? '' : 's'}
+          Showing {items.length} tagged agenda entr{items.length === 1 ? 'y' : 'ies'} from {meetingCount} recorded meeting{meetingCount === 1 ? '' : 's'}.
+          {' '}This page shows up to 100 of the newest entries. Topic tags and summaries are AI-generated; open an entry to check its sources.
         </p>
       </div>
 
@@ -87,12 +89,6 @@ export default async function TopicDetailPage({ params }: Props) {
                           )}
                           <div className="flex items-center gap-3 mt-2 text-xs text-slate-500">
                             {item.category && <span>{item.category}</span>}
-                            {item.financial_amount && (
-                              <span className="text-civic-amber">{item.financial_amount}</span>
-                            )}
-                            {item.public_comment_count > 0 && (
-                              <span>{item.public_comment_count} comment{item.public_comment_count === 1 ? '' : 's'}</span>
-                            )}
                           </div>
                         </div>
                       </div>

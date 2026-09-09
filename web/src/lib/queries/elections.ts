@@ -3,93 +3,26 @@ import { unstable_cache } from 'next/cache'
 import {
   supabase,
   RICHMOND_FIPS,
-  warnIfEmpty,
-  nameToSlug,
-  isGovernmentEntity,
-  filterGovernmentEntityFlags,
-  COLS_MEETING_LIST,
-  COLS_MEETING_BANNER,
   COLS_UPCOMING_ELECTION,
-  COLS_FLAG_SUMMARY,
-  COLS_PUBLIC_RECORD_LIST,
   COLS_CONTRIBUTION_PUBLIC,
 } from './_shared'
-import RICHMOND_FILERS_DATA from '@/data/netfile-richmond-filers.json'
 import type {
-  Meeting,
-  Official,
-  AgendaItem,
-  Motion,
-  Vote,
-  MeetingAttendance,
-  ConflictFlag,
-  ClosedSessionItem,
-  NotableSpeaker,
-  AgendaItemWithMotions,
-  MotionWithVotes,
-  MeetingDetail,
-  DonorAggregate,
-  DonorContribution,
-  EconomicInterest,
-  NextRequestRequest,
-  PublicRecordsStats,
-  DepartmentCompliance,
-  Commission,
-  CommissionMember,
-  CommissionWithStats,
-  CommissionStaleness,
-  CategoryStats,
-  ControversyItem,
-  PairwiseAlignment,
-  CategoryDivergence,
-  DivergentMotionRow,
-  DivergentMotion,
-  DonorCategoryPattern,
-  DonorOverlap,
-  CategoryCount,
-  TopicLabelCount,
-  MeetingWithCounts,
-  FinancialConnectionFlag,
-  OfficialConnectionSummary,
-  SearchResult,
-  SearchResultType,
-  SimilarItem,
-  ContributionNarrativeData,
-  ContributionRecord,
-  BehstedPaymentNarrativeData,
-  ItemVoteContext,
-  RelatedAgendaItem,
-  ItemInfluenceMapData,
   Election,
   ElectionCandidate,
   ElectionWithCandidates,
   CandidateFundraising,
   CandidateFundraisingDetail,
-  CandidateTopDonor,
-  CandidateDonorsByCycle,
   CandidateFundingBreakdown,
   CandidateFundingBucket,
   CandidateIESupporter,
   ContributorTypeBucket,
   ContributionMatrix,
-  PublicCommentDetail,
-  CommentTheme,
-  ThemeNarrative,
-  AgendaItemDetail,
-  AgendaItemRef,
-  AgendaItemSibling,
-  NeighborhoodCouncil,
   Provenance,
   FilingPeriodBriefing,
-  PACAggregate,
-  PACContributionRow,
-  PACOutgoingRow,
-  PACIndependentExpenditureRow,
 } from '../types'
-import { CONFIDENCE_PUBLISHED } from '../thresholds'
 import { commentSourceToProvenance } from '../provenance'
 import { addToMatrix, emptyMatrix } from '../contributionBuckets'
-import { UPCOMING_ELECTION_CACHE_SECONDS } from '../read-path-cache'
+import { isInertBuild, UPCOMING_ELECTION_CACHE_SECONDS } from '../read-path-cache'
 import { failReadPath, ReadPathUnavailableError } from '../read-path-unavailable'
 
 // ── Election Cycle Tracking (B.24) ────────────────────────
@@ -102,6 +35,7 @@ type UpcomingElection = Pick<
 export async function getElections(
   cityFips = RICHMOND_FIPS,
 ): Promise<Election[]> {
+  if (isInertBuild()) return []
   const { data, error } = await supabase
     .from('elections')
     .select('*')
@@ -109,8 +43,7 @@ export async function getElections(
     .order('election_date', { ascending: false })
 
   if (error) {
-    console.error('getElections query failed:', error)
-    return [] as Election[]
+    failReadPath('Election list', error)
   }
   return data as Election[]
 }
@@ -231,10 +164,10 @@ export const getElectionBySlug = cache(async function getElectionBySlug(
     .gte('election_date', yearStart)
     .lte('election_date', yearEnd)
     .limit(1)
-    .single()
+    .maybeSingle()
 
-  if (error || !data) return null
-  return data as Election
+  if (error) failReadPath('Election', error)
+  return data as Election | null
 })
 
 
@@ -249,7 +182,7 @@ export async function getElectionWithCandidates(
         .select('*')
         .eq('id', electionId)
         .eq('city_fips', cityFips)
-        .single(),
+        .maybeSingle(),
       supabase
         .from('election_candidates')
         .select('*')
@@ -260,11 +193,11 @@ export async function getElectionWithCandidates(
     ])
 
   if (electionError || !election) {
-    console.error('getElectionWithCandidates failed:', electionError)
+    if (electionError) failReadPath('Election roster', electionError)
     return null
   }
   if (candidatesError) {
-    console.error('getElectionCandidates failed:', candidatesError)
+    failReadPath('Election candidates', candidatesError)
   }
 
   return {
@@ -438,33 +371,6 @@ export async function getElectionFundraisingSummary(
 }
 
 
-/** Get an official's election history (all candidacies with election dates) */
-export async function getOfficialElectionHistory(
-  officialId: string,
-  cityFips = RICHMOND_FIPS,
-): Promise<(ElectionCandidate & { election_date: string; election_type: string })[]> {
-  const { data, error } = await supabase
-    .from('election_candidates')
-    .select('*, elections!inner(election_date, election_type)')
-    .eq('official_id', officialId)
-    .eq('city_fips', cityFips)
-
-  if (error || !data) {
-    console.error('getOfficialElectionHistory failed:', error)
-    return []
-  }
-
-  return data.map((row: Record<string, unknown>) => {
-    const elections = row.elections as { election_date: string; election_type: string }
-    return {
-      ...(row as unknown as ElectionCandidate),
-      election_date: elections.election_date,
-      election_type: elections.election_type,
-    }
-  })
-}
-
-
 /** Get upcoming candidacies for all current officials (for listing page badges) */
 export async function getCurrentCandidacies(
   cityFips = RICHMOND_FIPS,
@@ -496,59 +402,6 @@ export async function getCurrentCandidacies(
 
 
 // ─── Candidate Discovery (S21.5.7) ────────────────────────
-
-
-/** Get top donors for a candidate by their committee_id */
-export async function getCandidateTopDonors(
-  committeeId: string,
-  limit = 10,
-  cityFips = RICHMOND_FIPS,
-): Promise<CandidateTopDonor[]> {
-  const { data, error } = await supabase
-    .from('contributions')
-    .select('amount, donors!inner(name, employer)')
-    .eq('committee_id', committeeId)
-    .eq('city_fips', cityFips)
-
-  if (error || !data) {
-    console.error('getCandidateTopDonors failed:', error)
-    return []
-  }
-
-  // Aggregate by donor name
-  const donorMap = new Map<string, { employer: string | null; total: number; count: number }>()
-  for (const row of data) {
-    const donor = (row as Record<string, unknown>).donors as {
-      name: string
-      employer: string | null
-    }
-    const nameLower = donor.name.toLowerCase()
-    // Skip government entities (public financing, refunds, inter-committee transfers)
-    if (/^(the )?(city|county|state|town) of\b/.test(nameLower)) continue
-
-    const existing = donorMap.get(donor.name)
-    if (existing) {
-      existing.total += row.amount as number
-      existing.count += 1
-    } else {
-      donorMap.set(donor.name, {
-        employer: donor.employer,
-        total: row.amount as number,
-        count: 1,
-      })
-    }
-  }
-
-  return Array.from(donorMap.entries())
-    .map(([name, d]) => ({
-      donor_name: name,
-      employer: d.employer,
-      total_contributed: d.total,
-      contribution_count: d.count,
-    }))
-    .sort((a, b) => b.total_contributed - a.total_contributed)
-    .slice(0, limit)
-}
 
 
 /**

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
+import { withOperatorAuth } from '@/lib/operator-auth'
 import type {
   DataSourceFreshness,
   MeetingCompleteness,
@@ -24,7 +25,7 @@ const FRESHNESS_THRESHOLDS: Record<string, number> = {
   minutes_extraction: 14,
 }
 
-export async function GET() {
+export const GET = withOperatorAuth(async () => {
   try {
     // Run all queries in parallel.
     // The data_sync_log read is bounded to the last 180 days because the
@@ -57,6 +58,10 @@ export async function GET() {
       // 3. Overall meeting count + document coverage
       supabase.rpc('get_meeting_coverage_stats', { p_city_fips: RICHMOND_FIPS }),
     ])
+
+    if (freshnessResult.error || meetingsResult.error || statsResult.error || !Array.isArray(freshnessResult.data) || !Array.isArray(meetingsResult.data)) {
+      throw new Error('Required diagnostic reads failed')
+    }
 
     // Build freshness
     const freshness = buildFreshness(freshnessResult.data ?? [])
@@ -103,7 +108,7 @@ export async function GET() {
 
     // Document coverage from RPC or fallback computation
     const coverageData = statsResult.data
-    const documentCoverage = buildDocumentCoverage(coverageData, meetings)
+    const documentCoverage = buildDocumentCoverage(coverageData)
 
     // Compute anomalies from the recent meetings
     const anomalies = await computeAnomalies(recentMeetings)
@@ -147,17 +152,17 @@ export async function GET() {
 
     return NextResponse.json(response, {
       headers: {
-        'Cache-Control': 'public, s-maxage=3600, stale-while-revalidate=7200',
+        'Cache-Control': 'private, no-store',
       },
     })
   } catch (err) {
     console.error('Data quality check failed:', err)
     return NextResponse.json(
       { error: 'Failed to compute data quality metrics' },
-      { status: 500 },
+      { status: 503, headers: { 'Cache-Control': 'private, no-store' } },
     )
   }
-}
+})
 
 // -- Helpers ----------------------------------------------------------------
 
@@ -196,11 +201,12 @@ function buildFreshness(
 
 async function getItemCounts(meetingIds: string[]): Promise<Map<string, number>> {
   if (meetingIds.length === 0) return new Map()
-  const { data } = await supabase
+  const { data, count, error } = await supabase
     .from('agenda_items')
-    .select('meeting_id')
+    .select('meeting_id', { count: 'exact' })
     .is('agenda_source_retired_at', null)
-    .in('meeting_id', meetingIds)
+    .in('meeting_id', meetingIds).limit(10_000)
+  if (error || !data || count === null || count > 10_000 || data.length !== count) throw new Error('Incomplete meeting diagnostics')
   const counts = new Map<string, number>()
   for (const row of data ?? []) {
     counts.set(row.meeting_id, (counts.get(row.meeting_id) ?? 0) + 1)
@@ -212,18 +218,21 @@ async function getVoteCounts(meetingIds: string[]): Promise<Map<string, number>>
   if (meetingIds.length === 0) return new Map()
   // votes -> motions -> agenda_items -> meeting_id
   // Supabase foreign key traversal: votes.motion_id -> motions.agenda_item_id -> agenda_items.meeting_id
-  const { data } = await supabase
+  const { data, count, error } = await supabase
     .from('votes')
-    .select('motion_id, motions!inner(agenda_item_id, agenda_items!inner(meeting_id))')
-    .filter('motions.agenda_items.meeting_id', 'in', `(${meetingIds.join(',')})`)
+    .select('motion_id, motions!inner(agenda_item_id, agenda_items!inner(meeting_id))', { count: 'exact' })
+    .filter('motions.agenda_items.meeting_id', 'in', `(${meetingIds.join(',')})`).limit(10_000)
+  if (error || !data || count === null || count > 10_000 || data.length !== count) throw new Error('Incomplete vote diagnostics')
 
   const counts = new Map<string, number>()
   for (const row of data ?? []) {
-    // Supabase returns nested joins as arrays
-    const r = row as unknown as {
-      motions: Array<{ agenda_items: Array<{ meeting_id: string }> }>
-    }
-    const mid = r.motions?.[0]?.agenda_items?.[0]?.meeting_id
+    type Item = { meeting_id: string }
+    type Motion = { agenda_items: Item | Item[] }
+    const joined = (row as unknown as { motions: Motion | Motion[] }).motions
+    const motion = Array.isArray(joined) ? joined[0] : joined
+    const item = Array.isArray(motion?.agenda_items) ? motion.agenda_items[0] : motion?.agenda_items
+    const mid = item?.meeting_id
+    if (!mid) throw new Error('Incomplete diagnostic vote provenance')
     if (mid) {
       counts.set(mid, (counts.get(mid) ?? 0) + 1)
     }
@@ -233,10 +242,11 @@ async function getVoteCounts(meetingIds: string[]): Promise<Map<string, number>>
 
 async function getAttendanceCounts(meetingIds: string[]): Promise<Map<string, number>> {
   if (meetingIds.length === 0) return new Map()
-  const { data } = await supabase
+  const { data, count, error } = await supabase
     .from('meeting_attendance')
-    .select('meeting_id')
-    .in('meeting_id', meetingIds)
+    .select('meeting_id', { count: 'exact' })
+    .in('meeting_id', meetingIds).limit(10_000)
+  if (error || !data || count === null || count > 10_000 || data.length !== count) throw new Error('Incomplete meeting diagnostics')
   const counts = new Map<string, number>()
   for (const row of data ?? []) {
     counts.set(row.meeting_id, (counts.get(row.meeting_id) ?? 0) + 1)
@@ -246,7 +256,6 @@ async function getAttendanceCounts(meetingIds: string[]): Promise<Map<string, nu
 
 function buildDocumentCoverage(
   rpcData: unknown,
-  fallbackMeetings: Array<{ minutes_url: string | null; agenda_url: string | null; video_url: string | null }>,
 ) {
   // If the RPC exists and returned data, use it
   if (rpcData && Array.isArray(rpcData) && rpcData.length > 0) {
@@ -256,7 +265,10 @@ function buildDocumentCoverage(
       has_agenda: number
       has_video: number
     }
-    const total = row.total || 0
+    const total = Number(row.total)
+    if (![total, row.has_minutes, row.has_agenda, row.has_video].every(value => Number.isInteger(Number(value)) && Number(value) >= 0 && Number(value) <= total)) {
+      throw new Error('Invalid complete meeting coverage')
+    }
     return {
       total,
       minutes: { count: row.has_minutes, percentage: total > 0 ? Math.round((row.has_minutes / total) * 1000) / 10 : 0 },
@@ -265,18 +277,7 @@ function buildDocumentCoverage(
     }
   }
 
-  // Fallback: compute from the meetings we already fetched (limited sample)
-  const total = fallbackMeetings.length
-  const minutes = fallbackMeetings.filter((m) => m.minutes_url).length
-  const agenda = fallbackMeetings.filter((m) => m.agenda_url).length
-  const video = fallbackMeetings.filter((m) => m.video_url).length
-
-  return {
-    total,
-    minutes: { count: minutes, percentage: total > 0 ? Math.round((minutes / total) * 1000) / 10 : 0 },
-    agenda: { count: agenda, percentage: total > 0 ? Math.round((agenda / total) * 1000) / 10 : 0 },
-    video: { count: video, percentage: total > 0 ? Math.round((video / total) * 1000) / 10 : 0 },
-  }
+  throw new Error('Complete meeting coverage unavailable')
 }
 
 async function computeAnomalies(
@@ -291,23 +292,25 @@ async function computeAnomalies(
   baselineStart.setFullYear(baselineStart.getFullYear() - 2)
   const baselineStartIso = baselineStart.toISOString().slice(0, 10)
 
-  const { data: allMeetings } = await supabase
+  const { data: allMeetings, count: baselineCount, error: baselineError } = await supabase
     .from('meetings')
-    .select('id, meeting_type')
+    .select('id, meeting_type', { count: 'exact' })
     .eq('city_fips', RICHMOND_FIPS)
     .eq('meeting_type', 'regular')
-    .gte('meeting_date', baselineStartIso)
+    .gte('meeting_date', baselineStartIso).limit(1000)
+  if (baselineError || !allMeetings || baselineCount === null || baselineCount > 1000 || allMeetings.length !== baselineCount) throw new Error('Incomplete diagnostic baseline')
 
   if (!allMeetings || allMeetings.length < 3) return []
 
   const regularIds = allMeetings.map((m) => m.id)
 
   // Get item counts for the bounded baseline window
-  const { data: allItems } = await supabase
+  const { data: allItems, count: baselineItemCount, error: baselineItemError } = await supabase
     .from('agenda_items')
-    .select('meeting_id')
+    .select('meeting_id', { count: 'exact' })
     .is('agenda_source_retired_at', null)
-    .in('meeting_id', regularIds)
+    .in('meeting_id', regularIds).limit(10_000)
+  if (baselineItemError || !allItems || baselineItemCount === null || baselineItemCount > 10_000 || allItems.length !== baselineItemCount) throw new Error('Incomplete diagnostic baseline items')
 
   const itemCountMap = new Map<string, number>()
   for (const row of allItems ?? []) {
