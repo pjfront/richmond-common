@@ -1,10 +1,6 @@
 /**
- * Individual donor index — S28.6, Graduated tier.
- *
- * Lists all individual donors whose aggregate giving across all cycles
- * exceeds $5,000 (Option b, resolved 2026-07-06 per #72).
- *
- * Follows the /unions and /corporations pattern (S28.3).
+ * Selected historical names from the legacy donor index. Its cached eligibility
+ * rule is not a verified giving total or proof that a name identifies a person.
  */
 
 import type { Metadata } from 'next'
@@ -35,8 +31,8 @@ export default async function DonorsPage() {
           >
             NetFile
           </a>{' '}
-          (City of Richmond e-filing system, Tier 1 source) and CAL-ACCESS
-          (California Secretary of State, Tier 1 source).
+          (City of Richmond e-filing system) and CAL-ACCESS
+          (California Secretary of State).
         </p>
         <p className="text-xs text-slate-400">
           The original report links on each profile show what was filed. This historical directory is not a live filing feed.
