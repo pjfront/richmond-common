@@ -2045,6 +2045,52 @@ def test_nonempty_preview_catalog_blocks_every_baseline_write(tmp_path: Path):
     assert supabase.write_queries == []
 
 
+@pytest.mark.parametrize("shape,has_rows", [(False, False), (True, True), (None, False), (True, None), (1, False), (True, 0)])
+def test_existing_ledger_requires_exact_shape_and_confirmed_empty_rows(shape, has_rows):
+    class Client:
+        def query(self, project_ref, query, *, read_only):
+            assert project_ref == BRANCH_REF and read_only is True
+            if query == preview._EMPTY_APPLICATION_CATALOG_QUERY:
+                return [{"object_kind": "migration ledger", "object_name": "schema_migrations"}]
+            if query == preview._EMPTY_LEDGER_SHAPE_QUERY:
+                return [{"compatible": shape}]
+            if query == preview._LEDGER_DIAGNOSTIC_QUERY:
+                return [{"owner": "postgres", "kind": "r", "column_count": 3, "columns": [
+                    {"name": "version", "type": "text", "not_null": True, "has_default": False,
+                     "dropped": False, "default_expression": "private-default-value"}], "raw_rows": "private-migration-value"}]
+            assert query == preview._EMPTY_LEDGER_ROWS_QUERY
+            return [{"has_rows": has_rows}]
+
+    with pytest.raises(preview.PreviewError, match="migration ledger") as error:
+        preview.verify_empty_preview_branch(Client(), preview.BranchRecord.from_payload(_branch_payload()))
+    assert '"owner": "postgres"' in str(error.value)
+    assert '"name": "version"' in str(error.value)
+    assert 'private-default-value' not in str(error.value)
+    assert 'private-migration-value' not in str(error.value)
+
+
+def test_standard_empty_ledger_is_the_only_catalog_exception():
+    class Client:
+        def __init__(self):
+            self.extra = []
+
+        def query(self, project_ref, query, *, read_only):
+            assert project_ref == BRANCH_REF and read_only is True
+            if query == preview._EMPTY_APPLICATION_CATALOG_QUERY:
+                return [{"object_kind": "migration ledger", "object_name": "schema_migrations"}, *self.extra]
+            if query == preview._EMPTY_LEDGER_SHAPE_QUERY:
+                return [{"compatible": True}]
+            assert query == preview._EMPTY_LEDGER_ROWS_QUERY
+            return [{"has_rows": False}]
+
+    client = Client()
+    branch = preview.BranchRecord.from_payload(_branch_payload())
+    preview.verify_empty_preview_branch(client, branch)
+    client.extra = [{"object_kind": "public relation", "object_name": "private_records"}]
+    with pytest.raises(preview.PreviewError, match="not an empty application catalog"):
+        preview.verify_empty_preview_branch(client, branch)
+
+
 def test_restore_is_one_guarded_inventory_checked_ledger_seed_transaction(
     tmp_path: Path,
 ):
@@ -2079,6 +2125,11 @@ def test_restore_is_one_guarded_inventory_checked_ledger_seed_transaction(
     assert "version '0.8.2'" in batch
     assert "Preview baseline inventory mismatch: tables" in batch
     assert "insert into supabase_migrations.schema_migrations" in batch
+    guards = [match.start() for match in re.finditer(re.escape("do $preview_empty_ledger$"), batch)]
+    assert len(guards) == 2
+    assert guards[0] < batch.index("drop schema public cascade")
+    assert batch.index(preview._LEDGER_INIT_SQL.rstrip()) < guards[1] < batch.index("insert into supabase_migrations.schema_migrations")
+    assert "lock table supabase_migrations.schema_migrations in access exclusive mode" in batch
     assert absorbed.sql not in batch
     assert "legacy_baseline_name" not in batch
     assert supabase.ledger == {absorbed.version: absorbed.name}
