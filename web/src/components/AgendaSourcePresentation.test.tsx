@@ -93,4 +93,19 @@ describe('source-based agenda presentation', () => {
     expect(html).toContain('href="https://www.richmondca.gov/agenda.pdf"')
     expect(html).toContain('View official agenda')
   })
+
+  it('uses the same source-meeting fallback for legacy item links in cards, categories, and adjacent-item navigation', async () => {
+    const legacy = { ...item, item_number: '<unknown>', meeting_date: '2009-10-06', meeting_type: 'regular' }
+    const card = renderToStaticMarkup(<AgendaItemCard item={legacy} forceExpanded />)
+    query.getAgendaItemsByCategory.mockResolvedValue([legacy])
+    const category = renderToStaticMarkup(await CategoryPage({ params: Promise.resolve({ slug: 'contracts' }) }))
+    query.getAgendaItemDetail.mockResolvedValue({ ...item, meeting_date: '2026-07-28', comments: [],
+      prev_item: { id: 'legacy', item_number: '<unknown>', title: 'Earlier record', summary_headline: null } })
+    const detail = renderToStaticMarkup(await AgendaItemDetailPage({ params: Promise.resolve({ id: 'meeting-1', itemNumber: 'V.1' }) }))
+    for (const html of [card, category, detail]) {
+      expect(html).toContain('href="/meetings/meeting-1"')
+      expect(html).not.toContain('/items/%3Cunknown%3E')
+    }
+    expect(detail).toContain('Earlier record')
+  })
 })
