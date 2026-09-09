@@ -98,15 +98,10 @@ describe('operator page query containment', () => {
     expect(mocks.getAllFinancialConnectionSummaries).not.toHaveBeenCalled()
   })
 
-  it('allows a proven operator to reach the heavy financial-connections query', async () => {
-    mocks.getAllFinancialConnectionSummaries.mockResolvedValue([])
-
+  it('renders one operator table without the competing summary query', async () => {
     await expect(FinancialConnectionsPage()).resolves.toBeDefined()
-
-    expect(mocks.getAllFinancialConnectionSummaries).toHaveBeenCalledOnce()
-    expect(mocks.requireOperatorPage.mock.invocationCallOrder[0]).toBeLessThan(
-      mocks.getAllFinancialConnectionSummaries.mock.invocationCallOrder[0],
-    )
+    expect(mocks.requireOperatorPage).toHaveBeenCalledOnce()
+    expect(mocks.getAllFinancialConnectionSummaries).not.toHaveBeenCalled()
   })
 
   it('rejects an anonymous candidate page and metadata before resolution queries', async () => {

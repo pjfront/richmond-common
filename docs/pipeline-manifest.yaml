@@ -425,7 +425,7 @@ tables:
       enrichments: [vote_explainer_generation, transcript_vote_extraction]
     read_by:
       enrichments: [vote_explainer_generation]
-      queries: [getMeeting, getFinancialConnectionsForOfficial,
+      queries: [getMeeting,
                 getAllFinancialConnectionSummaries, getCrossMeetingPatterns]
 
   votes:
@@ -549,7 +549,7 @@ tables:
       enrichments: [contributor_classification, donor_employer_merge, donor_dedup, paper_filing_reconciliation]
     read_by:
       enrichments: [conflict_scanning, filing_period_briefing_generation, donor_employer_merge, donor_dedup, paper_filing_reconciliation]
-      queries: [getOfficialContributions, getFinancialConnectionsForOfficial,
+      queries: [getOfficialContributions,
                 getAllFinancialConnectionSummaries, getCrossMeetingPatterns]
 
   donors:
@@ -643,7 +643,7 @@ tables:
     read_by:
       enrichments: [comment_generation]
       queries: [getConflictFlags, getMeetingsWithFlags, getConflictFlagsDetailed,
-                getFinancialConnectionsForOfficial, getAllFinancialConnectionSummaries]
+                getAllFinancialConnectionSummaries]
 
   scan_runs:
     layer: 2
@@ -1538,15 +1538,10 @@ queries:
     # Phase 2.6: only the /reports list still calls this; detail folded into /meetings/[id].
     used_by: ["/reports"]
 
-  getFinancialConnectionsForOfficial:
-    file: queries.ts
-    tables: [conflict_flags, motions]
-    used_by: ["/financial-connections"]
-
   getAllFinancialConnectionSummaries:
     file: queries.ts
     tables: [conflict_flags, motions, officials]
-    used_by: ["/financial-connections", "/influence"]
+    used_by: ["/influence"]
 
   # ── Influence Map ────────────────────────────────────────────
   getAgendaItemBasic:
@@ -1710,7 +1705,7 @@ queries:
   getCommissionStaleness:
     file: queries.ts
     tables: [v_commission_staleness]
-    used_by: ["/commissions"]
+    used_by: []  # Legacy operator query; resident rosters use their listed source rows.
 
   getCommissionMeetings:
     file: queries.ts
@@ -1916,7 +1911,7 @@ queries:
   buildOfficialConnectionSummary:
     file: queries.ts
     tables: []  # Transforms data from other queries
-    used_by: ["/financial-connections"]
+    used_by: []  # Internal helper for the legacy operator influence query.
 
   officialToSlug:
     file: queries.ts
@@ -2107,13 +2102,12 @@ pages:
     queries: []
 
   "/financial-connections":
-    description: "Council-donor network and financial connections"
-    queries: [getFinancialConnectionsForOfficial, getAllFinancialConnectionSummaries,
-              getOfficialContributions, buildOfficialConnectionSummary]
+    description: "Operator-only automated connection records, loaded through an authenticated API; no competing summary or vote aggregates"
+    queries: []
 
   "/commissions":
-    description: "Commission index with rosters and staleness"
-    queries: [getCommissions, getCommissionStaleness]
+    description: "Commission index with source-listed roster counts"
+    queries: [getCommissions]
 
   "/commissions/[id]":
     description: "Commission detail — members, meetings, history"
@@ -3035,12 +3029,6 @@ field_map:
       column: "form700_filings headers (filing_year, statement_type, period, confidence_score)"
       sources: [form700]
 
-    "financial connections":
-      query: getFinancialConnectionsForOfficial
-      column: "conflict_flags + motions + votes for this official"
-      sources: [netfile, calaccess, escribemeetings, minutes_extraction, form700]
-      enrichment: conflict_scanning
-
   # ── Council Analytics (/council/analytics — tabbed) ──────────
   # Phase 2.6 consolidated /council/stats, /council/voting-patterns,
   # /council/patterns into a single tabbed page. The tabs are UX only;
@@ -3098,33 +3086,12 @@ field_map:
   # ── Financial Connections (/financial-connections) ───────────
 
   "/financial-connections":
-    "official connection summary":
-      query: getAllFinancialConnectionSummaries
-      column: "conflict_flags + officials + meetings + agenda_items + motions + votes"
+    "automated connection records":
+      api_route: "/api/flag-details?all=1"
+      column: "Current eligible conflict_flags with active source meetings/agenda items and official identity"
       sources: [netfile, calaccess, escribemeetings, minutes_extraction, form700]
       enrichment: conflict_scanning
-
-    "per-official connections":
-      query: getFinancialConnectionsForOfficial
-      column: "conflict_flags + motions + votes for single official"
-      sources: [netfile, calaccess, escribemeetings, minutes_extraction, form700]
-      enrichment: conflict_scanning
-
-    "voted in favor count":
-      query: buildOfficialConnectionSummary
-      column: "votes.vote_choice filtered to aye on contested motions"
-      sources: [minutes_extraction]
-
-    "flag type breakdown":
-      query: buildOfficialConnectionSummary
-      column: conflict_flags.flag_type
-      sources: []
-      enrichment: conflict_scanning
-
-    "donor top donors":
-      query: getOfficialContributions
-      column: "donors.name + SUM(contributions.amount)"
-      sources: [netfile, calaccess]
+      note: "Requires operator authorization before reading; no public caching or inferred vote context."
 
   # ── Commission Index (/commissions) ─────────────────────────
 
@@ -3138,24 +3105,6 @@ field_map:
     "member count":
       query: getCommissions
       column: "COUNT(commission_members where is_current)"
-      sources: []
-      enrichment: commission_seeding
-
-    "holdover count":
-      query: getCommissions
-      column: "COUNT(commission_members where term_end < today)"
-      sources: []
-      enrichment: commission_seeding
-
-    "vacancy count":
-      query: getCommissions
-      column: "commissions.num_seats - active_count"
-      sources: []
-      enrichment: commission_seeding
-
-    "staleness":
-      query: getCommissionStaleness
-      column: v_commission_staleness.*
       sources: []
       enrichment: commission_seeding
 
@@ -3184,12 +3133,6 @@ field_map:
       query: getCommissionMeetings
       column: "meetings via bodies.commission_id"
       sources: [escribemeetings, minutes_extraction]
-
-    "commission staleness detail":
-      query: getCommissionStaleness
-      column: v_commission_staleness.*
-      sources: []
-      enrichment: commission_seeding
 
   # ── Public Records (/public-records) ────────────────────────
 
