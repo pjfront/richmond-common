@@ -30,7 +30,7 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   // Prerender reads share one database. Keep build fan-out bounded on large
   // developer machines; this does not limit request-serving concurrency.
-  experimental: { cpus: 2 },
+  experimental: { cpus: 2, staticGenerationMaxConcurrency: 1 },
   images: {
     unoptimized: true, // No external images yet
   },

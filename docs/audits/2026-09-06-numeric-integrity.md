@@ -25,7 +25,7 @@ The two Claudia Jimenez screenshots exposed a broader failure: multiple layers i
 
 Retire unused aggregate queries and components instead of adding more comparison adapters. Keep a single complete-read primitive, a single vote-choice/identity normalization path, and a single public-records snapshot. Cache only small topic aggregates for one hour; never persist the full topic corpus in that cache or convert failures into cached empty success. Update the pipeline manifest and operator registry with the removed paths. Validate the existing standalone civic review workflow command explicitly instead of misclassifying it as a missing source registration.
 
-Limit Next.js build workers to two so large developer machines do not multiply concurrent prerender reads against the shared database. This is the installed Next 16.1.6 build setting, not a request-serving limit. Local verification encountered a sitemap statement timeout and a separate Windows worker crash with 27 workers; the setting bounds build pressure without changing query results or concealing failures.
+Limit Next.js build workers to two, with one page render per worker, so large developer machines do not multiply concurrent prerender reads against the shared database. These are installed Next 16.1.6 build settings, not request-serving limits. Local verification encountered a sitemap statement timeout and a separate Windows worker crash with 27 workers; two workers alone still allowed 16 simultaneous pages and hit a meeting-count timeout. The settings bound build pressure without changing query results or concealing failures. Both affected queries passed isolated reads.
 
 ## Validation and release boundary
 
