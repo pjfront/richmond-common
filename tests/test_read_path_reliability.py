@@ -159,7 +159,11 @@ def test_unavailable_reads_are_not_silently_rewritten_as_empty_results():
     ).read_text(encoding="utf-8")
 
     assert "failReadPath('Officials', error)" in council
-    assert "failReadPath('Official voting record', error)" in council
+    # The vote read now delegates failure/completeness handling to the shared
+    # bounded reader. Runtime tests exercise failed and truncated RPC pages.
+    assert "readCompleteRecords('Official voting record'" in council
+    reader = (ROOT / "web/src/lib/complete-record-read.ts").read_text(encoding="utf-8")
+    assert "if (error) failReadPath(label, error)" in reader
     assert "failReadPath('Site search', error)" in search
     assert "failReadPath('Similar discussions', error)" in search
     assert "status: 503" in route

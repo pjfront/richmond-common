@@ -5,10 +5,8 @@ import type { Metadata } from 'next'
 
 import {
   getOfficialBySlug,
-  getOfficialWithStats,
   getOfficialVotingRecord,
   getOfficialContributions,
-  getOfficialElectionHistory,
 } from '@/lib/queries'
 import DonorTable from '@/components/DonorTable'
 import VotingRecordTable from '@/components/VotingRecordTable'
@@ -46,7 +44,7 @@ export async function generateMetadata(
   const official = await getOfficialBySlug(slug)
   if (!official) return { title: 'Official Not Found' }
   const title = `${official.name}, ${formatRole(official.role)}`
-  const description = `Voting record, attendance, and campaign finance data for ${official.name}, Richmond City Council.`
+  const description = `Recorded council votes and campaign finance sources for ${official.name}, Richmond City Council.`
   const url = canonicalUrl(`/council/${encodeURIComponent(slug)}`)
   return {
     title,
@@ -78,11 +76,9 @@ export default async function CouncilMemberPage({
   // caching a temporary fallback for this route's full 24-hour lifetime.
   const votingRecordPromise = getOfficialVotingRecord(official.id)
 
-  const [stats, votingRecord, contributions, electionHistory, jimenezCoverage] = await Promise.all([
-    getOfficialWithStats(official.id),
+  const [votingRecord, contributions, jimenezCoverage] = await Promise.all([
     votingRecordPromise,
     getOfficialContributions(official.id),
-    getOfficialElectionHistory(official.id),
     hasJimenezMayoralCampaign ? getJimenezFilingCoverage() : Promise.resolve(null),
   ])
 
@@ -124,62 +120,7 @@ export default async function CouncilMemberPage({
             <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded">Former</span>
           )}
         </div>
-        {/* Election history + upcoming candidacy */}
-        {electionHistory.length > 0 && (() => {
-          const today = new Date().toISOString().slice(0, 10)
-          const elected = electionHistory
-            .filter(e => e.status === 'elected')
-            .sort((a, b) => a.election_date.localeCompare(b.election_date))
-          const electedDates = new Set(elected.map(e => e.election_date))
-          // Past candidacies that didn't result in 'elected' status
-          const pastRan = electionHistory
-            .filter(e => e.election_date < today && e.status !== 'elected' && !electedDates.has(e.election_date))
-            .sort((a, b) => a.election_date.localeCompare(b.election_date))
-          // Future candidacies grouped by year (primary + general = one campaign)
-          const futureRaw = electionHistory
-            .filter(e => e.election_date >= today && (e.status === 'filed' || e.status === 'qualified'))
-            .sort((a, b) => a.election_date.localeCompare(b.election_date))
-          const upcomingByYear = new Map<string, typeof futureRaw>()
-          for (const c of futureRaw) {
-            const year = c.election_date.slice(0, 4)
-            const group = upcomingByYear.get(year) ?? []
-            group.push(c)
-            upcomingByYear.set(year, group)
-          }
-          return (
-            <div className="mt-2 space-y-1">
-              {elected.length > 0 && (
-                <p className="text-sm text-slate-500">
-                  {elected.length === 1
-                    ? `First elected ${formatDate(elected[0].election_date)} for ${elected[0].office_sought}`
-                    : `Elected ${elected.map(e => `${formatDate(e.election_date)} (${e.office_sought}${e.is_incumbent ? ', re-elected' : ''})`).join(', ')}`
-                  }
-                </p>
-              )}
-              {pastRan.map(c => (
-                <p key={c.id} className="text-sm text-slate-500">
-                  Ran for {c.is_incumbent ? 're-election' : c.office_sought} ({formatDate(c.election_date)})
-                </p>
-              ))}
-              {Array.from(upcomingByYear.entries()).map(([year, candidates]) => {
-                const c = candidates[0]
-                const isCrossOffice = official.role === 'mayor'
-                  ? !c.office_sought.includes('Mayor')
-                  : c.office_sought.includes('Mayor')
-                const label = isCrossOffice
-                  ? `Running for ${c.office_sought}`
-                  : c.is_incumbent
-                    ? 'Running for re-election'
-                    : `Running for ${c.office_sought}`
-                return (
-                  <p key={year} className="text-sm font-medium text-civic-amber">
-                    {label} ({year})
-                  </p>
-                )
-              })}
-            </div>
-          )
-        })()}
+
       </div>
 
       {/* Section jump nav */}
@@ -192,12 +133,8 @@ export default async function CouncilMemberPage({
       {/* Summary — auto-generated voting record narrative */}
       <div id="summary" className="scroll-mt-20" />
       <BioSummary
-        bioSummary={official.bio_summary ?? null}
-        bioGeneratedAt={official.bio_generated_at ?? null}
-        bioModel={official.bio_model ?? null}
-        bioProvenance={official.bio_summary_provenance ?? null}
         officialName={official.name}
-        meetingCount={stats?.meetings_total ?? 0}
+        votes={votingRecord}
       />
 
       {/* ── Layer 2: Activity Data (T6) ──────────────────────────── */}
@@ -207,13 +144,13 @@ export default async function CouncilMemberPage({
           financial-connections. Graduated 2026-05-31. */}
       <section id="contributions" className="mb-8 scroll-mt-20">
         <h2 className="text-xl font-semibold text-slate-800 mb-3">
-          Campaign Contributions
+          Campaign money
         </h2>
         {hasJimenezMayoralCampaign && <div className="mb-8 rounded-lg border border-slate-200 p-5">
           <h3 className="text-lg font-semibold text-civic-navy">2026 campaign for mayor</h3>
           <JimenezFinanceSummary coverage={jimenezCoverage ?? undefined} />
         </div>}
-        <h3 className="text-lg font-semibold text-civic-navy mb-2">{hasJimenezMayoralCampaign ? 'Council campaign donation records' : 'Campaign donation records'}</h3>
+        <h3 className="text-lg font-semibold text-civic-navy mb-2">{hasJimenezMayoralCampaign ? 'Council campaign records' : 'Campaign records'}</h3>
         {hasJimenezMayoralCampaign && <p className="text-slate-600 mb-4">
           Her mayoral campaign uses a separate committee and is covered above.
         </p>}
@@ -230,7 +167,7 @@ export default async function CouncilMemberPage({
             href="/council/analytics"
             className="text-sm text-civic-navy-light hover:text-civic-navy"
           >
-            See how {official.name.split(' ').pop()} compares to other members &rarr;
+            See recorded split votes across the council &rarr;
           </Link>
         </div>
         <VotingRecordTable votes={votingRecord} />

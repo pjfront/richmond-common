@@ -111,12 +111,6 @@ export default async function AgendaItemDetailPage({ params }: ItemPageProps) {
           )}
         </div>
 
-        {item.financial_amount && (
-          <p className="text-base font-medium text-civic-amber mb-3">
-            {item.financial_amount}
-          </p>
-        )}
-
         {item.resolution_number && (
           <p className="text-xs text-slate-400 mb-2">
             Resolution {item.resolution_number}

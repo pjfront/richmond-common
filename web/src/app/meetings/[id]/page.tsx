@@ -9,7 +9,6 @@ import RecordVisit from '@/components/RecordVisit'
 import OperatorGate from '@/components/OperatorGate'
 import MeetingNav from '@/components/MeetingNav'
 import SubscribeCTA from '@/components/SubscribeCTA'
-import MeetingNarrative from '@/components/MeetingNarrative'
 import RecapEmailPanel from '@/components/RecapEmailPanel'
 import OperatorMeetingSections from '@/components/OperatorMeetingSections'
 import { S29_PUBLIC_TREATMENT_ENABLED } from '@/lib/s29-release-phase'
@@ -130,25 +129,18 @@ export default async function MeetingDetailPage({
         {/* Metadata line — stats as context, not headlines (D6) */}
         {(() => {
           const totalItems = meeting.agenda_items.length
-          const consentItems = meeting.agenda_items.filter(i => i.is_consent_calendar).length
-          const substantiveItems = totalItems - consentItems - meeting.agenda_items.filter(i => i.category === 'procedural').length
-          const totalVotes = meeting.agenda_items.reduce((sum, i) => sum + i.motions.filter(m => m.votes.length > 0).length, 0)
-          const totalMotions = meeting.agenda_items.reduce((sum, i) => sum + i.motions.length, 0)
-          const minutesExtracted = totalMotions > 0
-          const transcriptComments = meeting.agenda_items.reduce((sum, i) => sum + i.public_comment_count, 0)
-          const totalComments = transcriptComments > 0 ? transcriptComments : meeting.total_public_comments
+          const totalMotions = new Set(meeting.agenda_items.flatMap(item => item.motions.map(motion => motion.id))).size
 
           const parts: string[] = []
           if (meeting.presiding_officer) parts.push(`Presiding: ${meeting.presiding_officer}`)
           if (meeting.call_to_order_time) parts.push(`Called to order: ${meeting.call_to_order_time}`)
-          parts.push(`${substantiveItems} items`)
-          if (minutesExtracted || totalVotes > 0) parts.push(`${totalVotes} votes`)
-          if (totalComments > 0) parts.push(`${totalComments} public comments`)
+          parts.push(`${totalItems} agenda ${totalItems === 1 ? 'item' : 'items'} recorded`)
+          if (totalMotions > 0) parts.push(`${totalMotions} motion ${totalMotions === 1 ? 'record' : 'records'}`)
 
           return (
             <p className="text-sm text-slate-500 mt-2">
               {parts.join(' · ')}
-              {(meeting.agenda_url || meeting.minutes_url) && !meeting.meeting_summary && (
+              {(meeting.agenda_url || meeting.minutes_url) && (
                 <>
                   {' · '}
                   <span className="text-civic-navy-light">
@@ -158,7 +150,7 @@ export default async function MeetingDetailPage({
                         href={meeting.minutes_url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="hover:text-civic-navy hover:underline"
+                        className="inline-flex min-h-11 items-center hover:text-civic-navy underline"
                       >
                         Minutes
                       </a>
@@ -171,7 +163,7 @@ export default async function MeetingDetailPage({
                         href={meeting.agenda_url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="hover:text-civic-navy hover:underline"
+                        className="inline-flex min-h-11 items-center hover:text-civic-navy underline"
                       >
                         Agenda
                       </a>
@@ -184,28 +176,10 @@ export default async function MeetingDetailPage({
         })()}
         {meeting.agenda_items.reduce((sum, i) => sum + i.motions.length, 0) === 0 && !meeting.minutes_url && (
           <p className="text-sm text-slate-400 mt-1">
-            Minutes not yet published by the City Clerk. Vote and comment data typically appear 4-6 weeks after the meeting.
+            An official minutes link and motion records are not available here yet. This does not establish that the meeting had no votes.
           </p>
         )}
       </div>
-
-      {/* Meeting narrative — recap primary, orientation collapsible, summary fallback.
-          Source attribution per artifact reads from *_provenance JSONB columns
-          (migration 095). Each generator writes provenance in the same UPDATE
-          as the artifact text, so the rendered label can never desync. */}
-      <MeetingNarrative
-        orientationPreview={meeting.orientation_preview}
-        meetingRecap={meeting.meeting_recap}
-        transcriptRecap={meeting.transcript_recap}
-        meetingSummary={meeting.meeting_summary}
-        meetingDate={meeting.meeting_date}
-        agendaUrl={meeting.agenda_url}
-        minutesUrl={meeting.minutes_url}
-        meetingRecapProvenance={meeting.meeting_recap_provenance}
-        meetingSummaryProvenance={meeting.meeting_summary_provenance}
-        transcriptRecapProvenance={meeting.transcript_recap_provenance}
-        orientationProvenance={meeting.orientation_preview_provenance}
-      />
 
       {/* Operator: recap email controls */}
       <OperatorGate>

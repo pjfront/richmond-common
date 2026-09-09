@@ -179,7 +179,26 @@ that the baseline represents.
 
 Restore is allowed only after the controller proves the immutable project is
 the expected non-default, non-persistent Preview branch and proves its public
-application catalog is empty. In one database transaction it then drops the
+application catalog is empty. A pre-existing migration ledger is accepted only
+when it is empty and exactly matches either the three-column table created by
+the [pinned Supabase CLI 2.112.0](https://github.com/supabase/cli/blob/v2.112.0/apps/cli-go/pkg/migration/history.go)
+(`version`, `statements`, `name`) or the controller's existing six-column
+initializer (adding `created_by`, `idempotency_key`, `rollback`, in that order).
+Only the `postgres`-owned variant is accepted; the restore already requires that
+execution role. The six-column shape and ownership were also confirmed by a
+read-only production catalog check; production's populated history is never an
+eligible restore target. The controller rejects unexpected types, nullability,
+defaults, triggers, rules, RLS, inheritance, constraints, indexes, or history rows.
+Rejections expose bounded column/type/owner metadata and row existence only
+after structure validation, never migration statements or default values.
+
+The failed PR 188 bootstrap proved only that a ledger table existed; its shape
+and contents were not retained before cleanup and are not assumed to match.
+The exception is checked independently on each future branch. An exclusive
+ledger lock and repeated shape/emptiness checks run inside the restore transaction,
+including after initialization to catch a ledger created late by the platform.
+No existing history is adopted, cleared, or overwritten. In one database
+transaction the controller then drops the
 empty `public` schema, applies the non-idempotent schema artifact, verifies the
 manifest's exact catalog counts and pinned extension versions/schemas, creates
 the CLI-compatible migration ledger, and records the absorbed migration prefix.

@@ -62,7 +62,8 @@ export default async function CategoryPage({ params }: CategoryPageProps) {
         <h1 className="text-3xl font-bold text-civic-navy">{label}</h1>
       </div>
       <p className="text-slate-600 mb-6">
-        {items.length} agenda {items.length === 1 ? 'item' : 'items'} across all council meetings.
+        {items.length} agenda {items.length === 1 ? 'entry' : 'entries'} in this archive.
+        {' '}Categories and summaries are assigned by AI. Open an entry to check its sources.
       </p>
 
       <div className="space-y-3">
@@ -96,11 +97,6 @@ export default async function CategoryPage({ params }: CategoryPageProps) {
                 )}
               </div>
 
-              {item.financial_amount && (
-                <span className="text-sm font-medium text-civic-amber shrink-0">
-                  {item.financial_amount}
-                </span>
-              )}
             </div>
 
             <div className="flex items-center gap-3 mt-2 text-xs text-slate-500">

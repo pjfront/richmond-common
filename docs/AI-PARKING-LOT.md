@@ -2372,6 +2372,8 @@ The `committees.city_fips` field has been silently misleading: it just means "in
 ### D54. Voting-patterns page anon-role timeout headroom (~1.8s)
 **Origin:** Build-failure investigation 2026-05-01 | **Owner:** web
 
+**September 9 implementation, PR188:** The public split-motion page now uses bounded NAY-candidate source reads and a source-invalidated compact cache. Live anonymous comparison preserved all 103 motions and 548 vote rows. See [numeric integrity audit](audits/2026-09-06-numeric-integrity.md). The historical network explanation below was inaccurate: PostgreSQL measures `statement_timeout` from arrival at the database server through server completion; external Next.js/browser round-trip time is not part of that clock. [PostgreSQL documentation](https://www.postgresql.org/docs/current/runtime-config-client.html#GUC-STATEMENT-TIMEOUT).
+
 The anon role on Supabase has `statement_timeout = 3s`. The divergent-motions RPC (`get_divergent_motions_detail` with `p_official_ids` filter, post-migration 103) takes ~1.2s in raw SQL. That leaves ~1.8s of headroom for PostgREST serialization, network round-trip, and Next.js processing. From Vercel edge (close to Supabase region) this is comfortable. From slower or higher-latency networks (residential connections, builds run from outside the Vercel region), the round-trip alone can eat the headroom and tip the page over the timeout.
 
 **Symptom:** local `next build` consistently fails on `/council/voting-patterns` with "canceling statement due to statement timeout" even though production loads cleanly. Earlier sessions dismissed this as "just slow local network." It's actually the page running with thin headroom — vulnerable to ANY latency increase, not just mine.

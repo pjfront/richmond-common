@@ -12,7 +12,7 @@ function typeBadgeColor(type: string): string {
 }
 
 export default function CommissionCard({ commission }: { commission: CommissionWithStats }) {
-  const { id, name, commission_type, num_seats, member_count, holdover_count, vacancy_count, form700_required } = commission
+  const { id, name, commission_type, member_count, holdover_count, form700_required } = commission
 
   return (
     <Link
@@ -27,16 +27,11 @@ export default function CommissionCard({ commission }: { commission: CommissionW
       </div>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-500">
         <span>
-          {member_count}{num_seats ? `/${num_seats}` : ''} active
+          {member_count + holdover_count} listed current members
         </span>
         {holdover_count > 0 && (
           <span className="text-slate-400">
-            {holdover_count} holdover
-          </span>
-        )}
-        {vacancy_count > 0 && (
-          <span className="text-amber-600 font-medium">
-            {vacancy_count} vacant
+            {holdover_count} with expired recorded terms
           </span>
         )}
         {form700_required && (

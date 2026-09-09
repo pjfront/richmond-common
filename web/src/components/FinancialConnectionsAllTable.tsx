@@ -2,7 +2,6 @@
 
 import { useState, useMemo, useCallback, useEffect } from 'react'
 import Link from 'next/link'
-import VoteBadge from './VoteBadge'
 import ConfidenceBadge from './ConfidenceBadge'
 import CategoryBadge from './CategoryBadge'
 
@@ -17,9 +16,6 @@ export interface ConnectionTableRow {
   agenda_item_title: string
   agenda_item_number: string
   agenda_item_category: string | null
-  vote_choice?: 'aye' | 'nay' | 'abstain' | 'absent' | null
-  motion_result?: string | null
-  is_unanimous?: boolean | null
   official_name: string
   official_slug: string
 }
@@ -42,7 +38,7 @@ interface FlagDetails {
   scanner_version?: number | null
 }
 
-type SortKey = 'official_name' | 'meeting_date' | 'agenda_item_title' | 'flag_type' | 'confidence' | 'vote_choice'
+type SortKey = 'official_name' | 'meeting_date' | 'agenda_item_title' | 'flag_type' | 'confidence'
 type SortDir = 'asc' | 'desc'
 
 function formatDate(dateStr: string): string {
@@ -54,9 +50,6 @@ function formatFlagType(type: string): string {
   return type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
-/** Build timestamp injected at compile time */
-const BUILD_VERSION = `v${new Date().toISOString().slice(0, 10)}`
-
 /**
  * Self-loading financial connections table.
  * Uses plain HTML table (no TanStack) for maximum performance.
@@ -67,21 +60,29 @@ export default function FinancialConnectionsAllTable() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    fetch('/api/flag-details?all=1')
-      .then((res) => res.json())
-      .then((data: ConnectionTableRow[]) => {
+    const controller = new AbortController()
+    fetch('/api/flag-details?all=1', { signal: controller.signal })
+      .then(async res => {
+        if (!res.ok) throw new Error('Connection records could not be loaded. Try again after signing in.')
+        const data: unknown = await res.json()
+        if (!Array.isArray(data)) throw new Error('Connection records could not be loaded.')
+        return data as ConnectionTableRow[]
+      })
+      .then(data => {
         setRows(data)
         setLoading(false)
       })
       .catch((err: Error) => {
+        if (controller.signal.aborted) return
         setError(err.message)
         setLoading(false)
       })
+    return () => controller.abort()
   }, [])
 
   if (loading) {
     return (
-      <div className="py-8 text-center">
+      <div className="py-8 text-center" role="status">
         <p className="text-sm text-slate-400 animate-pulse">Loading connections...</p>
       </div>
     )
@@ -89,8 +90,8 @@ export default function FinancialConnectionsAllTable() {
 
   if (error) {
     return (
-      <div className="py-8 text-center">
-        <p className="text-sm text-red-500">Failed to load connections: {error}</p>
+      <div className="py-8 text-center" role="alert">
+        <p className="text-sm text-red-700">{error}</p>
       </div>
     )
   }
@@ -102,7 +103,6 @@ export default function FinancialConnectionsAllTable() {
 function ConnectionsTable({ rows }: { rows: ConnectionTableRow[] }) {
   const [officialFilter, setOfficialFilter] = useState<string>('all')
   const [flagTypeFilter, setFlagTypeFilter] = useState<string>('all')
-  const [voteFilter, setVoteFilter] = useState<string>('all')
   const [showAll, setShowAll] = useState(false)
   const [sortKey, setSortKey] = useState<SortKey>('meeting_date')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
@@ -112,16 +112,19 @@ function ConnectionsTable({ rows }: { rows: ConnectionTableRow[] }) {
   // Cache for on-demand detail fetches
   const [detailCache, setDetailCache] = useState<Record<string, FlagDetails>>({})
   const [loadingDetails, setLoadingDetails] = useState<Set<string>>(new Set())
+  const [failedDetails, setFailedDetails] = useState<Set<string>>(new Set())
 
   const fetchDetails = useCallback(async (flagId: string) => {
     if (detailCache[flagId] || loadingDetails.has(flagId)) return
+    setFailedDetails(prev => { const next = new Set(prev); next.delete(flagId); return next })
     setLoadingDetails((prev) => new Set(prev).add(flagId))
     try {
       const res = await fetch(`/api/flag-details?id=${flagId}`)
-      if (res.ok) {
-        const data: FlagDetails = await res.json()
-        setDetailCache((prev) => ({ ...prev, [flagId]: data }))
-      }
+      if (!res.ok) throw new Error('Unavailable')
+      const data: FlagDetails = await res.json()
+      setDetailCache((prev) => ({ ...prev, [flagId]: data }))
+    } catch {
+      setFailedDetails(prev => new Set(prev).add(flagId))
     } finally {
       setLoadingDetails((prev) => {
         const next = new Set(prev)
@@ -147,13 +150,9 @@ function ConnectionsTable({ rows }: { rows: ConnectionTableRow[] }) {
     return rows.filter((r) => {
       if (officialFilter !== 'all' && r.official_slug !== officialFilter) return false
       if (flagTypeFilter !== 'all' && r.flag_type !== flagTypeFilter) return false
-      if (voteFilter !== 'all') {
-        if (voteFilter === 'none' && r.vote_choice !== null) return false
-        if (voteFilter !== 'none' && r.vote_choice !== voteFilter) return false
-      }
       return true
     })
-  }, [rows, officialFilter, flagTypeFilter, voteFilter])
+  }, [rows, officialFilter, flagTypeFilter])
 
   const sorted = useMemo(() => {
     const arr = [...filtered]
@@ -239,6 +238,7 @@ function ConnectionsTable({ rows }: { rows: ConnectionTableRow[] }) {
       {/* Filters */}
       <div className="flex flex-wrap gap-3 mb-3">
         <select
+          aria-label="Filter by official"
           value={officialFilter}
           onChange={(e) => setOfficialFilter(e.target.value)}
           className="text-sm border border-slate-200 rounded px-2 py-1"
@@ -249,6 +249,7 @@ function ConnectionsTable({ rows }: { rows: ConnectionTableRow[] }) {
           ))}
         </select>
         <select
+          aria-label="Filter by connection type"
           value={flagTypeFilter}
           onChange={(e) => setFlagTypeFilter(e.target.value)}
           className="text-sm border border-slate-200 rounded px-2 py-1"
@@ -257,18 +258,6 @@ function ConnectionsTable({ rows }: { rows: ConnectionTableRow[] }) {
           {flagTypes.map((t) => (
             <option key={t} value={t}>{formatFlagType(t)}</option>
           ))}
-        </select>
-        <select
-          value={voteFilter}
-          onChange={(e) => setVoteFilter(e.target.value)}
-          className="text-sm border border-slate-200 rounded px-2 py-1"
-        >
-          <option value="all">All votes</option>
-          <option value="aye">Aye</option>
-          <option value="nay">Nay</option>
-          <option value="abstain">Abstain</option>
-          <option value="absent">Absent</option>
-          <option value="none">No vote recorded</option>
         </select>
         <button
           onClick={() => setGroupByItem((v) => !v)}
@@ -289,6 +278,7 @@ function ConnectionsTable({ rows }: { rows: ConnectionTableRow[] }) {
       {/* Table */}
       <div className="overflow-x-auto border border-slate-200 rounded-lg">
         <table className="w-full text-sm">
+          <caption className="sr-only">Automated financial connection records for operator review</caption>
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200">
               <th className="px-3 py-2 w-8" />
@@ -317,11 +307,6 @@ function ConnectionsTable({ rows }: { rows: ConnectionTableRow[] }) {
                   Confidence <SortIcon col="confidence" />
                 </button>
               </th>
-              <th className="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                <button onClick={() => toggleSort('vote_choice')} className="cursor-pointer select-none hover:text-civic-navy">
-                  Vote <SortIcon col="vote_choice" />
-                </button>
-              </th>
             </tr>
           </thead>
           <tbody>
@@ -336,6 +321,7 @@ function ConnectionsTable({ rows }: { rows: ConnectionTableRow[] }) {
                   onToggle={() => toggleExpand(row.id)}
                   details={detailCache[row.id]}
                   loadingDetail={loadingDetails.has(row.id)}
+                  failedDetail={failedDetails.has(row.id)}
                   groupHeader={group}
                 />
               )
@@ -354,8 +340,6 @@ function ConnectionsTable({ rows }: { rows: ConnectionTableRow[] }) {
         </button>
       )}
 
-      {/* Version indicator */}
-      <p className="mt-3 text-xs text-slate-300 text-left">{BUILD_VERSION}</p>
     </div>
   )
 }
@@ -367,6 +351,7 @@ function GroupedTableRows({
   onToggle,
   details,
   loadingDetail,
+  failedDetail,
   groupHeader,
 }: {
   row: ConnectionTableRow
@@ -374,13 +359,14 @@ function GroupedTableRows({
   onToggle: () => void
   details?: FlagDetails
   loadingDetail: boolean
+  failedDetail: boolean
   groupHeader?: { title: string; number: string; date: string; count: number }
 }) {
   return (
     <>
       {groupHeader && (
         <tr className="bg-civic-navy/5 border-b border-slate-200">
-          <td colSpan={7} className="px-3 py-2">
+          <td colSpan={6} className="px-3 py-2">
             <div className="flex items-center gap-2">
               <span className="text-xs font-semibold text-civic-navy">
                 Item {groupHeader.number}: {groupHeader.title}
@@ -403,6 +389,7 @@ function GroupedTableRows({
         onToggle={onToggle}
         details={details}
         loadingDetail={loadingDetail}
+        failedDetail={failedDetail}
       />
     </>
   )
@@ -415,23 +402,26 @@ function TableRow({
   onToggle,
   details,
   loadingDetail,
+  failedDetail,
 }: {
   row: ConnectionTableRow
   isExpanded: boolean
   onToggle: () => void
   details?: FlagDetails
   loadingDetail: boolean
+  failedDetail: boolean
 }) {
   return (
     <>
       <tr
         className={`border-b border-slate-100 hover:bg-slate-50/50 cursor-pointer ${isExpanded ? 'bg-slate-50/50' : ''}`}
-        onClick={onToggle}
       >
         <td className="px-3 py-2">
-          <span className="text-slate-400 hover:text-civic-navy px-1">
+          <button type="button" onClick={onToggle} aria-expanded={isExpanded}
+            aria-label={`${isExpanded ? 'Hide' : 'Show'} connection details for ${row.official_name}`}
+            className="min-h-11 min-w-11 text-slate-600 hover:text-civic-navy">
             {isExpanded ? '▾' : '▸'}
-          </span>
+          </button>
         </td>
         <td className="px-3 py-2">
           <Link
@@ -468,25 +458,15 @@ function TableRow({
         <td className="px-3 py-2">
           <ConfidenceBadge confidence={row.confidence} />
         </td>
-        <td className="px-3 py-2">
-          {row.vote_choice ? (
-            <VoteBadge choice={row.vote_choice} />
-          ) : row.motion_result ? (
-            <span className="text-xs text-slate-500" title="Individual vote not recorded">
-              {row.motion_result}
-            </span>
-          ) : (
-            <span className="text-xs text-slate-400">No vote</span>
-          )}
-        </td>
       </tr>
       {isExpanded && (
         <tr className="border-b border-slate-100 bg-slate-50/80">
-          <td colSpan={7} className="px-4 py-3">
+          <td colSpan={6} className="px-4 py-3">
             <ExpandedDetails
               flagId={row.id}
               details={details}
               loading={loadingDetail}
+              failed={failedDetail}
             />
           </td>
         </tr>
@@ -515,11 +495,14 @@ function ExpandedDetails({
   flagId,
   details,
   loading,
+  failed,
 }: {
   flagId: string
   details?: FlagDetails
   loading: boolean
+  failed: boolean
 }) {
+  if (failed) return <p role="alert" className="text-sm text-slate-600">Details could not be loaded. Close and reopen this row to try again.</p>
   if (loading || !details) {
     return (
       <p className="text-sm text-slate-400 animate-pulse">

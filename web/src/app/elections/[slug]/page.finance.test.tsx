@@ -6,7 +6,7 @@ const state = vi.hoisted(() => ({ candidates: [] as { id: string; candidate_name
 vi.mock('@/lib/queries', () => ({
   getElectionBySlug: async () => ({ id: 'election', election_name: 'Primary', election_date: '2026-06-02', election_type: 'primary', source_url: null }),
   getElectionWithCandidates: async () => ({ candidates: state.candidates }),
-  getCandidateFundraisingDetails: async () => state.candidates,
+  getCandidateFundraisingDetails: async () => { throw new Error('Public roster must not query legacy fundraising totals') },
 }))
 vi.mock('@/components/NovemberElection', () => ({ default: () => <div>November guide</div> }))
 vi.mock('@/components/RaceSection', () => ({

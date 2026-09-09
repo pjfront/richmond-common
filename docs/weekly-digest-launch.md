@@ -8,7 +8,11 @@ The user explicitly approved one digest test to the existing configured canary i
 
 The first representative completed week is August 31–September 6, 2026 UTC. It becomes selectable at September 7, 00:00 UTC, which is September 6 at 5 p.m. in Richmond. Do not backdate publication, override the server clock, supply a custom recipient or period, or send a different week's test merely to bypass this wait. The planned ongoing subscriber job is Monday 16:30 UTC (9:30 a.m. PDT / 8:30 a.m. PST); it may run later if GitHub delays a scheduled job.
 
+If verification and activation finish before the next scheduled job, the first expected subscriber run is **September 14, 2026 at 16:30 UTC**, covering September 7–13. The representative canary still covers August 31–September 6 and is selectable only until September 14 at 00:00 UTC. These are different publication weeks; do not roll the fixed canary window forward to match the subscriber schedule.
+
 ## Current state and preparation
+
+The held activation branch is synchronized with the numeric-integrity release at main `28992285a7379aa370b874bdcf818f2c545811eb` (PR188). All eleven activation behavior/test patches remain byte-identical to their prior reviewed versions. Production verification for this numeric release is pending; this synchronization does not assert deployment or enable sending. Retain the earlier deployment observations below until a new exact-source receipt is available.
 
 The Jimenez finance correction is deployed at `d873d5929bbcdde8bd7a8bcc72c1d18e6d49c595`, Vercel deployment `dpl_A4Bmi44Ei4weAiXBZy2nSf9jDEzu`, following PR187. Its immutable host is `rtp-mg1gckey4-phillips-projects-1f180556.vercel.app`. The deployment wrapper verified the source, pinned project, main ref, READY state and production alias. Independent authenticated postflight at 22:19:30 UTC confirmed that identity, healthy homepage/health responses, anonymous digest denial, and `canary_ready=true` with `broadcast_ready=false`. No email was sent. PR185 remains draft and held; its original eleven activation behavior/test patches are byte-identical after synchronization. The exact two-version-2-publication fixture keeps its approved HTML/text hashes.
 

@@ -49,7 +49,7 @@ export function hasSplitVote(item: AgendaItemWithMotions): boolean {
 export function getClosestSplitMotion(item: AgendaItemWithMotions) {
   return item.motions.filter(motion => {
     const counts = recordedVoteCounts(motion.votes)
-    return counts.aye > 0 && counts.nay > 0
+    return counts.aye > 0 && counts.nay > 0 && counts['not-recorded'] === 0
   }).sort((a, b) => {
     const aVotes = recordedVoteCounts(a.votes)
     const bVotes = recordedVoteCounts(b.votes)
@@ -116,5 +116,5 @@ export function getItemResultLabel(item: AgendaItemWithMotions): string | null {
 export function getCompactTally(item: AgendaItemWithMotions): string | null {
   if (item.motions.length !== 1) return null
   const counts = recordedVoteCounts(item.motions[0].votes)
-  return counts.aye + counts.nay > 0 ? `${counts.aye}-${counts.nay}` : null
+  return counts['not-recorded'] === 0 && counts.aye + counts.nay > 0 ? `${counts.aye}-${counts.nay}` : null
 }
