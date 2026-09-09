@@ -27,6 +27,8 @@ Retire unused aggregate queries and components instead of adding more comparison
 
 Limit Next.js build workers to two, with one page render per worker, so large developer machines do not multiply concurrent prerender reads against the shared database. These are installed Next 16.1.6 build settings, not request-serving limits. Local verification encountered a sitemap statement timeout and a separate Windows worker crash with 27 workers; two workers alone still allowed 16 simultaneous pages and hit a meeting-count timeout. The settings bound build pressure without changing query results or concealing failures. Both affected queries passed isolated reads.
 
+Concurrent runtime checks also exposed repeated timeouts in the old split-motion RPC. The public read now starts with current members' recorded NAY votes, then fetches complete votes and sources only for those candidate motions. An anonymous source comparison on September 9 returned the same 103 split motions and 548 vote rows, with no differences in displayed source fields. Only the complete final projection is cached for one hour; existing source-sync revalidation expires it immediately. This removes the broad repeated scan without raising database timeouts or changing source scope.
+
 ## Validation and release boundary
 
 - Regression coverage exercises server caps, changed counts, duplicate IDs, failures, explicit zeros, unknown dates/channels, repeated motions and authorized/private query boundaries.

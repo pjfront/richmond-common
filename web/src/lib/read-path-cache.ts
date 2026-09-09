@@ -8,6 +8,10 @@
  */
 export const OFFICIALS_CACHE_SECONDS = 24 * 60 * 60
 
+/** Compact, source-checked split-motion records; source syncs invalidate the tag. */
+export const SPLIT_MOTIONS_CACHE_SECONDS = 60 * 60
+export const SPLIT_MOTIONS_CACHE_TAG = 'split-motion-source-records'
+
 /**
  * The upcoming election is shared navigation data. Cache it across route
  * renders so a crawler enumerating unique detail paths does not repeat the

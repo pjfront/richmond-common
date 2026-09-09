@@ -14,7 +14,6 @@ import type {
   Form700Filing,
   CategoryStats,
   ControversyItem,
-  DivergentMotionRow,
   DivergentMotion,
   DonorCategoryPattern,
   DonorOverlap,
@@ -22,7 +21,7 @@ import type {
 } from '../types'
 import { cache } from 'react'
 import { unstable_cache } from 'next/cache'
-import { OFFICIALS_CACHE_SECONDS } from '../read-path-cache'
+import { OFFICIALS_CACHE_SECONDS, SPLIT_MOTIONS_CACHE_SECONDS, SPLIT_MOTIONS_CACHE_TAG } from '../read-path-cache'
 import { failReadPath, ReadPathUnavailableError } from '../read-path-unavailable'
 import { readCompleteRecords } from '../complete-record-read'
 
@@ -551,76 +550,136 @@ export async function getControversialItems(
 }
 
 
-/** Recorded split motions among current council members; missing choices stay missing. */
-export async function getDivergentMotions(cityFips = RICHMOND_FIPS): Promise<{
+type SplitSourceIdentity = {
+  id: string; agenda_item_id: string;
+  agenda_items: { id: string; meeting_id: string; agenda_source_retired_at: string | null;
+    meetings: { id: string; city_fips: string; meeting_date: string; source_cancelled_at: string | null } }
+}
+type SplitCandidate = {
+  id: string; motion_id: string; official_id: string; vote_choice: string; motions: SplitSourceIdentity
+}
+type SplitVote = { id: string; motion_id: string; official_id: string; vote_choice: 'aye' | 'nay' | 'abstain' | 'absent' }
+type SplitSource = SplitSourceIdentity & {
+  source: string | null; motion_type: string; motion_text: string | null;
+  agenda_items: SplitSourceIdentity['agenda_items'] & {
+    title: string; item_number: string | null; category: string | null; topic_label: string | null;
+    meetings: SplitSourceIdentity['agenda_items']['meetings'] & { minutes_url: string | null; video_url: string | null }
+  }
+}
+
+/** Find recorded NAY candidates before joining full motion/agenda text. Every
+ * split has a NAY, so this avoids broad repeated RLS joins without a date cutoff.
+ * Cache only the complete final projection, never an intermediate page or error.
+ */
+const getDivergentMotionsCached = unstable_cache(async (cityFips: string): Promise<{
   motions: DivergentMotion[]
   officials: Array<{ id: string; name: string }>
-}> {
+}> => {
   const { data: currentOfficials, count: officialCount, error: officialError } = await supabase
     .from('officials').select('id, name', { count: 'exact' })
     .eq('city_fips', cityFips).eq('is_current', true).in('role', COUNCIL_ROLES).order('name').limit(50)
   if (officialError) failReadPath('Council record members', officialError)
-  if (!currentOfficials || officialCount == null || officialCount !== currentOfficials.length || officialCount > 50) {
+  if (!currentOfficials || officialCount == null || officialCount !== currentOfficials.length || officialCount > 50
+    || new Set(currentOfficials.map(row => row.id)).size !== officialCount
+    || currentOfficials.some(row => !row.id || !row.name?.trim())) {
     failReadPath('Council record members', new Error('Member coverage unavailable'))
   }
   const officials = currentOfficials.map(row => ({ id: row.id, name: row.name }))
   if (!officials.length) return { motions: [], officials }
-
-  // One source record per motion/member. Exact counts and stable pages prevent
-  // the API row limit from becoming an apparent complete voting history.
-  const rows: DivergentMotionRow[] = []
-  let expected: number | null = null
-  for (let offset = 0, page = 0; page < 10; page++) {
-    const result = await supabase.rpc('get_divergent_motions_detail', {
-      p_city_fips: cityFips, p_official_ids: officials.map(official => official.id),
-    }, { count: 'exact' }).order('motion_id').order('official_id').range(offset, offset + 999)
-    if (result.error) failReadPath('Split motion records', result.error)
-    const count = result.count
-    if (count == null || !Number.isSafeInteger(count) || count < 0 || count > 5000 || (expected !== null && count !== expected)) {
-      failReadPath('Split motion records', new Error('Record coverage changed or exceeded its bound'))
-    }
-    expected = count
-    const data = (result.data ?? []) as DivergentMotionRow[]
-    if (data.length > 1000 || offset + data.length > count || (!data.length && offset < count)) {
-      failReadPath('Split motion records', new Error('Incomplete voting-record page'))
-    }
-    rows.push(...data)
-    offset += data.length
-    if (offset === count) break
-    if (page === 9) failReadPath('Split motion records', new Error('Voting-record page budget exhausted'))
-  }
-  const motionIds = [...new Set(rows.map(row => row.motion_id))]
-  type Source = { id: string; source: string | null; motion_type: string; agenda_item_id: string;
-    agenda_items: { id: string; agenda_source_retired_at: string | null;
-      meetings: { id: string; meeting_date: string; minutes_url: string | null; video_url: string | null; source_cancelled_at: string | null } } }
-  const sources = new Map<string, Source>()
-  for (let offset = 0; offset < motionIds.length; offset += 200) {
-    const ids = motionIds.slice(offset, offset + 200)
-    const result = await supabase.from('motions').select(
-      'id, source, motion_type, agenda_item_id, agenda_items!inner(id, agenda_source_retired_at, meetings!inner(id, meeting_date, minutes_url, video_url, source_cancelled_at))',
+  const officialIds = officials.map(official => official.id)
+  const officialSet = new Set(officialIds)
+  const candidates = await readCompleteRecords<SplitCandidate>('Split motion candidates', async (from, to) => {
+    const result = await supabase
+    .from('votes').select(
+      'id, motion_id, official_id, vote_choice, motions!inner(id, agenda_item_id, agenda_items!inner(id, meeting_id, agenda_source_retired_at, meetings!inner(id, city_fips, meeting_date, source_cancelled_at)))',
       { count: 'exact' },
-    ).in('id', ids).order('id').limit(200)
-    if (result.error) failReadPath('Motion sources', result.error)
-    if (result.count !== ids.length || result.data?.length !== ids.length) failReadPath('Motion sources', new Error('Source coverage unavailable'))
-    for (const value of result.data as unknown as Source[]) sources.set(value.id, value)
-  }
-  const motionMap = new Map<string, DivergentMotion>()
-  for (const row of rows) {
-    const source = sources.get(row.motion_id)
+    ).eq('vote_choice', 'nay').in('official_id', officialIds)
+    .eq('motions.agenda_items.meetings.city_fips', cityFips)
+    .is('motions.agenda_items.agenda_source_retired_at', null)
+    .is('motions.agenda_items.meetings.source_cancelled_at', null)
+    .order('id').range(from, to)
+    return { ...result, data: result.data as unknown as SplitCandidate[] | null }
+  }, { maxRows: 5000, maxPages: 10 })
+  const identities = new Map<string, SplitSourceIdentity>()
+  for (const row of candidates) {
+    const source = row.motions
     const item = source?.agenda_items
     const meeting = item?.meetings
-    if (!source || !item || !meeting || source.agenda_item_id !== row.agenda_item_id || meeting.id !== row.meeting_id || meeting.meeting_date !== row.meeting_date) {
-      failReadPath('Motion sources', new Error('Motion/source identity differs'))
+    if (row.vote_choice !== 'nay' || !officialSet.has(row.official_id) || !source || !item || !meeting
+      || source.id !== row.motion_id || source.agenda_item_id !== item.id || item.meeting_id !== meeting.id
+      || meeting.city_fips !== cityFips || !/^\d{4}-\d{2}-\d{2}$/.test(meeting.meeting_date)
+      || item.agenda_source_retired_at || meeting.source_cancelled_at) {
+      failReadPath('Split motion candidates', new Error('Candidate source identity differs'))
     }
+    const previous = identities.get(row.motion_id)
+    if (previous && (previous.agenda_item_id !== source.agenda_item_id
+      || previous.agenda_items.meeting_id !== item.meeting_id
+      || previous.agenda_items.meetings.meeting_date !== meeting.meeting_date)) {
+      failReadPath('Split motion candidates', new Error('Candidate source identity changed'))
+    }
+    identities.set(row.motion_id, source)
+  }
+  const motionIds = [...identities.keys()].sort()
+  if (!motionIds.length) return { motions: [], officials }
+
+  const sources = new Map<string, SplitSource>()
+  const votes = new Map<string, SplitVote>()
+  for (let offset = 0; offset < motionIds.length; offset += 200) {
+    const ids = motionIds.slice(offset, offset + 200)
+    const idSet = new Set(ids)
+    const sourceRows = await readCompleteRecords<SplitSource>('Motion sources', async (from, to) => {
+      const result = await supabase
+      .from('motions').select(
+        'id, source, motion_type, motion_text, agenda_item_id, agenda_items!inner(id, title, item_number, category, topic_label, meeting_id, agenda_source_retired_at, meetings!inner(id, meeting_date, city_fips, minutes_url, video_url, source_cancelled_at))',
+        { count: 'exact' },
+      ).in('id', ids).order('id').range(from, to)
+      return { ...result, data: result.data as unknown as SplitSource[] | null }
+    }, { maxRows: ids.length })
+    if (sourceRows.length !== ids.length) failReadPath('Motion sources', new Error('Source coverage unavailable'))
+    for (const source of sourceRows) {
+      const previous = identities.get(source.id)
+      const item = source.agenda_items
+      const meeting = item?.meetings
+      if (!idSet.has(source.id) || !previous || !item || !meeting
+        || source.agenda_item_id !== item.id || item.meeting_id !== meeting.id
+        || previous.agenda_item_id !== item.id || previous.agenda_items.meeting_id !== meeting.id
+        || previous.agenda_items.meetings.meeting_date !== meeting.meeting_date || meeting.city_fips !== cityFips) {
+        failReadPath('Motion sources', new Error('Motion/source identity differs'))
+      }
+      sources.set(source.id, source)
+    }
+    const voteRows = await readCompleteRecords<SplitVote>('Split motion records', (from, to) => supabase
+      .from('votes').select('id, motion_id, official_id, vote_choice', { count: 'exact' })
+      .in('motion_id', ids).in('official_id', officialIds).in('vote_choice', ['aye', 'nay', 'abstain', 'absent'])
+      .order('id').range(from, to), { maxRows: 5000, maxPages: 10 })
+    for (const row of voteRows) {
+      if (!idSet.has(row.motion_id) || !officialSet.has(row.official_id)
+        || !['aye', 'nay', 'abstain', 'absent'].includes(row.vote_choice) || votes.has(row.id)) {
+        failReadPath('Split motion records', new Error('Vote identity or recorded choice differs'))
+      }
+      votes.set(row.id, row)
+    }
+    if (votes.size > 5000) failReadPath('Split motion records', new Error('Voting records exceeded their bound'))
+  }
+  for (const candidate of candidates) {
+    const vote = votes.get(candidate.id)
+    if (!vote || vote.motion_id !== candidate.motion_id || vote.official_id !== candidate.official_id || vote.vote_choice !== 'nay') {
+      failReadPath('Split motion records', new Error('Candidate vote changed during the read'))
+    }
+  }
+  const motionMap = new Map<string, DivergentMotion>()
+  for (const row of votes.values()) {
+    const source = sources.get(row.motion_id)!
+    const item = source.agenda_items
+    const meeting = item.meetings
     if (item.agenda_source_retired_at || meeting.source_cancelled_at) continue
-    if (!['aye', 'nay', 'abstain', 'absent'].includes(row.vote_choice)) failReadPath('Split motion records', new Error('Unrecognized recorded choice'))
     let motion = motionMap.get(row.motion_id)
     if (!motion) {
       const url = source.source === 'minutes' ? meeting.minutes_url : source.source === 'transcript' ? meeting.video_url : null
-      motion = { motion_id: row.motion_id, motion_text: row.motion_text, motion_result: null, vote_tally: null,
-        meeting_id: row.meeting_id, meeting_date: row.meeting_date, agenda_item_id: row.agenda_item_id,
-        agenda_item_title: row.agenda_item_title, agenda_item_number: row.agenda_item_number,
-        category: row.category, topic_label: row.topic_label,
+      motion = { motion_id: row.motion_id, motion_text: source.motion_text, motion_result: null, vote_tally: null,
+        meeting_id: meeting.id, meeting_date: meeting.meeting_date, agenda_item_id: item.id,
+        agenda_item_title: item.title, agenda_item_number: item.item_number,
+        category: item.category, topic_label: item.topic_label,
         is_procedural: ['procedural', 'call_the_question', 'reconsider'].includes(source.motion_type),
         source: source.source, source_url: url && /^https:\/\//.test(url) ? url : null,
         source_tier: source.source === 'minutes' ? 1 : source.source === 'transcript' ? 2 : null, votes: {} }
@@ -636,7 +695,10 @@ export async function getDivergentMotions(cityFips = RICHMOND_FIPS): Promise<{
     return choices.includes('aye') && choices.includes('nay')
   }).sort((a, b) => b.meeting_date.localeCompare(a.meeting_date) || a.motion_id.localeCompare(b.motion_id))
   return { motions, officials }
-}
+}, ['split-motion-records-v2'], { revalidate: SPLIT_MOTIONS_CACHE_SECONDS, tags: [SPLIT_MOTIONS_CACHE_TAG] })
+
+export const getDivergentMotions = cache((cityFips = RICHMOND_FIPS) => getDivergentMotionsCached(cityFips))
+
 
 // ─── Cross-Meeting Patterns (S6.2) ──────────────────────────
 
