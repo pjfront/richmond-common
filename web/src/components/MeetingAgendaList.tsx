@@ -9,8 +9,6 @@ import type { MeetingWithCounts } from '@/lib/types'
 
 interface MeetingAgendaListProps {
   meetings: MeetingWithCounts[]
-  /** Record of meeting_id → published flag count */
-  flagCounts?: Record<string, number>
   /** Currently active month key (YYYY-MM) for controlled expansion */
   activeMonth?: string
   /** Compact mode for sidebar use alongside calendar grid */
@@ -56,7 +54,6 @@ function groupByMonth(meetings: MeetingWithCounts[]): MonthGroup[] {
  */
 export default function MeetingAgendaList({
   meetings,
-  flagCounts,
   activeMonth,
   compact = false,
 }: MeetingAgendaListProps) {
@@ -94,14 +91,14 @@ export default function MeetingAgendaList({
                   <Link
                     key={m.id}
                     href={`/meetings/${m.id}`}
-                    className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-slate-50 transition-colors group"
+                    className="flex min-h-11 items-center gap-2 rounded-md px-2 py-1.5 hover:bg-slate-50 transition-colors group"
                   >
                     <span className="text-xs text-slate-500 w-12 shrink-0">
                       {format(date, 'MMM d')}
                     </span>
                     <MeetingTypeBadge meetingType={m.meeting_type} compact />
                     <span className="text-xs text-slate-400 ml-auto shrink-0">
-                      {m.agenda_item_count} items
+                      {m.agenda_item_count} archive {m.agenda_item_count === 1 ? 'entry' : 'entries'}
                     </span>
                   </Link>
                 )
@@ -124,7 +121,7 @@ export default function MeetingAgendaList({
             open={openMonths.has(group.key)}
             className="group"
           >
-            <summary className="flex items-center justify-between cursor-pointer select-none rounded-lg bg-slate-50 border border-slate-200 px-4 py-3 hover:bg-slate-100 transition-colors list-none">
+            <summary className="flex min-h-11 flex-wrap items-center justify-between gap-x-4 gap-y-1 cursor-pointer select-none rounded-lg bg-slate-50 border border-slate-200 px-4 py-3 hover:bg-slate-100 transition-colors list-none">
               <div className="flex items-center gap-3">
                 {/* Chevron rotates when open */}
                 <svg
@@ -143,7 +140,7 @@ export default function MeetingAgendaList({
               <span className="text-sm text-slate-500">
                 {group.meetings.length} {group.meetings.length === 1 ? 'meeting' : 'meetings'}
                 {' '}&middot;{' '}
-                {totalItems} items
+                {totalItems} agenda {totalItems === 1 ? 'entry' : 'entries'} in this archive
               </span>
             </summary>
 
@@ -152,7 +149,6 @@ export default function MeetingAgendaList({
                 <MeetingListCard
                   key={m.id}
                   meeting={m}
-                  flagCount={flagCounts?.[m.id] ?? 0}
                 />
               ))}
             </div>

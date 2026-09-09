@@ -75,11 +75,6 @@ tables:
     missing: [source_url, extracted_at, source_tier, confidence_score]
     note: "Tier 1 (official agenda). Backfill from parent agenda_items."
 
-  comment_theme_assignments:
-    status: grandfathered
-    missing: [source_url, extracted_at, source_tier, confidence_score]
-    note: "AI-generated edge between comments and themes. Source = the comment's source; confidence = model score."
-
   commission_members:
     status: grandfathered
     missing: [source_url, extracted_at, source_tier, confidence_score]

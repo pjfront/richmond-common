@@ -1772,6 +1772,100 @@ order by object_kind, object_name
 limit 50
 """
 
+# Only infrastructure created by the pinned CLI, or our existing initializer,
+# may precede the clean-room restore. Neither shape may contain history rows.
+# https://github.com/supabase/cli/blob/v2.112.0/apps/cli-go/pkg/migration/history.go
+_EMPTY_LEDGER_SHAPE_QUERY = """\
+select (
+  c.relkind = 'r' and c.relpersistence = 'p'
+  and c.relowner = 'postgres'::regrole
+  and not c.relrowsecurity and not c.relforcerowsecurity
+  and c.reloptions is null
+  and (
+    cols.names = array['version','statements','name']::name[]
+    or cols.names = array['version','statements','name','created_by','idempotency_key','rollback']::name[]
+  )
+  and cols.valid
+  and not exists (select 1 from pg_attribute where attrelid=c.oid and attnum>0 and attisdropped)
+  and not exists (select 1 from pg_inherits where inhrelid=c.oid or inhparent=c.oid)
+  and not exists (select 1 from pg_trigger where tgrelid=c.oid)
+  and not exists (select 1 from pg_rewrite where ev_class=c.oid)
+  and not exists (select 1 from pg_policy where polrelid=c.oid)
+  and (select count(*) from pg_constraint where conrelid=c.oid and contype='p') = 1
+  and (select count(*) from pg_constraint where conrelid=c.oid and contype='u') =
+      case when cardinality(cols.names)=6 then 1 else 0 end
+  and not exists (
+    select 1 from pg_constraint k where k.conrelid=c.oid and (
+      k.condeferrable or k.condeferred or not k.convalidated or not (
+        (k.contype in ('p','n') and k.conkey=array[1]::smallint[])
+        or (k.contype='u' and k.conkey=array[5]::smallint[] and cardinality(cols.names)=6)
+      )
+    )
+  )
+  and not exists (
+    select 1 from pg_index i
+    join pg_opclass op on op.oid=i.indclass[0]
+    where i.indrelid=c.oid and (
+      not i.indisvalid or not i.indisready or not i.indisunique
+      or i.indnkeyatts<>1 or i.indnatts<>1 or i.indexprs is not null or i.indpred is not null
+      or op.opcnamespace<>'pg_catalog'::regnamespace or op.opcname<>'text_ops'
+      or op.opcmethod<>(select oid from pg_am where amname='btree')
+      or not exists (select 1 from pg_constraint k where k.conrelid=c.oid and k.conindid=i.indexrelid and k.contype in ('p','u'))
+    )
+  )
+) as compatible
+from pg_class c
+cross join lateral (
+  select array_agg(a.attname order by a.attnum) as names,
+         bool_and(
+           not a.attisdropped and not a.atthasdef and a.attgenerated='' and a.attidentity=''
+           and a.attnotnull=(a.attname='version')
+           and a.atttypid=case when a.attname in ('statements','rollback') then 'text[]'::regtype else 'text'::regtype end
+           and a.atttypmod=-1 and a.attcollation=t.typcollation
+         ) as valid
+  from pg_attribute a join pg_type t on t.oid=a.atttypid
+  where a.attrelid=c.oid and a.attnum>0
+) cols
+where c.oid=to_regclass('supabase_migrations.schema_migrations')
+"""
+_EMPTY_LEDGER_ROWS_QUERY = (
+    "select exists(select 1 from supabase_migrations.schema_migrations limit 1) as has_rows"
+)
+_LEDGER_DIAGNOSTIC_QUERY = """\
+select pg_get_userbyid(c.relowner)::text as owner, c.relkind::text as kind,
+       (select count(*) from pg_attribute where attrelid=c.oid and attnum>0) as column_count,
+       coalesce((
+         select jsonb_agg(jsonb_build_object(
+           'name',a.attname,'type',format_type(a.atttypid,a.atttypmod),
+           'not_null',a.attnotnull,'has_default',a.atthasdef,'dropped',a.attisdropped
+         ) order by a.attnum)
+         from (select * from pg_attribute where attrelid=c.oid and attnum>0 order by attnum limit 16) a
+       ), '[]'::jsonb) as columns
+from pg_class c where c.oid=to_regclass('supabase_migrations.schema_migrations')
+"""
+
+
+def _empty_ledger_guard_sql() -> str:
+    """Recheck under a write-blocking lock; never adopt, delete or truncate history."""
+    shape = _EMPTY_LEDGER_SHAPE_QUERY.strip()
+    detail = f"left((select row_to_json(d)::text from ({_LEDGER_DIAGNOSTIC_QUERY.strip()}) d),2048)"
+    return (
+        "do $preview_empty_ledger$\nbegin\n"
+        "  if to_regclass('supabase_migrations.schema_migrations') is not null then\n"
+        f"    if not coalesce(({shape}), false) then\n"
+        f"      raise exception 'Preview migration ledger has a nonstandard structure' using errcode='55000', detail={detail};\n"
+        "    end if;\n"
+        "    lock table supabase_migrations.schema_migrations in access exclusive mode;\n"
+        f"    if not coalesce(({shape}), false) then\n"
+        f"      raise exception 'Preview migration ledger structure changed' using errcode='55000', detail={detail};\n"
+        "    end if;\n"
+        "    if exists(select 1 from supabase_migrations.schema_migrations limit 1) then\n"
+        f"      raise exception 'Preview migration ledger contains history rows' using errcode='55000', detail={detail} || '; has_rows=true';\n"
+        "    end if;\n"
+        "  end if;\nend\n$preview_empty_ledger$;"
+    )
+
+
 _SCHEMA_INVENTORY_QUERY = """\
 select
   (select count(*)::bigint
@@ -1904,7 +1998,13 @@ def verify_production_ledger(
     trusted_migrations: Sequence[Migration],
     pr_migrations: Sequence[Migration],
 ) -> ProductionLedgerState:
-    """Verify the live production history prefix without ever mutating it."""
+    """Verify applied history against trusted main or exact production SQL proof.
+
+    A reviewed migration may be applied before its PR merges. In that case,
+    production must contain all of trusted main followed by an ordered prefix
+    of this PR, and each additional entry needs a matching single-artifact SQL
+    hash from production. PR SQL remains inert; this function never applies it.
+    """
     if parent_ref != PRODUCTION_PROJECT_REF:
         raise PreviewError("Refusing production ledger verification for an unknown ref.")
     payload = client.query(parent_ref, _LEDGER_QUERY, read_only=True)
@@ -1938,7 +2038,8 @@ def verify_production_ledger(
     trusted_identities = [
         (migration.version, migration.name) for migration in trusted_suffix
     ]
-    if observed_suffix != trusted_identities[: len(observed_suffix)]:
+    shared_length = min(len(observed_suffix), len(trusted_identities))
+    if observed_suffix[:shared_length] != trusted_identities[:shared_length]:
         raise PreviewError(
             "Production post-cutoff ledger is not an ordered prefix of trusted main."
         )
@@ -1953,21 +2054,81 @@ def verify_production_ledger(
                 "PR does not contain the exact trusted production migration "
                 f"{trusted_migration.version}."
             )
+    if len(observed_suffix) > len(trusted_identities):
+        pr_suffix = [m for m in pr_migrations if m.version > baseline.cutoff_version]
+        if observed_suffix != [(m.version, m.name) for m in pr_suffix[:len(observed_suffix)]]:
+            raise PreviewError("Production-ahead history is not an ordered prefix of this exact PR.")
+        extra = pr_suffix[len(trusted_identities):len(observed_suffix)]
+        # Only validated 14-digit identities enter this fixed read-only query.
+        versions = ", ".join("'" + m.version + "'" for m in extra)
+        proof_sql = (
+            "select version, coalesce(name, '') as name, "
+            "case when array_ndims(statements) = 1 and cardinality(statements) = 1 "
+            "and array_lower(statements, 1) = 1 then "
+            "encode(sha256(convert_to(replace(replace(statements[1], "
+            "chr(13) || chr(10), chr(10)), chr(13), chr(10)), 'UTF8')), 'hex') "
+            "else null end as sql_sha256 "
+            "from supabase_migrations.schema_migrations "
+            f"where version in ({versions}) order by version"
+        )
+        proof_rows = _rows(client.query(parent_ref, proof_sql, read_only=True),
+                           context="production migration SQL hashes")
+        expected = [(m.version, m.name, m.sha256) for m in extra]
+        actual = [(r.get("version"), r.get("name"), r.get("sql_sha256")) for r in proof_rows]
+        if actual != expected:
+            raise PreviewError("Production-ahead migration lacks exact single-artifact SQL proof.")
+        if _rows(client.query(parent_ref, _LEDGER_QUERY, read_only=True),
+                 context="production migration ledger recheck") != rows:
+            raise PreviewError("Production migration history changed during SQL verification.")
     return ProductionLedgerState(
         tuple(str(row.get("version") or "") for row in rows)
     )
+
+
+def _ledger_diagnostic(client: SupabaseManagementClient, branch: BranchRecord, *, has_rows: bool | None) -> str:
+    """Allowlisted catalog metadata only; never read rows from an untrusted shape."""
+    try:
+        rows = _rows(client.query(branch.project_ref, _LEDGER_DIAGNOSTIC_QUERY, read_only=True), context="ledger diagnostic")
+        if len(rows) != 1:
+            return "catalog metadata unavailable"
+        row = rows[0]
+        columns = row.get("columns")
+        safe_columns = []
+        if isinstance(columns, list):
+            for column in columns[:16]:
+                if isinstance(column, Mapping):
+                    safe_columns.append({
+                        **{key: str(column.get(key, ""))[:128] for key in ("name", "type")},
+                        **{key: column.get(key) if isinstance(column.get(key), bool) else None for key in ("not_null", "has_default", "dropped")},
+                    })
+        return json.dumps({"owner": str(row.get("owner", ""))[:64], "kind": str(row.get("kind", ""))[:8],
+                           "column_count": row.get("column_count") if type(row.get("column_count")) is int else None,
+                           "columns": safe_columns, "has_rows": has_rows if has_rows is not None else "not read"},
+                          ensure_ascii=True)[:2048]
+    except (ApiError, PreviewError):
+        return "catalog metadata unavailable"
 
 
 def verify_empty_preview_branch(
     client: SupabaseManagementClient,
     branch: BranchRecord,
 ) -> None:
-    """Prove no application object or migration ledger exists before restore."""
+    """Prove no app objects/history exist; accept only a standard empty ledger."""
     _assert_nonproduction_branch(branch)
     payload = client.query(
         branch.project_ref, _EMPTY_APPLICATION_CATALOG_QUERY, read_only=True
     )
     objects = _rows(payload, context="empty Preview application catalog")
+    ledger = {"object_kind": "migration ledger", "object_name": "schema_migrations"}
+    if objects == [ledger]:
+        shape = _rows(client.query(branch.project_ref, _EMPTY_LEDGER_SHAPE_QUERY, read_only=True), context="empty ledger structure")
+        if len(shape) != 1 or set(shape[0]) != {"compatible"} or shape[0]["compatible"] is not True:
+            raise PreviewError("Preview migration ledger has a nonstandard structure; no baseline write attempted. " + _ledger_diagnostic(client, branch, has_rows=None))
+        rows = _rows(client.query(branch.project_ref, _EMPTY_LEDGER_ROWS_QUERY, read_only=True), context="empty ledger rows")
+        if len(rows) != 1 or set(rows[0]) != {"has_rows"} or rows[0]["has_rows"] is not False:
+            observed = rows[0].get("has_rows") if len(rows) == 1 else None
+            raise PreviewError("Preview migration ledger contains history rows or an invalid row-count response; no baseline write attempted. " + _ledger_diagnostic(client, branch, has_rows=observed if isinstance(observed, bool) else None))
+        return
     if objects:
         labels = sorted(
             {
@@ -2171,7 +2332,8 @@ def apply_preview_baseline(
         "do $preview_empty_guard$\n"
         "begin\n"
         "  if exists (\n"
-        f"    {_EMPTY_APPLICATION_CATALOG_QUERY.strip()}\n"
+        f"    select * from ({_EMPTY_APPLICATION_CATALOG_QUERY.strip()}) app_objects\n"
+        "    where object_kind<>'migration ledger' or object_name<>'schema_migrations'\n"
         "  ) then\n"
         "    raise exception 'Preview application catalog is no longer empty' "
         "using errcode = '55000';\n"
@@ -2187,12 +2349,16 @@ def apply_preview_baseline(
         "begin;\n"
         f"{role_guard}\n"
         f"{empty_guard}\n"
+        f"{_empty_ledger_guard_sql()}\n"
         f"{_extension_pin_sql(baseline)}\n"
         "drop schema public cascade;\n"
         f"{schema_body}\n"
         f"{_inventory_assertion_sql(baseline.schema_inventory)}\n"
         f"{_extension_assertion_sql(baseline)}\n"
         f"{_LEDGER_INIT_SQL.rstrip()}\n"
+        # Also catch a ledger created by the platform after the first check.
+        # This lock is retained through seeding and the existing commit witness.
+        f"{_empty_ledger_guard_sql()}\n"
         "insert into supabase_migrations.schema_migrations (version, name) values\n"
         f"{seed_values};\n"
         "commit;"

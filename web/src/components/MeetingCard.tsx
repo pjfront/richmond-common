@@ -1,5 +1,6 @@
 import Link from 'next/link'
-import CategoryBadge from './CategoryBadge'
+import { formatCategory } from './CategoryBadge'
+import TopicLabel from './TopicLabel'
 
 interface MeetingCardProps {
   id: string
@@ -7,7 +8,6 @@ interface MeetingCardProps {
   meetingType: string
   presidingOfficer: string | null
   agendaItemCount: number
-  voteCount: number
   topCategories?: { category: string; count: number }[]
 }
 
@@ -47,13 +47,12 @@ export default function MeetingCard({
   meetingType,
   presidingOfficer,
   agendaItemCount,
-  voteCount,
   topCategories,
 }: MeetingCardProps) {
   return (
     <Link
       href={`/meetings/${id}`}
-      className="block bg-white rounded-lg border border-slate-200 p-5 hover:border-civic-navy-light hover:shadow-md transition-all"
+      className="block bg-white rounded-lg border border-slate-200 p-5 hover:border-civic-navy-light hover:shadow-md transition-shadow motion-reduce:transition-none focus-visible:outline-2 focus-visible:outline-civic-navy"
     >
       <div className="flex items-start justify-between gap-4">
         <div>
@@ -68,19 +67,22 @@ export default function MeetingCard({
         </div>
         {meetingTypeBadge(meetingType)}
       </div>
-      <div className="flex gap-4 mt-3 text-sm text-slate-600">
-        <span>{agendaItemCount} agenda items</span>
-        <span className="text-slate-300">|</span>
-        <span>{voteCount} votes recorded</span>
-      </div>
+      <p className="mt-3 text-sm text-slate-600">
+        {agendaItemCount > 0
+          ? `${agendaItemCount} agenda ${agendaItemCount === 1 ? 'entry' : 'entries'} in this archive`
+          : 'No agenda entries in this archive'}
+      </p>
       {topCategories && topCategories.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 mt-2">
-          {topCategories.map((tc) => (
-            <span key={tc.category} className="flex items-center gap-1">
-              <CategoryBadge category={tc.category} />
-              <span className="text-xs text-slate-400">{tc.count}</span>
-            </span>
-          ))}
+        <div className="mt-2">
+          <p className="text-xs text-slate-500 mb-1.5">Topics assigned by AI</p>
+          <div className="flex flex-wrap gap-1.5">
+            {topCategories.map((tc) => (
+              <span key={tc.category} className="flex items-center gap-1">
+                <TopicLabel label={formatCategory(tc.category)} />
+                <span className="text-xs text-slate-500">{tc.count}</span>
+              </span>
+            ))}
+          </div>
         </div>
       )}
     </Link>

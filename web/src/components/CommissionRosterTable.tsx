@@ -47,16 +47,14 @@ const columns = [
   }),
   columnHelper.accessor('term_end', {
     header: ({ column }) => (
-      <SortableHeader column={column} label="Term Ends" className="hidden sm:table-cell" />
+      <SortableHeader column={column} label="Recorded term end" className="hidden sm:table-cell" />
     ),
     cell: (info) => {
       const value = info.getValue()
       if (!value) return '\u2014'
-      const isExpired = new Date(value) < new Date()
       return (
-        <span className={isExpired ? 'text-red-600 font-medium' : 'text-slate-500'}>
+        <span className="text-slate-500">
           {formatDate(value)}
-          {isExpired && ' (expired)'}
         </span>
       )
     },

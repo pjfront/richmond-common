@@ -21,6 +21,7 @@ import argparse
 import ast
 import os
 import re
+import shlex
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -612,6 +613,7 @@ def _extract_query_functions_from_code() -> set[str]:
         "warnIfEmpty", "nameToSlug", "isGovernmentEntity",
         "filterGovernmentEntityFlags", "applyMeetingCounts",
         "fetchMeetingCounts",
+        "summarizePublicRecords",
         "RICHMOND_FIPS", "COLS_MEETING_LIST", "COLS_MEETING_BANNER",
         "PUBLIC_FINANCE_SCOPE",
         "COLS_UPCOMING_ELECTION",
@@ -638,7 +640,8 @@ def _extract_query_functions_from_code() -> set[str]:
             content,
             re.MULTILINE,
         ))
-    return queries - NOT_QUERIES
+    # Named column projections are constants, not executable read paths.
+    return {name for name in queries - NOT_QUERIES if not name.startswith("COLS_")}
 
 
 def _extract_migration_tables() -> set[str]:
@@ -670,6 +673,41 @@ def _extract_migration_tables() -> set[str]:
     return tables
 
 
+def _workflow_cli_enrichments(manifest: dict[str, Any]) -> tuple[set[str], list[str]]:
+    """Recognize standalone CLIs only when their declared workflow step exists."""
+    registered: set[str] = set()
+    issues: list[str] = []
+    for name, data in (manifest.get("enrichments") or {}).items():
+        if "workflow_cli" not in data:
+            continue
+        binding = data["workflow_cli"]
+        try:
+            if not isinstance(binding, dict) or set(binding) != {"workflow", "job", "step", "command"}:
+                raise ValueError("requires workflow, job, step and command")
+            if not all(isinstance(value, str) and value.strip() for value in binding.values()):
+                raise ValueError("binding values must be nonempty strings")
+            workflow_path = binding["workflow"]
+            if not re.fullmatch(r"\.github/workflows/[\w-]+\.ya?ml", workflow_path):
+                raise ValueError("workflow must name a repository workflow file")
+            module = data.get("module", "")
+            if not re.fullmatch(r"[\w-]+\.py", module) or not (ROOT / "src" / module).is_file():
+                raise ValueError("source module is missing")
+            command = binding["command"]
+            if "\n" in command or shlex.split(command)[:2] != ["python", f"src/{module}"]:
+                raise ValueError("command must invoke the declared source module")
+            workflow = yaml.safe_load((ROOT / workflow_path).read_text(encoding="utf-8"))
+            steps = workflow["jobs"][binding["job"]]["steps"]
+            if not isinstance(steps, list) or not all(isinstance(step, dict) for step in steps):
+                raise ValueError("workflow job must contain named step objects")
+            matches = [step for step in steps if step.get("name") == binding["step"]]
+            if len(matches) != 1 or matches[0].get("run", "").strip() != command:
+                raise ValueError("exact named workflow step and command must match")
+            registered.add(name)
+        except (OSError, KeyError, TypeError, ValueError, yaml.YAMLError) as exc:
+            issues.append(f"[workflow CLI] '{name}': {exc}")
+    return registered, issues
+
+
 def cmd_validate(args: argparse.Namespace, graph: PipelineGraph) -> list[str]:
     """Validate manifest against actual code. Returns list of issues."""
     issues: list[str] = []
@@ -682,6 +720,8 @@ def cmd_validate(args: argparse.Namespace, graph: PipelineGraph) -> list[str]:
     }
     manifest_enrichments = set((graph.manifest.get("enrichments") or {}).keys())
     manifest_all = manifest_sources | manifest_enrichments
+    workflow_clis, workflow_issues = _workflow_cli_enrichments(graph.manifest)
+    issues.extend(workflow_issues)
 
     # ``reads_from``/``writes_to`` may form legitimate data-lineage cycles,
     # but the explicit runnable dependency graph must always be valid and
@@ -695,7 +735,7 @@ def cmd_validate(args: argparse.Namespace, graph: PipelineGraph) -> list[str]:
         issues.append(f"[enrichment plan] {exc}")
 
     missing_in_manifest = code_sources - manifest_all
-    extra_in_manifest = manifest_all - code_sources
+    extra_in_manifest = manifest_all - code_sources - workflow_clis
 
     for src in sorted(missing_in_manifest):
         issues.append(f"[SYNC_SOURCES] '{src}' in code but missing from manifest sources")

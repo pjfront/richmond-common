@@ -1,29 +1,5 @@
-/**
- * Consolidated council analytics page.
- *
- * Phase 2.6 of the re-architecture folded three previously-separate routes
- * into this single tabbed surface:
- *
- *   /council/voting-patterns  →  /council/analytics            (default tab)
- *   /council/stats            →  /council/analytics?tab=stats
- *   /council/patterns         →  /council/analytics?tab=patterns
- *
- * Static 308 redirects for the old URLs live in `next.config.ts`.
- *
- * Why tabs are <Link>s and not JS state: link-based switching is fully
- * server-rendered, indexable per-tab, and accessible without JS. The trade-
- * off is a server roundtrip per tab change — acceptable for an operator-
- * mostly page where switches are rare.
- *
- * Why force-dynamic: the underlying RPCs (get_coalition_data,
- * get_divergent_motions_detail) exceed the anon statement_timeout under
- * concurrent build prerenders. force-dynamic mirrors the old voting-patterns
- * page's documented workaround. Stats + patterns are fast enough on their
- * own but we serve them all from the same page so they share the config.
- */
 import type { Metadata } from 'next'
 import {
-  getCoalitionData,
   getDivergentMotions,
   getCategoryStats,
   getControversialItems,
@@ -38,14 +14,14 @@ import DonorOverlapSelector from '@/components/DonorOverlapSelector'
 import LastUpdated from '@/components/LastUpdated'
 import OperatorGate from '@/components/OperatorGate'
 import AnalyticsTabs, { type AnalyticsTab } from './AnalyticsTabs'
+import { requireOperatorPage } from '@/lib/operator-page'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
 export const metadata: Metadata = {
-  title: 'Council Analytics | Richmond Commons',
-  description:
-    'How the Richmond City Council votes, what topics dominate the agenda, and where donor patterns concentrate.',
+  title: 'Recorded Split Votes',
+  description: 'Dated Richmond City Council motion records that include both yes and no votes, with links to the source records.',
 }
 
 interface PageProps {
@@ -60,14 +36,16 @@ function normalizeTab(raw: string | undefined): AnalyticsTab {
 export default async function CouncilAnalyticsPage({ searchParams }: PageProps) {
   const { tab } = await searchParams
   const activeTab = normalizeTab(tab)
+  // These tabs contain unvalidated analyses. Authorize before running queries
+  // or serializing server-rendered children into the public response.
+  if (activeTab !== 'voting') await requireOperatorPage()
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <header className="mb-4">
-        <h1 className="text-3xl font-bold text-civic-navy">Council Analytics</h1>
+        <h1 className="text-3xl font-bold text-civic-navy">Recorded split votes</h1>
         <p className="text-slate-600 mt-1">
-          How the Richmond City Council votes, what topics dominate the agenda, and where donor
-          patterns concentrate.
+          Find motions with both a recorded yes and a recorded no, then read the item and its source.
         </p>
       </header>
 
@@ -93,14 +71,9 @@ export default async function CouncilAnalyticsPage({ searchParams }: PageProps) 
 // ─── Voting tab ─────────────────────────────────────────────────
 
 async function VotingTabContent() {
-  const [coalition, divergent] = await Promise.all([
-    getCoalitionData(),
-    getDivergentMotions(),
-  ])
+  const divergent = await getDivergentMotions()
   return (
     <VotingPatternsDashboard
-      alignments={coalition.alignments}
-      coalitionOfficials={coalition.officials}
       motions={divergent.motions}
       motionOfficials={divergent.officials}
     />

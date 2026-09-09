@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { revalidatePath } from 'next/cache'
+import { revalidatePath, revalidateTag } from 'next/cache'
 import { clientKey, enforceRateLimit } from '@/lib/rate-limit'
+import { AGENDA_METADATA_CACHE_TAG, SPLIT_MOTIONS_CACHE_TAG } from '@/lib/read-path-cache'
 
 /**
  * On-demand ISR revalidation endpoint.
@@ -23,6 +24,7 @@ const KNOWN_PATHS = [
   '/',
   '/meetings',
   '/council',
+  '/council/analytics',
   '/elections',
   '/public-records',
   '/about',
@@ -67,6 +69,14 @@ export async function POST(request: NextRequest) {
   }
 
   const results: Record<string, string> = {}
+  if (body.all || paths.some(path => /^\/(meetings|agenda|topics|commissions)(\/|$)/.test(path))) {
+    revalidateTag(AGENDA_METADATA_CACHE_TAG, { expire: 0 })
+  }
+  if (body.all || paths.some(path => /^\/(meetings|council)(\/|$)/.test(path))) {
+    // Source corrections must expire this projection immediately, rather than
+    // serve a stale split after a meeting or agenda item has been withdrawn.
+    revalidateTag(SPLIT_MOTIONS_CACHE_TAG, { expire: 0 })
+  }
   for (const path of paths) {
     try {
       revalidatePath(path)

@@ -2,7 +2,6 @@
 
 import { useMemo } from 'react'
 import type { AgendaItemWithMotions, ConflictFlag } from '@/lib/types'
-import { isProcedural, hasSplitVote, getSplitVoteMargin } from '@/lib/significance'
 import type { Significance } from '@/lib/significance'
 import ConsentCalendarSection from './ConsentCalendarSection'
 import ProceduralStrip from './ProceduralStrip'
@@ -32,11 +31,6 @@ export default function TopicBoard({
   expandedItemIds,
   highlightedItemId,
 }: TopicBoardProps) {
-  const hasDiscussionData = useMemo(
-    () => items.some(i => i.public_comment_count > 0),
-    [items],
-  )
-
   // Partition items by significance
   const { consentItems, proceduralItems, substantiveItems } = useMemo(() => {
     const consent: AgendaItemWithMotions[] = []
@@ -73,26 +67,11 @@ export default function TopicBoard({
     return proceduralItems.filter(i => filteredItemIds.has(i.id))
   }, [proceduralItems, filteredItemIds])
 
-  // Sort: Most Discussed (by comment count, then vote margin), or agenda order fallback
-  const sortedItems = useMemo(() => {
-    if (!hasDiscussionData) {
-      // Agenda order fallback
-      return [...filteredSubstantive].sort((a, b) =>
-        (a.item_number ?? '').localeCompare(b.item_number ?? '', undefined, { numeric: true }),
-      )
-    }
-
-    return [...filteredSubstantive].sort((a, b) => {
-      const commDiff = b.public_comment_count - a.public_comment_count
-      if (commDiff !== 0) return commDiff
-      const aMargin = hasSplitVote(a) ? (getSplitVoteMargin(a) ?? 99) : 99
-      const bMargin = hasSplitVote(b) ? (getSplitVoteMargin(b) ?? 99) : 99
-      return aMargin - bMargin
-    })
-  }, [filteredSubstantive, hasDiscussionData])
+  // Keep the published agenda order rather than ranking estimated engagement.
+  const sortedItems = useMemo(() => [...filteredSubstantive].sort((a, b) =>
+    (a.item_number ?? '').localeCompare(b.item_number ?? '', undefined, { numeric: true })), [filteredSubstantive])
 
   const isFiltered = !!activeFilter
-  const topItem = sortedItems[0]?.public_comment_count > 0 ? sortedItems[0] : null
 
   return (
     <div>
@@ -115,14 +94,12 @@ export default function TopicBoard({
         {sortedItems.map((item) => {
           const significance = significanceMap.get(item.id) ?? 'standard'
           const itemFlags = flags.filter(f => f.agenda_item_id === item.id)
-          const isMostDiscussed = hasDiscussionData && item === topItem
 
           return (
             <AgendaItemCard
               key={item.id}
               item={item}
               significance={significance}
-              mostDiscussed={isMostDiscussed}
               flagCount={itemFlags.length}
               forceExpanded={expandedItemIds?.has(item.id)}
               highlighted={highlightedItemId === item.id}

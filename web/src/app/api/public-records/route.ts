@@ -1,12 +1,9 @@
 import { NextResponse } from 'next/server'
-import { getPublicRecordsStats, getDepartmentCompliance } from '@/lib/queries'
+import { getPublicRecordsSnapshot } from '@/lib/queries/public_records'
 
 export async function GET() {
   try {
-    const [stats, departments] = await Promise.all([
-      getPublicRecordsStats(),
-      getDepartmentCompliance(),
-    ])
+    const { stats, departments } = await getPublicRecordsSnapshot()
 
     return NextResponse.json(
       { stats, departments },
@@ -20,7 +17,7 @@ export async function GET() {
     console.error('Public records API error:', error)
     return NextResponse.json(
       { error: 'Failed to fetch public records data' },
-      { status: 500 }
+      { status: 503, headers: { 'Cache-Control': 'no-store' } }
     )
   }
 }

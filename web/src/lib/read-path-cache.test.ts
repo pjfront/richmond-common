@@ -4,9 +4,15 @@ import {
   OFFICIALS_CACHE_SECONDS,
   SIMILAR_ITEMS_CACHE_SECONDS,
   UPCOMING_ELECTION_CACHE_SECONDS,
+  AGENDA_METADATA_CACHE_SECONDS,
+  AGENDA_METADATA_CACHE_TAG,
 } from './read-path-cache'
 
 describe('read-path cache policy', () => {
+  it('shares meeting and topic source metadata for one hour under an invalidation tag', () => {
+    expect(AGENDA_METADATA_CACHE_SECONDS).toBe(3600)
+    expect(AGENDA_METADATA_CACHE_TAG).toBe('active-agenda-metadata')
+  })
   it('keeps the full officials read at a 24-hour TTL', () => {
     expect(OFFICIALS_CACHE_SECONDS).toBe(86_400)
   })

@@ -1,144 +1,137 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import DonorTable from './DonorTable'
 import {
-  aggregateDonorRecords, availableContributionYears, contributionDateRange,
-  contributionsInYear, contributionYear, donorRecordSources, searchDonorRecords, sumRecordedAmounts,
+  availableContributionYears, contributionDateRange, contributionsInYear, contributionYear,
+  filterHistoricalRecords, historicalFilingUrl, historicalRecordKind, historicalRecordSource,
 } from '@/lib/historical-donor-records'
 import type { DonorContribution } from '@/lib/types'
 
-// Exact public date/amount pairs behind the incorrectly labeled $710.
-// Donor labels and employers below are synthetic; no personal data is copied.
+const csv = vi.hoisted(() => ({ props: null as null | { rows: Record<string, unknown>[] } }))
+vi.mock('@/components/CsvDownloadButton', () => ({ default: (props: { rows: Record<string, unknown>[] }) => {
+  csv.props = props
+  return <button>Download CSV</button>
+} }))
+
+// Exact date/amount pairs behind the incorrect $710 election label. Names are synthetic.
 const pairs: [string, number][] = [
   ['2024-11-09', 50], ['2024-11-13', 100], ['2024-12-05', 25], ['2024-12-09', 50],
   ['2025-01-05', 335], ['2025-01-09', 50], ['2025-02-09', 50], ['2025-03-09', 50],
 ]
-function record(date: string, amount: number, name = 'Example donor', employer: string | null = null): DonorContribution {
-  return { contribution_date: date, amount, donor_name: name, donor_employer: employer, donor_pattern: null, source: 'netfile' }
+function record(date: string, amount: number, name = 'Example name', type = 'monetary'): DonorContribution {
+  return { contribution_date: date, amount, donor_name: name, donor_employer: 'Reported workplace', donor_pattern: null,
+    contribution_type: type, source: 'netfile', committee_name: 'Example 2024 committee', committee_fppc_id: '1467767',
+    filing_id: '214610872', source_url: 'https://netfile.com/Connect2/api/public/image/214610872' }
 }
-const historical = pairs.map(([date, amount], i) => record(date, amount, `Example donor ${i + 1}`, i === 4 ? 'Example workplace' : null))
-const amount = (records: DonorContribution[]) => records.reduce((sum, row) => sum + row.amount, 0)
+const historical = pairs.map(([date, amount]) => record(date, amount))
 
-describe('historical contribution years', () => {
-  it('splits the eight retained records into their actual 2024 and 2025 years', () => {
+describe('historical individual entries', () => {
+  it('uses the actual calendar year without implying election attribution', () => {
     expect(availableContributionYears(historical)).toEqual(['2025', '2024'])
     expect(contributionsInYear(historical, '2024')).toHaveLength(4)
-    expect(amount(contributionsInYear(historical, '2024'))).toBe(225)
     expect(contributionsInYear(historical, '2025')).toHaveLength(4)
-    expect(amount(contributionsInYear(historical, '2025'))).toBe(485)
-    expect(amount(contributionsInYear(historical, 'all'))).toBe(710)
     expect(contributionsInYear(historical, '2026')).toEqual([])
-  })
-
-  it('uses January and December boundaries, preserving signed records and cents', () => {
-    const records = [record('2023-12-31', 1), record('2024-01-01', 25.25), record('2024-12-31', -5.25), record('2025-01-01', 3)]
-    const selected = contributionsInYear(records, '2024')
-    expect(selected.map(row => row.contribution_date)).toEqual(['2024-01-01', '2024-12-31'])
-    expect(aggregateDonorRecords(selected)).toMatchObject([{ total_amount: 20, contribution_count: 2 }])
-    expect(contributionDateRange(selected)).toEqual({ first: '2024-01-01', last: '2024-12-31' })
-  })
-
-  it('adds integer cents across repeated donors and source groups without floating-point drift', () => {
-    expect(sumRecordedAmounts([0.1, 0.2])).toBe(0.3)
-    expect(sumRecordedAmounts([0.3, -0.1])).toBe(0.2)
-    const rows = Array.from({ length: 100 }, () => record('2025-01-01', 0.1))
-    expect(aggregateDonorRecords(rows)[0].total_amount).toBe(10)
-    expect(donorRecordSources(rows)[0].recordedAmount).toBe(10)
-    expect(() => sumRecordedAmounts([Number.NaN])).toThrow('Invalid historical contribution amount')
-  })
-
-  it('does not manufacture a year for invalid dates or drop undated records from All records', () => {
+    expect(contributionsInYear(historical, 'all')).toEqual(historical)
+    expect(contributionDateRange(historical)).toEqual({ first: '2024-11-09', last: '2025-03-09' })
     expect(contributionYear('2024-02-30')).toBeNull()
     expect(contributionYear('2024-02-29')).toBe('2024')
-    const unknown = [record('', 50)]
-    expect(availableContributionYears(unknown)).toEqual([])
-    expect(contributionsInYear(unknown, 'all')).toEqual(unknown)
-    expect(contributionDateRange(unknown)).toBeNull()
+    expect(contributionsInYear([record('', 50)], 'all')).toHaveLength(1)
   })
 
-  it('searches donor names and employers without changing the selected record year', () => {
-    const donors = aggregateDonorRecords(contributionsInYear(historical, '2025'))
-    expect(searchDonorRecords(donors, '  WORKPLACE  ')).toMatchObject([{ donor_name: 'Example donor 5', total_amount: 335, contribution_count: 1 }])
-    expect(searchDonorRecords(donors, 'DONOR 6')).toMatchObject([{ total_amount: 50 }])
-    expect(searchDonorRecords(donors, 'donor 1')).toEqual([])
-    expect(searchDonorRecords(donors, 'missing')).toEqual([])
-    expect(searchDonorRecords(donors, '   ')).toEqual(donors)
-    expect(searchDonorRecords([], 'anything')).toEqual([])
+  it('preserves identical names, repeated report entries, noncash, loans and transfers without merging', () => {
+    const entries = [record('2025-01-05', 100), record('2025-01-05', 100), record('2025-01-05', 2000, 'Example name', 'nonmonetary'),
+      record('2025-01-05', 300, 'Example name', 'loan'), record('2025-01-05', 3413, 'Own campaign committee', 'transfer'),
+      record('2025-01-05', 50, 'Unitemized contributions'), record('2025-01-05', -25, 'Example name')]
+    expect(filterHistoricalRecords(entries, 'all', 'all', '')).toEqual(entries)
+    expect(filterHistoricalRecords(entries, 'all', 'monetary', '')).toHaveLength(3)
+    expect(filterHistoricalRecords(entries, 'all', 'noncash', '')).toEqual([entries[2]])
+    expect(filterHistoricalRecords(entries, 'all', 'loan', '')).toEqual([entries[3]])
+    expect(filterHistoricalRecords(entries, 'all', 'transfer', '')).toEqual([entries[4]])
+    expect(filterHistoricalRecords(entries, 'all', 'adjustment', '')).toEqual([entries[6]])
+    expect(historicalRecordKind({ amount: -10, contribution_type: 'nonmonetary' })).toBe('adjustment')
+    expect(historicalRecordKind({ amount: 100, contribution_type: 'unexpected' })).toBe('other')
+    expect(historicalRecordKind({ amount: 100 })).toBe('other')
+    expect(historicalRecordKind({ amount: 100, contribution_type: 'refund' })).toBe('refund')
+    expect(historicalRecordKind({ amount: 3413, contribution_type: 'monetary' })).toBe('monetary') // Never infer a transfer from its name.
   })
 
-  it('keeps the recipient committee and exact filing with the selected dated records', () => {
-    const rows = historical.map(row => ({ ...row, committee_name: 'Example 2024 council committee', committee_fppc_id: '1467767', filing_id: '217000001', source_url: 'https://netfile.com/Connect2/api/public/image/217000001', contribution_type: 'monetary' }))
-    expect(donorRecordSources(contributionsInYear(rows, '2025'))).toMatchObject([{
-      committeeName: 'Example 2024 council committee', committeeFppcId: '1467767',
-      filingId: '217000001', sourceUrl: 'https://netfile.com/Connect2/api/public/image/217000001',
-      recordCount: 4, recordedAmount: 485, dateRange: { first: '2025-01-05', last: '2025-03-09' }, recordTypes: ['monetary'],
-    }])
-    const unsafe = { ...rows[0], source_url: 'https://example.test/unverified' }
-    expect(donorRecordSources([unsafe])[0].sourceUrl).toBeNull()
-    expect(donorRecordSources([{ ...unsafe, filing_id: 'not-a-filing' }])[0].filingId).toBeNull()
+  it('searches exact record fields without borrowing an employer from another row with the same name', () => {
+    const entries = [record('2025-01-05', 100), { ...record('2024-01-05', 200), donor_employer: 'Other workplace' }]
+    expect(filterHistoricalRecords(entries, 'all', 'all', '  REPORTED workplace ')).toEqual([entries[0]])
+    expect(filterHistoricalRecords(entries, '2025', 'all', 'other workplace')).toEqual([])
+    expect(filterHistoricalRecords(entries, 'all', 'all', '1467767')).toEqual(entries)
+    expect(filterHistoricalRecords(entries, 'all', 'all', '214610872')).toEqual(entries)
+  })
+
+  it('only links a verified local filing source, never a guessed CAL-ACCESS NetFile image', () => {
+    expect(historicalFilingUrl('netfile', '214610872')).toBe('https://netfile.com/Connect2/api/public/image/214610872')
+    expect(historicalFilingUrl('cal_access', '214610872')).toBeNull()
+    expect(historicalFilingUrl(null, '214610872')).toBeNull()
+    expect(historicalFilingUrl('netfile', '214610872?foo=bar')).toBeNull()
+    expect(historicalRecordSource(historical[0])).toBe(historical[0].source_url)
+    expect(historicalRecordSource({ ...historical[0], source_url: 'https://example.test/other' })).toBeNull()
   })
 })
 
-describe('historical donor table', () => {
-  it('renders each record year once, defaults to the latest, and never labels these records as the 2026 election', () => {
+describe('historical finance browser', () => {
+  it('shows separate dated entries and never calculates $710/$485 or a donor count', () => {
     const html = renderToStaticMarkup(<DonorTable contributions={historical} />)
-    expect(html.match(/>2024<\/button>/g)).toHaveLength(1)
-    expect(html.match(/>2025<\/button>/g)).toHaveLength(1)
-    expect(html.match(/aria-pressed="true"/g)).toHaveLength(1)
-    expect(html).toContain('All records')
-    expect(html).toContain('donation records · 2025')
-    expect(html).toContain('$485')
-    expect(html).toContain('in 4 donation records')
+    expect(html).toContain('Showing 4 of 4 matching entries')
+    expect(html).toContain('$335')
     expect(html).toContain('Jan 5, 2025')
     expect(html).toContain('Mar 9, 2025')
-    expect(html).not.toContain('2026')
-    expect(html).not.toContain('Election')
+    expect(html).toContain('Reported name')
+    expect(html).toContain('Reported employer:')
     expect(html).not.toContain('$710')
-    expect(html).not.toContain('<svg')
-  })
-
-  it('keeps record scope and keyboard-accessible filter, search and sorting controls visible', () => {
-    const html = renderToStaticMarkup(<DonorTable contributions={historical} />)
-    expect(html).toContain('Years refer to donation dates')
-    expect(html).toContain('Amount')
-    expect(html).toContain('aria-label="Contribution year"')
-    expect(html).toMatch(/<label[^>]+for="([^"]+)"[^>]*>Search donors or employers<\/label>/)
-    expect(html).toContain('type="search"')
-    expect(html).toContain('aria-sort="descending"')
-    expect(html).toMatch(/<button type="button"[^>]*>Amount/)
-    expect(html).toContain('<caption')
-    expect(html).toContain('View all filings on NetFile')
-    expect(html).toContain('min-h-11')
-    const labeled = renderToStaticMarkup(<DonorTable contributions={[{ ...historical[0], donor_pattern: 'grassroots' }]} />)
-    expect(labeled).not.toContain('Grassroots')
-    expect(labeled).not.toContain('role="tooltip"')
-  })
-
-  it('keeps an empty archive distinct from a zero fundraising total', () => {
-    const html = renderToStaticMarkup(<DonorTable contributions={[]} />)
-    expect(html).toContain('No historical donation records available.')
-    expect(html).not.toContain('$0')
-    expect(html).not.toContain('<table')
-  })
-
-  it('displays source committee identity and dates without relabeling the recipient as a mayor campaign', () => {
-    const rows = historical.map(row => ({ ...row, committee_name: 'Example 2024 council committee', committee_fppc_id: '1467767', filing_id: '217000001', source_url: 'https://netfile.com/Connect2/api/public/image/217000001' }))
-    const html = renderToStaticMarkup(<DonorTable contributions={rows} />)
-    expect(html).toContain('Committees and source reports for these records (1)')
-    expect(html).toContain('Example 2024 council committee')
-    expect(html).toContain('FPPC 1467767')
-    expect(html).toContain('Original filing 217000001')
-    expect(html).toContain('href="https://netfile.com/Connect2/api/public/image/217000001"')
-    expect(html).toContain('4 donation records · $485 recorded')
+    expect(html).not.toContain('$485')
     expect(html).not.toContain('2026')
+    expect(html).not.toContain('4 donors')
+    expect(html).not.toContain('Election')
+    expect(csv.props?.rows).toHaveLength(4)
+    expect(csv.props?.rows.map(row => row.amount)).toEqual([50, 50, 50, 335])
   })
 
-  it('preserves displayed cents and provides access to donor rows beyond the initial ten', () => {
-    const many = Array.from({ length: 12 }, (_, i) => record('2025-01-01', 25.25, `Donor ${i}`))
-    const html = renderToStaticMarkup(<DonorTable contributions={many} />)
-    expect(html).toContain('$303')
-    expect(html).toContain('$25.25')
-    expect(html).toContain('Show all 12 donor rows')
-    expect(html.match(/<tr /g)).toHaveLength(11) // One header and ten donor rows.
+  it('keeps own-committee transfers and signed entries visible without claiming they are unique donors or net cash', () => {
+    const entries = [record('2025-02-01', 3413, 'Own campaign committee', 'transfer'),
+      record('2025-02-01', 2000, 'Same reported name', 'nonmonetary'),
+      record('2025-02-01', 100, 'Same reported name'), record('2025-02-01', -25.25, 'Same reported name'),
+      record('2025-02-01', 100, 'Same reported name')]
+    const html = renderToStaticMarkup(<DonorTable contributions={entries} />)
+    expect(html).toContain('Showing 5 of 5 matching entries')
+    expect(html.match(/>Same reported name<\/span>/g)).toHaveLength(4)
+    expect(html).toContain('$3,413')
+    expect(html).toContain('-$25.25')
+    expect(html).toContain('Recorded as a transfer')
+    expect(html).toContain('Recorded as noncash')
+    expect(html).toContain('Signed adjustment')
+    expect(html).not.toContain('$5,587.75')
+    expect(html).not.toContain('5 donors')
+    expect(csv.props?.rows).toHaveLength(5)
+    expect(csv.props?.rows[3]).toMatchObject({ amount: -25.25, contribution_type: 'monetary' })
+  })
+
+  it('exports every matching entry even when only the first twenty are displayed', () => {
+    const entries = Array.from({ length: 23 }, (_, i) => record('2025-02-01', i + 1))
+    const html = renderToStaticMarkup(<DonorTable contributions={entries} />)
+    expect(html).toContain('Showing 20 of 23 matching entries')
+    expect(html).toContain('Show 20 more entries')
+    expect(csv.props?.rows).toHaveLength(23)
+    expect(csv.props?.rows[0]).toMatchObject({ committee_fppc_id: '1467767', source_url: historical[0].source_url })
+  })
+
+  it('keeps filter/search/sort/export controls accessible and an empty archive distinct from zero money', () => {
+    const html = renderToStaticMarkup(<DonorTable contributions={historical} />)
+    expect(html).toContain('Record year')
+    expect(html).toContain('Recorded type')
+    expect(html).toContain('Sort entries')
+    expect(html).toContain('type="search"')
+    expect(html).toContain('aria-live="polite"')
+    expect(html).toContain('<caption')
+    expect(html).toContain('md:table-row')
+    expect(html).toContain('min-h-11')
+    const empty = renderToStaticMarkup(<DonorTable contributions={[]} />)
+    expect(empty).toContain('No historical finance entries available.')
+    expect(empty).not.toContain('$0')
+    expect(empty).not.toContain('<table')
   })
 })

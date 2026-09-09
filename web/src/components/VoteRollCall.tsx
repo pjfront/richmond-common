@@ -3,7 +3,8 @@
 import { useState, useRef } from 'react'
 import type { MotionWithVotes, Vote } from '@/lib/types'
 import ReportErrorLink from './ReportErrorLink'
-import { formalMotionResult, motionKindLabel, motionTallyLabel, normalizeRecordedChoice } from '@/lib/vote-records'
+import { formalMotionResult, motionKindLabel, motionTallyLabel, normalizeRecordedChoice, normalizeMotionVotes, recordedVoterKey } from '@/lib/vote-records'
+import type { NormalizedMotionVote } from '@/lib/vote-records'
 
 /**
  * VoteRollCall — parliamentary roll-call grid for agenda item motions.
@@ -24,6 +25,7 @@ import { formalMotionResult, motionKindLabel, motionTallyLabel, normalizeRecorde
 // --- Roster derivation ---
 
 interface RosterEntry {
+  key: string
   fullName: string
   lastName: string
   initials: string
@@ -48,11 +50,13 @@ function extractLastName(name: string): string {
 function deriveRoster(motions: MotionWithVotes[]): RosterEntry[] {
   const seen = new Map<string, RosterEntry>()
   for (const motion of motions) {
-    for (const vote of motion.votes) {
+    for (const [index, vote] of normalizeMotionVotes(motion.votes).entries()) {
       const lastName = extractLastName(vote.official_name)
-      const sortKey = lastName.toLowerCase()
-      if (!seen.has(sortKey)) {
-        seen.set(sortKey, {
+      const key = recordedVoterKey(vote, `${motion.id}:${index}`)
+      const sortKey = `${lastName.toLowerCase()}:${vote.official_name.toLowerCase()}:${key}`
+      if (!seen.has(key)) {
+        seen.set(key, {
+          key,
           fullName: vote.official_name,
           lastName,
           initials: getInitials(vote.official_name),
@@ -68,12 +72,12 @@ function deriveRoster(motions: MotionWithVotes[]): RosterEntry[] {
  * Map a motion's votes to roster positions. Returns one entry per roster slot
  * (null if that official didn't vote on this motion).
  */
-function matchVotes(votes: Vote[], roster: RosterEntry[]): (Vote | null)[] {
-  const byLastName = new Map<string, Vote>()
-  for (const v of votes) {
-    byLastName.set(extractLastName(v.official_name).toLowerCase(), v)
+function matchVotes(votes: Vote[], roster: RosterEntry[], motionId: string): (NormalizedMotionVote<Vote> | null)[] {
+  const byIdentity = new Map<string, NormalizedMotionVote<Vote>>()
+  for (const [index, vote] of normalizeMotionVotes(votes).entries()) {
+    byIdentity.set(recordedVoterKey(vote, `${motionId}:${index}`), vote)
   }
-  return roster.map(slot => byLastName.get(slot.sortKey) ?? null)
+  return roster.map(slot => byIdentity.get(slot.key) ?? null)
 }
 
 // --- Tally computation (carried from VoteBreakdown) ---
@@ -100,14 +104,14 @@ const RING_STYLES: Record<string, string> = {
 
 // --- VoteCircle sub-component ---
 
-function VoteCircle({ entry, vote }: { entry: RosterEntry; vote: Vote | null }) {
+function VoteCircle({ entry, vote }: { entry: RosterEntry; vote: NormalizedMotionVote<Vote> | null }) {
   const [open, setOpen] = useState(false)
   const [position, setPosition] = useState<'above' | 'below'>('below')
   const ref = useRef<HTMLSpanElement>(null)
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const choice = vote ? normalizeRecordedChoice(vote.vote_choice) : 'not-recorded'
-  const label = choice === 'not-recorded' ? 'Vote not recorded' : choice.charAt(0).toUpperCase() + choice.slice(1)
+  const label = choice === 'not-recorded' ? (vote ? 'Choice not established in the records' : 'Vote not recorded') : choice.charAt(0).toUpperCase() + choice.slice(1)
   const tooltipText = `${entry.fullName}: ${label}`
 
   const show = () => {
@@ -181,7 +185,7 @@ export default function VoteRollCall({ motions }: { motions: MotionWithVotes[] }
               <div className="flex gap-2">
                 {roster.map(entry => (
                   <div
-                    key={entry.sortKey}
+                    key={entry.key}
                     className="w-9 text-center text-[10px] font-medium text-slate-400 leading-tight"
                     title={entry.fullName}
                   >
@@ -211,7 +215,7 @@ export default function VoteRollCall({ motions }: { motions: MotionWithVotes[] }
               : 'text-slate-600'
 
             const tally = motionTallyLabel(motion.votes)
-            const mapped = matchVotes(motion.votes, roster)
+            const mapped = matchVotes(motion.votes, roster, motion.id)
             const isTentative = motion.source === 'transcript'
 
             return (
@@ -242,7 +246,7 @@ export default function VoteRollCall({ motions }: { motions: MotionWithVotes[] }
 
                 <div className="flex flex-wrap gap-2 mt-2" role="group" aria-label="Individual votes">
                   {mapped.map((vote, i) => (
-                    <VoteCircle key={roster[i].sortKey} entry={roster[i]} vote={vote} />
+                    <VoteCircle key={roster[i].key} entry={roster[i]} vote={vote} />
                   ))}
                 </div>
 

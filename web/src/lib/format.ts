@@ -9,10 +9,14 @@
 // ─── URL Helpers ────────────────────────────────────────────
 
 /**
- * Build the canonical path for an agenda item detail page.
- * Item numbers are meeting-scoped (e.g. "H-1"), so the path nests under the meeting.
+ * Link to an agenda item when its source supplies a usable number; otherwise
+ * open the source meeting. Legacy placeholders cannot identify one exact item.
  */
-export function agendaItemPath(meetingId: string, itemNumber: string): string {
+export function agendaItemPath(meetingId: string, itemNumber: string | null | undefined): string {
+  const normalized = itemNumber?.trim().toLowerCase()
+  if (!itemNumber || !normalized || ['<unknown>', 'unknown', 'n/a', '-', '—'].includes(normalized)) {
+    return `/meetings/${meetingId}`
+  }
   return `/meetings/${meetingId}/items/${encodeURIComponent(itemNumber.toLowerCase())}`
 }
 

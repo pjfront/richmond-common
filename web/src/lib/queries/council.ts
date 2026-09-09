@@ -2,93 +2,28 @@ import {
   supabase,
   RICHMOND_FIPS,
   warnIfEmpty,
-  nameToSlug,
-  isGovernmentEntity,
-  filterGovernmentEntityFlags,
-  COLS_MEETING_LIST,
-  COLS_MEETING_BANNER,
-  COLS_FLAG_SUMMARY,
-  COLS_PUBLIC_RECORD_LIST,
   COLS_FORM700_FILING,
   COLS_OFFICIAL_FULL,
   COLS_OFFICIAL_CONTRIBUTION_COMMITTEES,
   COLS_OFFICIAL_CONTRIBUTIONS,
 } from './_shared'
-import RICHMOND_FILERS_DATA from '@/data/netfile-richmond-filers.json'
 import type {
-  Meeting,
   Official,
-  AgendaItem,
-  Motion,
-  Vote,
-  MeetingAttendance,
-  ConflictFlag,
-  ClosedSessionItem,
-  NotableSpeaker,
-  AgendaItemWithMotions,
-  MotionWithVotes,
-  MeetingDetail,
-  DonorAggregate,
   DonorContribution,
   EconomicInterest,
   Form700Filing,
-  NextRequestRequest,
-  PublicRecordsStats,
-  DepartmentCompliance,
-  Commission,
-  CommissionMember,
-  CommissionWithStats,
-  CommissionStaleness,
   CategoryStats,
   ControversyItem,
-  PairwiseAlignment,
-  CategoryDivergence,
-  DivergentMotionRow,
   DivergentMotion,
   DonorCategoryPattern,
   DonorOverlap,
-  CategoryCount,
-  TopicLabelCount,
-  MeetingWithCounts,
-  FinancialConnectionFlag,
-  OfficialConnectionSummary,
-  SearchResult,
-  SearchResultType,
-  SimilarItem,
-  ContributionNarrativeData,
-  ContributionRecord,
-  BehstedPaymentNarrativeData,
-  ItemVoteContext,
-  RelatedAgendaItem,
-  ItemInfluenceMapData,
-  Election,
-  ElectionCandidate,
-  ElectionWithCandidates,
-  CandidateFundraising,
-  CandidateFundraisingDetail,
-  CandidateTopDonor,
-  CandidateDonorsByCycle,
-  PublicCommentDetail,
-  CommentTheme,
-  ThemeNarrative,
-  AgendaItemDetail,
-  AgendaItemRef,
-  AgendaItemSibling,
-  NeighborhoodCouncil,
-  Provenance,
-  FilingPeriodBriefing,
-  PACAggregate,
-  PACContributionRow,
-  PACOutgoingRow,
-  PACIndependentExpenditureRow,
   OfficialVotingRecordRow,
 } from '../types'
-import { CONFIDENCE_PUBLISHED } from '../thresholds'
-import { commentSourceToProvenance } from '../provenance'
 import { cache } from 'react'
 import { unstable_cache } from 'next/cache'
-import { OFFICIALS_CACHE_SECONDS } from '../read-path-cache'
+import { OFFICIALS_CACHE_SECONDS, SPLIT_MOTIONS_CACHE_SECONDS, SPLIT_MOTIONS_CACHE_TAG } from '../read-path-cache'
 import { failReadPath, ReadPathUnavailableError } from '../read-path-unavailable'
+import { readCompleteRecords } from '../complete-record-read'
 
 // ─── Officials ───────────────────────────────────────────────
 
@@ -229,25 +164,13 @@ export const getOfficialBySlug = cache(async function getOfficialBySlug(
 export async function getOfficialVotingRecord(
   officialId: string,
 ): Promise<OfficialVotingRecordRow[]> {
-  // Migration 144 is intentionally preview-gated. Keep the pending RPC local
-  // until authoritative preview typegen adds it to database.types.ts; do not
-  // hand-edit the generated file ahead of the schema.
-  const pendingRpcClient = supabase as unknown as {
-    rpc: (
-      name: 'get_official_voting_record',
-      args: { p_official_id: string },
-    ) => Promise<{
-      data: unknown[] | null
-      error: unknown
-    }>
-  }
-  const { data, error } = await pendingRpcClient.rpc('get_official_voting_record', {
-    p_official_id: officialId,
-  })
-
-  if (error) failReadPath('Official voting record', error)
-
-  return (data ?? []) as unknown as OfficialVotingRecordRow[]
+  // The public PostgREST cap also applies to RPC results. Keep the summary and
+  // table on one complete, stably ordered set; a short page is not its end.
+  return readCompleteRecords('Official voting record', (from, to) => supabase
+    .rpc('get_official_voting_record', { p_official_id: officialId }, { count: 'exact' })
+    .order('meeting_date', { ascending: false })
+    .order('id')
+    .range(from, to))
 }
 
 const HISTORICAL_CONTRIBUTION_PAGE_SIZE = 1000
@@ -484,7 +407,6 @@ export async function getOfficialWithStats(
 
 export async function getOfficialCategoryBreakdown(
   officialId: string,
-  cityFips = RICHMOND_FIPS
 ) {
   // Get all votes by this official, joined to agenda items for category
   const { data, error } = await supabase
@@ -515,94 +437,6 @@ export async function getOfficialCategoryBreakdown(
     .sort((a, b) => b.count - a.count)
 }
 
-
-// ─── Stats ───────────────────────────────────────────────────
-
-export async function getMeetingStats(cityFips = RICHMOND_FIPS) {
-  const [meetings, summaries, comments, topics, contributions, flags] = await Promise.all([
-    supabase.from('meetings').select('meeting_date', { count: 'exact' }).eq('city_fips', cityFips),
-    supabase.from('agenda_items').select('id', { count: 'exact', head: true }).is('agenda_source_retired_at', null).not('plain_language_summary', 'is', null),
-    supabase.from('public_comments').select('id', { count: 'exact', head: true }),
-    supabase.from('agenda_items').select('topic_label', { count: 'exact' }).is('agenda_source_retired_at', null).not('topic_label', 'is', null),
-    supabase.from('contributions').select('id', { count: 'exact', head: true }).eq('city_fips', cityFips),
-    supabase.from('conflict_flags').select('id', { count: 'exact', head: true }).eq('city_fips', cityFips).eq('is_current', true),
-  ])
-
-  // Compute years span from meeting dates
-  const meetingDates = (meetings.data ?? []).map((m) => new Date(m.meeting_date).getFullYear())
-  const minYear = Math.min(...(meetingDates.length > 0 ? meetingDates : [new Date().getFullYear()]))
-  const maxYear = Math.max(...(meetingDates.length > 0 ? meetingDates : [new Date().getFullYear()]))
-  const yearsOfMeetings = maxYear - minYear + 1
-
-  // Count unique topic labels
-  const topicLabels = new Set((topics.data ?? []).map((t) => t.topic_label))
-
-  const stats = {
-    meetings: meetings.count ?? 0,
-    yearsOfMeetings,
-    summaries: summaries.count ?? 0,
-    publicComments: comments.count ?? 0,
-    uniqueTopics: topicLabels.size,
-    contributions: contributions.count ?? 0,
-    conflictFlags: flags.count ?? 0,
-  }
-
-  if (stats.meetings === 0) {
-    console.warn('[Richmond Commons] WARNING: getMeetingStats returned 0 meetings — possible Supabase connectivity issue during build/ISR')
-  }
-
-  return stats
-}
-
-
-// ─── Pattern Detection (S6) ─────────────────────────────────
-
-/**
- * Parse vote_tally string into ayes and nays.
- * Handles multiple formats from extraction:
- *   "7-0"                              → { ayes: 7, nays: 0 }
- *   "7 to 0"                           → { ayes: 7, nays: 0 }
- *   "Ayes (6), Noes (1), Absent (0)"   → { ayes: 6, nays: 1 }
- *   "Ayes (7): Councilmember..."        → { ayes: 7, nays: 0 }
- *   "Ayes (7)"                          → { ayes: 7, nays: 0 }
- * Returns null if unparseable (e.g., "died for lack of a second").
- */
-export function parseVoteTally(tally: string | null): { ayes: number; nays: number } | null {
-  if (!tally) return null
-
-  // Format: "7-0" or "5 - 2"
-  const dashMatch = tally.match(/^(\d+)\s*-\s*(\d+)/)
-  if (dashMatch) return { ayes: parseInt(dashMatch[1], 10), nays: parseInt(dashMatch[2], 10) }
-
-  // Format: "7 to 0"
-  const toMatch = tally.match(/^(\d+)\s+to\s+(\d+)/i)
-  if (toMatch) return { ayes: parseInt(toMatch[1], 10), nays: parseInt(toMatch[2], 10) }
-
-  // Format: "Ayes (N)" with optional "Noes (M)" / "Nays (M)"
-  const ayesMatch = tally.match(/Ayes?\s*\((\d+)\)/i)
-  if (ayesMatch) {
-    const ayes = parseInt(ayesMatch[1], 10)
-    const noesMatch = tally.match(/No(?:e|ay)s?\s*\((\d+)\)/i)
-    const nays = noesMatch ? parseInt(noesMatch[1], 10) : 0
-    return { ayes, nays }
-  }
-
-  // Format: "Ayes: [names]. Noes: [names]." — count comma-separated names
-  const ayesNamesMatch = tally.match(/Ayes:\s*([^.]+)\./i)
-  if (ayesNamesMatch) {
-    const ayeNames = ayesNamesMatch[1].split(/,\s*(?:and\s+)?/).filter((n) => n.trim() && n.trim().toLowerCase() !== 'none')
-    const noesNamesMatch = tally.match(/Noes:\s*([^.]+)\./i)
-    const noeNames = noesNamesMatch
-      ? noesNamesMatch[1].split(/,\s*(?:and\s+)?/).filter((n) => n.trim() && n.trim().toLowerCase() !== 'none')
-      : []
-    if (ayeNames.length > 0) return { ayes: ayeNames.length, nays: noeNames.length }
-  }
-
-  return null
-}
-
-// computeControversyScore formula moved to SQL RPCs (migration 038):
-// split_vote_weight * 6 + comment_weight * 3 + multiple_motions * 1
 
 /**
  * Get category-level statistics for council time-spent analysis.
@@ -716,346 +550,155 @@ export async function getControversialItems(
 }
 
 
-// ─── Most Discussed Items ────────────────────────────────────
-
-export interface MostDiscussedItem {
-  agenda_item_id: string
-  meeting_id: string
-  meeting_date: string
-  title: string
-  summary_headline: string | null
-  topic_label: string | null
-  public_comment_count: number
+type SplitSourceIdentity = {
+  id: string; agenda_item_id: string;
+  agenda_items: { id: string; meeting_id: string; agenda_source_retired_at: string | null;
+    meetings: { id: string; city_fips: string; meeting_date: string; source_cancelled_at: string | null } }
+}
+type SplitCandidate = {
+  id: string; motion_id: string; official_id: string; vote_choice: string; motions: SplitSourceIdentity
+}
+type SplitVote = { id: string; motion_id: string; official_id: string; vote_choice: 'aye' | 'nay' | 'abstain' | 'absent' }
+type SplitSource = SplitSourceIdentity & {
+  source: string | null; motion_type: string; motion_text: string | null;
+  agenda_items: SplitSourceIdentity['agenda_items'] & {
+    title: string; item_number: string | null; category: string | null; topic_label: string | null;
+    meetings: SplitSourceIdentity['agenda_items']['meetings'] & { minutes_url: string | null; video_url: string | null }
+  }
 }
 
-/**
- * Fetch agenda items with the highest public comment counts from recent meetings.
- * Used on the homepage to surface community engagement.
+/** Find recorded NAY candidates before joining full motion/agenda text. Every
+ * split has a NAY, so this avoids broad repeated RLS joins without a date cutoff.
+ * Cache only the complete final projection, never an intermediate page or error.
  */
-export async function getMostDiscussedItems(
-  limit = 2,
-  daysBack = 90,
-  cityFips = RICHMOND_FIPS,
-): Promise<MostDiscussedItem[]> {
-  const cutoff = new Date()
-  cutoff.setDate(cutoff.getDate() - daysBack)
-  const cutoffStr = cutoff.toISOString().split('T')[0]
-
-  const { data, error } = await supabase
-    .from('agenda_items')
-    .select(`
-      id,
-      meeting_id,
-      title,
-      summary_headline,
-      topic_label,
-      public_comment_count,
-      meetings!inner (
-        meeting_date,
-        city_fips
-      )
-    `)
-    .is('agenda_source_retired_at', null)
-    .eq('meetings.city_fips', cityFips)
-    .gte('meetings.meeting_date', cutoffStr)
-    .gt('public_comment_count', 1)
-    .eq('is_consent_calendar', false)
-    .order('public_comment_count', { ascending: false })
-    .limit(limit)
-
-  if (error) {
-    console.error('getMostDiscussedItems query failed:', error)
-    return []
-  }
-
-  return ((data ?? []) as Array<Record<string, unknown>>).map((row) => {
-    const meeting = row.meetings as unknown as { meeting_date: string }
-    return {
-      agenda_item_id: row.id as string,
-      meeting_id: row.meeting_id as string,
-      meeting_date: meeting.meeting_date,
-      title: row.title as string,
-      summary_headline: row.summary_headline as string | null,
-      topic_label: row.topic_label as string | null,
-      public_comment_count: Number(row.public_comment_count),
-    }
-  })
-}
-
-
-// ─── Coalition / Voting Alignment (S6.1) ────────────────────
-
-/**
- * Fetch contested votes for a city using server-side RPC.
- * The database function handles joins and filters to contested motions
- * (motions with both aye and nay votes) entirely in SQL — avoiding
- * PostgREST's row limits and triple-nested join overhead.
- */
-interface ContestedVoteRow {
-  motion_id: string
-  official_id: string
-  official_name: string
-  vote_choice: string
-  category: string | null
-}
-
-async function fetchVotesForAlignment(
-  cityFips = RICHMOND_FIPS,
-  officialIds?: string[],
-): Promise<ContestedVoteRow[]> {
-  // Push the current-council filter into SQL so the RPC returns ~hundreds of
-  // rows instead of ~10K. Migration 103 added p_official_ids; without that
-  // filter, the response can hit PostgREST's 10K-row cap and the slow path
-  // can hit the anon role's statement_timeout under load.
-  const { data: votes, error } = await supabase
-    .rpc('get_contested_votes', {
-      p_city_fips: cityFips,
-      p_official_ids: officialIds ?? null,
-    })
-
-  if (error) {
-    throw new Error(`Coalition data fetch failed: ${error.message}`)
-  }
-
-  return (votes ?? []) as ContestedVoteRow[]
-}
-
-/**
- * Compute pairwise alignment between council members.
- * By default, shows only the current council (is_current=true, council roles).
- * Returns overall alignment and per-category breakdowns.
- */
-export async function getCoalitionData(cityFips = RICHMOND_FIPS): Promise<{
-  alignments: PairwiseAlignment[]
-  divergences: CategoryDivergence[]
-  officials: Array<{ id: string; name: string }>
-}> {
-  // Fetch current council members to filter results
-  const { data: currentOfficials } = await supabase
-    .from('officials')
-    .select('id, name')
-    .eq('city_fips', cityFips)
-    .eq('is_current', true)
-    .in('role', COUNCIL_ROLES)
-
-  const currentIdsArr = (currentOfficials ?? []).map((o) => o.id as string)
-
-  // Pass the current-council IDs into the RPC so filtering and re-evaluation
-  // of contestedness happen in SQL (migration 103). The previous client-side
-  // path fetched ~10K rows and was vulnerable to PostgREST's 10K row cap and
-  // the anon statement_timeout.
-  const votes = await fetchVotesForAlignment(cityFips, currentIdsArr)
-
-  const votesByMotion = new Map<string, Array<{
-    official_id: string
-    official_name: string
-    vote_choice: string
-    category: string | null
-  }>>()
-
-  for (const v of votes) {
-    const entry = votesByMotion.get(v.motion_id) ?? []
-    entry.push({
-      official_id: v.official_id,
-      official_name: v.official_name,
-      vote_choice: v.vote_choice,
-      category: v.category,
-    })
-    votesByMotion.set(v.motion_id, entry)
-  }
-
-  // Collect unique officials from filtered votes (should be current council only)
-  const officialMap = new Map<string, string>()
-  for (const [, motionVotes] of votesByMotion) {
-    for (const v of motionVotes) {
-      officialMap.set(v.official_id, v.official_name)
-    }
-  }
-  const officials = Array.from(officialMap.entries())
-    .map(([id, name]) => ({ id, name }))
-    .sort((a, b) => a.name.localeCompare(b.name))
-
-  // Compute pairwise alignment: for each motion, compare all pairs of voters
-  // Key: "officialA_id|officialB_id|category" -> { agree, disagree }
-  const pairStats = new Map<string, { agree: number; disagree: number }>()
-
-  const makePairKey = (idA: string, idB: string, category: string | null) => {
-    const [first, second] = idA < idB ? [idA, idB] : [idB, idA]
-    return `${first}|${second}|${category ?? '__overall__'}`
-  }
-
-  for (const [, motionVotes] of votesByMotion) {
-    // For each pair of voters on this motion
-    for (let i = 0; i < motionVotes.length; i++) {
-      for (let j = i + 1; j < motionVotes.length; j++) {
-        const a = motionVotes[i]
-        const b = motionVotes[j]
-        const agreed = a.vote_choice === b.vote_choice
-
-        // Overall
-        const overallKey = makePairKey(a.official_id, b.official_id, null)
-        const overallEntry = pairStats.get(overallKey) ?? { agree: 0, disagree: 0 }
-        if (agreed) overallEntry.agree++
-        else overallEntry.disagree++
-        pairStats.set(overallKey, overallEntry)
-
-        // Per-category
-        if (a.category) {
-          const catKey = makePairKey(a.official_id, b.official_id, a.category)
-          const catEntry = pairStats.get(catKey) ?? { agree: 0, disagree: 0 }
-          if (agreed) catEntry.agree++
-          else catEntry.disagree++
-          pairStats.set(catKey, catEntry)
-        }
-      }
-    }
-  }
-
-  // Build alignment results
-  const alignments: PairwiseAlignment[] = []
-  for (const [key, stats] of pairStats) {
-    const [idA, idB, cat] = key.split('|')
-    const total = stats.agree + stats.disagree
-    alignments.push({
-      official_a_id: idA,
-      official_a_name: officialMap.get(idA) ?? idA,
-      official_b_id: idB,
-      official_b_name: officialMap.get(idB) ?? idB,
-      category: cat === '__overall__' ? null : cat,
-      agreement_count: stats.agree,
-      disagreement_count: stats.disagree,
-      total_shared_votes: total,
-      agreement_rate: total > 0 ? Math.round((stats.agree / total) * 1000) / 1000 : 0,
-    })
-  }
-
-  // Compute category divergences: pairs where category alignment differs significantly from overall
-  const divergences = computeDivergences(alignments)
-
-  return { alignments, divergences, officials }
-}
-
-const MIN_SHARED_VOTES = 5
-
-/**
- * Find category-level divergences: pairs that agree overall but diverge on a specific category.
- */
-function computeDivergences(alignments: PairwiseAlignment[]): CategoryDivergence[] {
-  const overallMap = new Map<string, PairwiseAlignment>()
-  const categoryAlignments: PairwiseAlignment[] = []
-
-  for (const a of alignments) {
-    const pairKey = `${a.official_a_id}|${a.official_b_id}`
-    if (a.category === null) {
-      overallMap.set(pairKey, a)
-    } else {
-      categoryAlignments.push(a)
-    }
-  }
-
-  const divergences: CategoryDivergence[] = []
-  for (const catAlignment of categoryAlignments) {
-    if (catAlignment.total_shared_votes < MIN_SHARED_VOTES) continue
-
-    const pairKey = `${catAlignment.official_a_id}|${catAlignment.official_b_id}`
-    const overall = overallMap.get(pairKey)
-    if (!overall) continue
-
-    const gap = overall.agreement_rate - catAlignment.agreement_rate
-    if (gap > 0.15) {
-      divergences.push({
-        official_a_id: catAlignment.official_a_id,
-        official_a_name: catAlignment.official_a_name,
-        official_b_id: catAlignment.official_b_id,
-        official_b_name: catAlignment.official_b_name,
-        overall_agreement_rate: overall.agreement_rate,
-        category: catAlignment.category as string,
-        category_agreement_rate: catAlignment.agreement_rate,
-        divergence_gap: Math.round(gap * 1000) / 1000,
-        shared_category_votes: catAlignment.total_shared_votes,
-      })
-    }
-  }
-
-  return divergences.sort((a, b) => b.divergence_gap - a.divergence_gap)
-}
-
-/**
- * Per-motion vote breakdowns for the public voting-patterns page.
- * Returns one entry per contested motion, with each current member's vote.
- *
- * Filters to current council members only (matching getCoalitionData) so the
- * table columns stay stable. Members not present on a motion show as 'absent'.
- *
- * Sorted newest-first so recent splits surface at the top.
- */
-export async function getDivergentMotions(cityFips = RICHMOND_FIPS): Promise<{
+const getDivergentMotionsCached = unstable_cache(async (cityFips: string): Promise<{
   motions: DivergentMotion[]
   officials: Array<{ id: string; name: string }>
-}> {
-  const { data: currentOfficials } = await supabase
-    .from('officials')
-    .select('id, name')
-    .eq('city_fips', cityFips)
-    .eq('is_current', true)
-    .in('role', COUNCIL_ROLES)
-    .order('name')
-
-  const officials = (currentOfficials ?? []).map((o) => ({ id: o.id as string, name: o.name as string }))
-  const currentIdsArr = officials.map((o) => o.id)
-
-  // Push the current-council filter into SQL (migration 103). The RPC
-  // pre-filters rows to these officials AND re-evaluates contestedness within
-  // that subset, so the response stays well under PostgREST's 10K row cap.
-  const { data: rows, error } = await supabase
-    .rpc('get_divergent_motions_detail', {
-      p_city_fips: cityFips,
-      p_official_ids: currentIdsArr,
-    })
-
-  if (error) {
-    throw new Error(`Divergent motions fetch failed: ${error.message}`)
+}> => {
+  const { data: currentOfficials, count: officialCount, error: officialError } = await supabase
+    .from('officials').select('id, name', { count: 'exact' })
+    .eq('city_fips', cityFips).eq('is_current', true).in('role', COUNCIL_ROLES).order('name').limit(50)
+  if (officialError) failReadPath('Council record members', officialError)
+  if (!currentOfficials || officialCount == null || officialCount !== currentOfficials.length || officialCount > 50
+    || new Set(currentOfficials.map(row => row.id)).size !== officialCount
+    || currentOfficials.some(row => !row.id || !row.name?.trim())) {
+    failReadPath('Council record members', new Error('Member coverage unavailable'))
   }
+  const officials = currentOfficials.map(row => ({ id: row.id, name: row.name }))
+  if (!officials.length) return { motions: [], officials }
+  const officialIds = officials.map(official => official.id)
+  const officialSet = new Set(officialIds)
+  const candidates = await readCompleteRecords<SplitCandidate>('Split motion candidates', async (from, to) => {
+    const result = await supabase
+    .from('votes').select(
+      'id, motion_id, official_id, vote_choice, motions!inner(id, agenda_item_id, agenda_items!inner(id, meeting_id, agenda_source_retired_at, meetings!inner(id, city_fips, meeting_date, source_cancelled_at)))',
+      { count: 'exact' },
+    ).eq('vote_choice', 'nay').in('official_id', officialIds)
+    .eq('motions.agenda_items.meetings.city_fips', cityFips)
+    .is('motions.agenda_items.agenda_source_retired_at', null)
+    .is('motions.agenda_items.meetings.source_cancelled_at', null)
+    .order('id').range(from, to)
+    return { ...result, data: result.data as unknown as SplitCandidate[] | null }
+  }, { maxRows: 5000, maxPages: 10 })
+  const identities = new Map<string, SplitSourceIdentity>()
+  for (const row of candidates) {
+    const source = row.motions
+    const item = source?.agenda_items
+    const meeting = item?.meetings
+    if (row.vote_choice !== 'nay' || !officialSet.has(row.official_id) || !source || !item || !meeting
+      || source.id !== row.motion_id || source.agenda_item_id !== item.id || item.meeting_id !== meeting.id
+      || meeting.city_fips !== cityFips || !/^\d{4}-\d{2}-\d{2}$/.test(meeting.meeting_date)
+      || item.agenda_source_retired_at || meeting.source_cancelled_at) {
+      failReadPath('Split motion candidates', new Error('Candidate source identity differs'))
+    }
+    const previous = identities.get(row.motion_id)
+    if (previous && (previous.agenda_item_id !== source.agenda_item_id
+      || previous.agenda_items.meeting_id !== item.meeting_id
+      || previous.agenda_items.meetings.meeting_date !== meeting.meeting_date)) {
+      failReadPath('Split motion candidates', new Error('Candidate source identity changed'))
+    }
+    identities.set(row.motion_id, source)
+  }
+  const motionIds = [...identities.keys()].sort()
+  if (!motionIds.length) return { motions: [], officials }
 
-  const typedRows = (rows ?? []) as DivergentMotionRow[]
-
+  const sources = new Map<string, SplitSource>()
+  const votes = new Map<string, SplitVote>()
+  for (let offset = 0; offset < motionIds.length; offset += 200) {
+    const ids = motionIds.slice(offset, offset + 200)
+    const idSet = new Set(ids)
+    const sourceRows = await readCompleteRecords<SplitSource>('Motion sources', async (from, to) => {
+      const result = await supabase
+      .from('motions').select(
+        'id, source, motion_type, motion_text, agenda_item_id, agenda_items!inner(id, title, item_number, category, topic_label, meeting_id, agenda_source_retired_at, meetings!inner(id, meeting_date, city_fips, minutes_url, video_url, source_cancelled_at))',
+        { count: 'exact' },
+      ).in('id', ids).order('id').range(from, to)
+      return { ...result, data: result.data as unknown as SplitSource[] | null }
+    }, { maxRows: ids.length })
+    if (sourceRows.length !== ids.length) failReadPath('Motion sources', new Error('Source coverage unavailable'))
+    for (const source of sourceRows) {
+      const previous = identities.get(source.id)
+      const item = source.agenda_items
+      const meeting = item?.meetings
+      if (!idSet.has(source.id) || !previous || !item || !meeting
+        || source.agenda_item_id !== item.id || item.meeting_id !== meeting.id
+        || previous.agenda_item_id !== item.id || previous.agenda_items.meeting_id !== meeting.id
+        || previous.agenda_items.meetings.meeting_date !== meeting.meeting_date || meeting.city_fips !== cityFips) {
+        failReadPath('Motion sources', new Error('Motion/source identity differs'))
+      }
+      sources.set(source.id, source)
+    }
+    const voteRows = await readCompleteRecords<SplitVote>('Split motion records', (from, to) => supabase
+      .from('votes').select('id, motion_id, official_id, vote_choice', { count: 'exact' })
+      .in('motion_id', ids).in('official_id', officialIds).in('vote_choice', ['aye', 'nay', 'abstain', 'absent'])
+      .order('id').range(from, to), { maxRows: 5000, maxPages: 10 })
+    for (const row of voteRows) {
+      if (!idSet.has(row.motion_id) || !officialSet.has(row.official_id)
+        || !['aye', 'nay', 'abstain', 'absent'].includes(row.vote_choice) || votes.has(row.id)) {
+        failReadPath('Split motion records', new Error('Vote identity or recorded choice differs'))
+      }
+      votes.set(row.id, row)
+    }
+    if (votes.size > 5000) failReadPath('Split motion records', new Error('Voting records exceeded their bound'))
+  }
+  for (const candidate of candidates) {
+    const vote = votes.get(candidate.id)
+    if (!vote || vote.motion_id !== candidate.motion_id || vote.official_id !== candidate.official_id || vote.vote_choice !== 'nay') {
+      failReadPath('Split motion records', new Error('Candidate vote changed during the read'))
+    }
+  }
   const motionMap = new Map<string, DivergentMotion>()
-  for (const row of typedRows) {
+  for (const row of votes.values()) {
+    const source = sources.get(row.motion_id)!
+    const item = source.agenda_items
+    const meeting = item.meetings
+    if (item.agenda_source_retired_at || meeting.source_cancelled_at) continue
     let motion = motionMap.get(row.motion_id)
     if (!motion) {
-      motion = {
-        motion_id: row.motion_id,
-        motion_text: row.motion_text,
-        motion_result: row.motion_result,
-        vote_tally: row.vote_tally,
-        meeting_id: row.meeting_id,
-        meeting_date: row.meeting_date,
-        agenda_item_id: row.agenda_item_id,
-        agenda_item_title: row.agenda_item_title,
-        agenda_item_number: row.agenda_item_number,
-        category: row.category,
-        topic_label: row.topic_label,
-        is_procedural: row.is_procedural,
-        votes: {},
-      }
+      const url = source.source === 'minutes' ? meeting.minutes_url : source.source === 'transcript' ? meeting.video_url : null
+      motion = { motion_id: row.motion_id, motion_text: source.motion_text, motion_result: null, vote_tally: null,
+        meeting_id: meeting.id, meeting_date: meeting.meeting_date, agenda_item_id: item.id,
+        agenda_item_title: item.title, agenda_item_number: item.item_number,
+        category: item.category, topic_label: item.topic_label,
+        is_procedural: ['procedural', 'call_the_question', 'reconsider'].includes(source.motion_type),
+        source: source.source, source_url: url && /^https:\/\//.test(url) ? url : null,
+        source_tier: source.source === 'minutes' ? 1 : source.source === 'transcript' ? 2 : null, votes: {} }
       motionMap.set(row.motion_id, motion)
+    }
+    if (motion.votes[row.official_id] && motion.votes[row.official_id] !== row.vote_choice) {
+      failReadPath('Split motion records', new Error('Conflicting choices for one motion and member'))
     }
     motion.votes[row.official_id] = row.vote_choice
   }
-
-  const motions: DivergentMotion[] = []
-  for (const motion of motionMap.values()) {
-    // Default 'absent' for current members not in the votes map
-    for (const o of officials) {
-      if (!(o.id in motion.votes)) motion.votes[o.id] = 'absent'
-    }
-    motions.push(motion)
-  }
-
-  motions.sort((a, b) => b.meeting_date.localeCompare(a.meeting_date))
-
+  const motions = [...motionMap.values()].filter(motion => {
+    const choices = Object.values(motion.votes)
+    return choices.includes('aye') && choices.includes('nay')
+  }).sort((a, b) => b.meeting_date.localeCompare(a.meeting_date) || a.motion_id.localeCompare(b.motion_id))
   return { motions, officials }
-}
+}, ['split-motion-records-v2'], { revalidate: SPLIT_MOTIONS_CACHE_SECONDS, tags: [SPLIT_MOTIONS_CACHE_TAG] })
+
+export const getDivergentMotions = cache((cityFips = RICHMOND_FIPS) => getDivergentMotionsCached(cityFips))
+
 
 // ─── Cross-Meeting Patterns (S6.2) ──────────────────────────
 
@@ -1293,117 +936,6 @@ export async function getCrossMeetingPatterns(cityFips = RICHMOND_FIPS): Promise
       multiRecipientDonors: donorOverlaps.length,
       totalContributions: contributions.length,
     },
-  }
-}
-
-
-// ─── Comparative Stats (S14-E4) ─────────────────────────────
-
-export interface OfficialComparativeStats {
-  official_id: string
-  unique_donor_count: number
-  total_contributions: number
-  donor_count_rank: number          // 1 = most donors
-  contributions_rank: number        // 1 = highest total
-  total_officials: number           // typically 7
-}
-
-export async function getOfficialComparativeStats(
-  officialId: string,
-  cityFips = RICHMOND_FIPS
-): Promise<OfficialComparativeStats | null> {
-  // Step 1: Get all committees linked to officials in this city
-  const { data: committees, error: committeeError } = await supabase
-    .from('committees')
-    .select('id, official_id, officials!inner(is_current, role)')
-    .eq('city_fips', cityFips)
-    .eq('officials.is_current', true)
-    .in('officials.role', COUNCIL_ROLES)
-
-  if (committeeError || !committees || committees.length === 0) {
-    console.error('getOfficialComparativeStats committees query failed:', committeeError)
-    return null
-  }
-
-  // Build a map: official_id -> committee_ids
-  const officialCommittees = new Map<string, string[]>()
-  for (const c of committees) {
-    const oid = c.official_id as string
-    const existing = officialCommittees.get(oid) ?? []
-    existing.push(c.id as string)
-    officialCommittees.set(oid, existing)
-  }
-
-  // Step 2: For each official, fetch contribution stats
-  interface OfficialAgg {
-    official_id: string
-    unique_donor_count: number
-    total_contributions: number
-  }
-
-  const allOfficialIds = Array.from(officialCommittees.keys())
-  const allCommitteeIds = committees.map((c) => c.id as string)
-
-  // Fetch all contributions for all official committees in one query
-  const { data: contributions, error: contribError } = await supabase
-    .from('contributions')
-    .select('committee_id, donor_id, amount')
-    .in('committee_id', allCommitteeIds)
-    .eq('city_fips', cityFips)
-
-  if (contribError) {
-    console.error('getOfficialComparativeStats contributions query failed:', contribError)
-    return null
-  }
-
-  // Aggregate per official
-  const officialStats = new Map<string, { donors: Set<string>; total: number }>()
-  for (const oid of allOfficialIds) {
-    officialStats.set(oid, { donors: new Set(), total: 0 })
-  }
-
-  for (const row of contributions ?? []) {
-    const committeeId = row.committee_id as string
-    // Find which official owns this committee
-    for (const [oid, cids] of officialCommittees.entries()) {
-      if (cids.includes(committeeId)) {
-        const stats = officialStats.get(oid)
-        if (stats) {
-          stats.donors.add(row.donor_id as string)
-          stats.total += row.amount as number
-        }
-        break
-      }
-    }
-  }
-
-  // Step 3: Build ranked list
-  const aggregates: OfficialAgg[] = allOfficialIds.map((oid) => {
-    const stats = officialStats.get(oid)!
-    return {
-      official_id: oid,
-      unique_donor_count: stats.donors.size,
-      total_contributions: stats.total,
-    }
-  })
-
-  // Sort by donor count descending for ranking
-  const byDonors = [...aggregates].sort((a, b) => b.unique_donor_count - a.unique_donor_count)
-  const byContributions = [...aggregates].sort((a, b) => b.total_contributions - a.total_contributions)
-
-  const target = aggregates.find((a) => a.official_id === officialId)
-  if (!target) return null
-
-  const donorRank = byDonors.findIndex((a) => a.official_id === officialId) + 1
-  const contribRank = byContributions.findIndex((a) => a.official_id === officialId) + 1
-
-  return {
-    official_id: officialId,
-    unique_donor_count: target.unique_donor_count,
-    total_contributions: target.total_contributions,
-    donor_count_rank: donorRank,
-    contributions_rank: contribRank,
-    total_officials: allOfficialIds.length,
   }
 }
 

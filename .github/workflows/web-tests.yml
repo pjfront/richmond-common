@@ -47,6 +47,7 @@ jobs:
       - name: Exercise roles, grants, RLS, and migration replay
         run: |
           node tests/operator_table_security.integration.mjs "$RUNNER_TEMP/permission-db/node_modules/@electric-sql/pglite/dist/index.js"
+          node tests/conflict_public_eligibility.integration.mjs "$RUNNER_TEMP/permission-db/node_modules/@electric-sql/pglite/dist/index.js"
           node tests/subscriber_table_security.integration.mjs "$RUNNER_TEMP/permission-db/node_modules/@electric-sql/pglite/dist/index.js"
           node tests/finance_ledger.integration.mjs "$RUNNER_TEMP/permission-db/node_modules/@electric-sql/pglite/dist/index.js"
           node tests/operator_review_inbox.integration.mjs "$RUNNER_TEMP/permission-db/node_modules/@electric-sql/pglite/dist/index.js"
@@ -55,3 +56,4 @@ jobs:
           node tests/finance_legacy_repair.integration.mjs "$RUNNER_TEMP/permission-db/node_modules/@electric-sql/pglite/dist/index.js"
           node tests/subscription_subject_follows.integration.mjs "$RUNNER_TEMP/permission-db/node_modules/@electric-sql/pglite/dist/index.js"
           node tests/finance_batch.integration.mjs "$RUNNER_TEMP/permission-db/node_modules/@electric-sql/pglite/dist/index.js"
+          node tests/preview_empty_ledger.integration.mjs "$RUNNER_TEMP/permission-db/node_modules/@electric-sql/pglite/dist/index.js"

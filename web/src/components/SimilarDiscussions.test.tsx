@@ -22,7 +22,7 @@ describe('SimilarDiscussions', () => {
   })
 
   it('does not publish aggregated item outcomes or turn similarity into a confidence percentage', async () => {
-    mocked.findSimilarItems.mockResolvedValue([{ id: 'neighbor-1', meeting_id: 'meeting-2', item_number: 'O.1', meeting_date: '2026-06-23', title: 'Consider the operating budget', summary_headline: 'Budget was defeated', vote_outcome: 'failed', similarity: 0.89, public_comment_count: 3 }])
+    mocked.findSimilarItems.mockResolvedValue([{ id: 'neighbor-1', meeting_id: 'meeting-2', item_number: 'O.1', meeting_date: '2026-06-23', title: 'Consider the operating budget', summary_headline: 'Budget was defeated', vote_outcome: 'failed', similarity: 0.89, public_comment_count: 3, financial_amount: '$350,000 per contract over three years' }])
     const html = renderToStaticMarkup((await SimilarDiscussions({ itemId: 'item-1' }))!)
     expect(html).toContain('Consider the operating budget')
     expect(html).toContain('/meetings/meeting-2/items/o.1')
@@ -30,5 +30,22 @@ describe('SimilarDiscussions', () => {
     expect(html).not.toContain('Failed')
     expect(html).not.toContain('Budget was defeated')
     expect(html).not.toContain('89%')
+    expect(html).not.toContain('$350,000')
+  })
+
+  it('links legacy unknown and missing item numbers to their source meeting without losing the record title or date', async () => {
+    mocked.findSimilarItems.mockResolvedValue([
+      { id: 'unknown-item', meeting_id: '5450b2bf-4819-4cdf-b63f-968eb1fdc085',
+        item_number: '<unknown>', meeting_date: '2009-10-06',
+        title: 'Letter to Governor supporting Senate Bill 406', public_comment_count: 0 },
+      { id: 'missing-item', meeting_id: 'meeting-2', item_number: null,
+        meeting_date: '2011-04-26', title: 'Opposition to AB 880', public_comment_count: 0 },
+    ])
+    const html = renderToStaticMarkup((await SimilarDiscussions({ itemId: 'item-1' }))!)
+    expect(html).toContain('href="/meetings/5450b2bf-4819-4cdf-b63f-968eb1fdc085"')
+    expect(html).toContain('href="/meetings/meeting-2"')
+    expect(html).toContain('Letter to Governor supporting Senate Bill 406')
+    expect(html).toContain('Oct 6, 2009')
+    expect(html).not.toContain('/items/')
   })
 })

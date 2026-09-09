@@ -33,11 +33,11 @@ describe('released public metadata', () => {
       params: Promise.resolve({ slug: 'example-member' }),
     })).resolves.toEqual({
       title: 'Example Member, Council Member',
-      description: 'Voting record, attendance, and campaign finance data for Example Member, Richmond City Council.',
+      description: 'Recorded council votes and campaign finance sources for Example Member, Richmond City Council.',
       alternates: { canonical: 'https://richmondcommons.org/council/example-member' },
       openGraph: {
         title: 'Example Member, Council Member | Richmond Commons',
-        description: 'Voting record, attendance, and campaign finance data for Example Member, Richmond City Council.',
+        description: 'Recorded council votes and campaign finance sources for Example Member, Richmond City Council.',
         type: 'profile',
         url: 'https://richmondcommons.org/council/example-member',
       },
