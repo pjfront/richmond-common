@@ -1,5 +1,21 @@
 # Supabase Preview Branch Runbook
 
+**Current budget policy (September 9, 2026): new paid Preview branches are
+disabled.** Keep repository variable `RICHMOND_ALLOW_PAID_PREVIEW_BOOTSTRAP`
+unset or `false`. The trusted lifecycle workflow rejects `bootstrap` before
+checkout, production metadata reads, or provisioning unless that variable is
+exactly `true`. Do not enable it to unblock a pull request: the user must first
+explicitly change the zero-new-spend budget. Use local/offline checks meanwhile.
+The procedures below describe the retained capability, not current permission
+to purchase Preview compute.
+
+The switch applies only to new paid branch bootstrap. `verify-types` may still
+check an existing exact retained branch within its original lifetime; it cannot
+create or replace a branch or extend that lifetime. Manual and PR-close cleanup,
+the 90-minute expiry sweep, and the independent 110-minute watchdog continue
+regardless of the switch. Do not disable cleanup workflows to enforce this
+budget policy.
+
 Use this path when a pull request needs a live Vercel preview backed by its
 own Supabase schema. It is explicit rather than automatic because each open
 Supabase branch consumes billable compute. The controller permits at most one
@@ -21,6 +37,9 @@ The `Supabase Preview` workflow requires:
 - Actions secret `VERCEL_TOKEN` — scoped to the `rtp` Vercel project.
 - Repository variable `VERCEL_PROJECT_ID`.
 - Repository variable `VERCEL_ORG_ID`.
+- Repository variable `RICHMOND_ALLOW_PAID_PREVIEW_BOOTSTRAP` — leave unset or
+  `false` under the current budget policy. Only the literal value `true` enables
+  new paid branches after a separately authorized budget change.
 
 The Vercel IDs are public identifiers; the two tokens are secrets. Do not add
 `DATABASE_URL`, a database password, a service-role/secret key, or any model,
@@ -113,7 +132,9 @@ least five minutes before that watchdog can delete the branch. The 90-minute
 expiry sweep shares lifecycle concurrency and queues behind an admitted H1; the
 watchdog remains independent without overlapping a legitimately admitted H1.
 
-Send the typed repository event for an open same-repository PR. Unlike a
+Only after the user has authorized a new paid Preview budget and the repository
+budget switch has been deliberately enabled, send the typed repository event
+for an open same-repository PR. Unlike a
 branch-selectable `workflow_dispatch`, `repository_dispatch` always runs the
 workflow at the default-branch SHA/ref, so an older or edited feature-branch
 workflow cannot reach these credentials. Use an authenticated GitHub CLI login
