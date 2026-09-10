@@ -6,7 +6,10 @@ export async function GET(request: Request) {
   try {
     const snapshot = await getPublicFinanceSnapshot()
     if (snapshot.truncated) return Response.json({ error: 'The complete export is temporarily unavailable.' }, { status: 503 })
-    const events = filterFinanceEvents(snapshot.events, params.get('q') ?? '', params.get('committee') ?? '')
+    const events = filterFinanceEvents(snapshot.events, {
+      q: params.get('q') ?? '', committee: params.get('committee') ?? '',
+      activity: params.get('activity') ?? '', role: params.get('role') ?? '',
+    })
     return new Response(financeCsv(events), { headers: {
       'Content-Type': 'text/csv; charset=utf-8',
       'Content-Disposition': 'attachment; filename="richmond-reported-finance-2026.csv"',

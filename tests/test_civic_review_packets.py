@@ -160,6 +160,41 @@ def test_poll_time_is_excluded_but_changed_source_title_changes_fingerprint():
     assert replace(first, body="A template copy edit").input_fingerprint == first.input_fingerprint
 
 
+def test_current_richmond_escribe_host_produces_source_pinned_review_only_packet():
+    url = "https://pub-richmond.escribemeetings.com/Meeting.aspx?Id=guid1&Agenda=Agenda&lang=English"
+    row = agenda(agenda_url=url)
+    packet = packets.prepare_story_packets([row], TODAY)[0]
+    assert packet.sources[0]["url"] == url
+    assert packet.sources[0]["source_tier"] == 1
+    assert packet.sources[0]["source_date"] == "2026-09-15"
+    assert row["title"] in packet.body
+    assert "not recorded decisions" in packet.body
+    assert packet.kind == "story_update"
+    polled = packets.prepare_story_packets([{**row, "extracted_at": "2026-09-07"}], TODAY)[0]
+    assert polled.input_fingerprint == packet.input_fingerprint
+    conn, cur = connection({"id": "reviewed", "status": "rejected"}, None)
+    assert packets.persist_packet(conn, packet) == "unchanged"
+    assert not any(call.args[0].lstrip().startswith(("INSERT", "UPDATE")) for call in cur.execute.call_args_list)
+
+
+@pytest.mark.parametrize("url", [
+    "https://pub-richmond.escribemeetings.com.evil.example/Meeting.aspx?Id=guid1",
+    "https://evil.example/pub-richmond.escribemeetings.com/Meeting.aspx?Id=guid1",
+    "https://user@pub-richmond.escribemeetings.com/Meeting.aspx?Id=guid1",
+    "https://pub-richmond.escribemeetings.com:8443/Meeting.aspx?Id=guid1",
+    "http://pub-richmond.escribemeetings.com/Meeting.aspx?Id=guid1",
+    "https://another-city.escribemeetings.com/Meeting.aspx?Id=guid1",
+])
+def test_current_agenda_host_fix_does_not_trust_lookalikes_other_tenants_or_unsafe_urls(url):
+    assert packets.prepare_story_packets([agenda(agenda_url=url)], TODAY) == []
+
+
+@pytest.mark.parametrize("field", ["source_cancelled_at", "agenda_source_retired_at"])
+def test_current_agenda_host_still_excludes_cancelled_or_retired_evidence(field):
+    row = agenda(agenda_url="https://pub-richmond.escribemeetings.com/Meeting.aspx?Id=guid1", **{field: "2026-09-06"})
+    assert packets.prepare_story_packets([row], TODAY) == []
+
+
 def connection(*responses, fail_insert=False):
     conn, cur = MagicMock(), MagicMock()
     conn.cursor.return_value.__enter__.return_value = cur

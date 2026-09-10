@@ -1,9 +1,11 @@
-"""Bounded Anderson paper-source refresh and private review packets; no paid API.
+"""Bounded paper-finance and organization-source review; no paid API.
 
 The checked-in snapshot is the publication contract. This producer never edits
 it, synthesizes donors, publishes a brief, or writes either finance ledger.
 Unchanged evidence skips OCR; changed scans retain their exact PDF and local
 Tesseract transcript before a resolve-only engineering packet is recorded.
+Organization monitoring reads the two source-pinned public Form 410 entries,
+not inferred affiliations or the monetary transaction ledger.
 """
 from __future__ import annotations
 
@@ -27,6 +29,13 @@ from civic_review_packets import Packet, persist_packet
 
 ROOT = Path(__file__).resolve().parents[1]
 SNAPSHOT = ROOT / "web/src/data/anderson-reported-finance.json"
+ORGANIZATIONS = ROOT / "web/src/data/committee-organization-filings.json"
+ORGANIZATION_FORM = "edf3a1c2-5324-4886-9011-8f4c6a9a58c4"
+ORGANIZATION_IDENTITIES = {"1490887": "216706544", "1390351": "168662145"}
+MAX_ORGANIZATION_INVENTORY = 200
+MAX_ORGANIZATION_SOURCES = 16
+MAX_ORGANIZATION_PDFS = 4
+MAX_ORGANIZATION_CHANGED = 2
 PRODUCER = "paper_finance_review"
 COMMITTEE = {"fppc_id": "1481105", "portal_filer_id": "214395297", "name": "Anderson for Mayor 2026"}
 CONNECT = "https://netfile.com/Connect2/api/public"
@@ -334,13 +343,15 @@ def acquire(snapshot: dict, acquisition: Acquisition, existing: dict[str, dict],
     return records
 
 
-def read_existing(conn: Any) -> dict[str, dict]:
+def read_existing(conn: Any, artifact_kind: str = "paper_filing_review") -> dict[str, dict]:
+    if artifact_kind not in {"paper_filing_review", "committee_organization_review"}:
+        raise ValueError("Unsupported private source cache")
     from psycopg2.extras import RealDictCursor
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute("""SELECT DISTINCT ON (source_identifier) source_identifier,metadata
             FROM documents WHERE source_type='netfile_transaction' AND metadata->>'producer'=%s
-            AND metadata->>'artifact_kind'='paper_filing_review'
-            ORDER BY source_identifier,metadata->>'last_checked_at' DESC LIMIT 201""", (PRODUCER,))
+            AND metadata->>'artifact_kind'=%s
+            ORDER BY source_identifier,metadata->>'last_checked_at' DESC LIMIT 201""", (PRODUCER, artifact_kind))
         rows = cur.fetchall()
         if len(rows) > 200:
             raise ValueError("Private source cache cap exceeded")
@@ -348,13 +359,21 @@ def read_existing(conn: Any) -> dict[str, dict]:
 
 
 def persist_record(conn: Any, record: dict, snapshot: dict) -> str:
+    packet = prepare_packet(record, validate_snapshot(snapshot).get(record["core"]["filing_id"]), snapshot) if record["needs_packet"] else None
+    return persist_source_record(conn, record, packet, "paper_filing_review")
+
+
+def persist_source_record(conn: Any, record: dict, packet: Packet | None, artifact_kind: str) -> str:
     """One source's raw evidence and queue change commit together; caller holds no public write contract."""
+    if artifact_kind not in {"paper_filing_review", "committee_organization_review"}:
+        raise ValueError("Unsupported private source record")
     from psycopg2.extras import Json, RealDictCursor
     if not record["write_needed"]:
         return "unchanged"
     fid = record["core"]["filing_id"]
     stable = {key: value for key, value in record.items() if key not in {"pdf", "last_checked_at", "write_needed", "needs_packet"}}
-    payloads = [(record["pdf"], "application/pdf", "paper_filing_pdf"), (canonical(stable), "application/json", "paper_filing_review")]
+    payloads = [(record["pdf"], "application/pdf", artifact_kind.replace("_review", "_pdf")),
+                (canonical(stable), "application/json", artifact_kind)]
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (PRODUCER + fid,))
@@ -362,7 +381,7 @@ def persist_record(conn: Any, record: dict, snapshot: dict) -> str:
                 content_hash = sha(payload)
                 metadata = {"producer": PRODUCER, "artifact_kind": kind, "filing_id": fid,
                             "pdf_sha256": record["pdf_sha256"], "last_checked_at": record["last_checked_at"]}
-                if kind == "paper_filing_review":
+                if kind == artifact_kind:
                     metadata["record"] = stable
                 cur.execute("""INSERT INTO documents(city_fips,source_type,source_url,source_identifier,raw_content,
                     content_hash,mime_type,credibility_tier,metadata)
@@ -372,10 +391,9 @@ def persist_record(conn: Any, record: dict, snapshot: dict) -> str:
                 stored = cur.fetchone()
                 if not stored or stored["source_type"] not in {"netfile_transaction", "netfile_496"}:
                     raise ValueError("Identical source bytes are not in the private finance document boundary")
-                if kind == "paper_filing_review" and stored["metadata"].get("last_checked_at") != record["last_checked_at"]:
+                if kind == artifact_kind and stored["metadata"].get("last_checked_at") != record["last_checked_at"]:
                     cur.execute("UPDATE documents SET metadata=jsonb_set(metadata,'{last_checked_at}',%s) WHERE id=%s", (Json(record["last_checked_at"]), stored["id"]))
-        if record["needs_packet"]:
-            packet = prepare_packet(record, validate_snapshot(snapshot).get(fid), snapshot)
+        if packet is not None:
             # A repaired OCR dependency can improve the same source packet.
             # Refresh only still-open evidence; rejected/closed identical sources
             # stay suppressed. The existing trigger advances review_version.
@@ -394,41 +412,214 @@ def persist_record(conn: Any, record: dict, snapshot: dict) -> str:
         raise
 
 
+def validate_organizations(registry: dict) -> list[dict]:
+    """Only the two reviewed public organization snapshots define this watch."""
+    if registry.get("schema_version") != 1:
+        raise ValueError("Unexpected organization snapshot version")
+    checked = datetime.fromisoformat(registry["checked_at"].replace("Z", "+00:00"))
+    committees = registry.get("committees")
+    if checked.tzinfo is None or not isinstance(committees, list) or len(committees) != 2:
+        raise ValueError("Organization snapshot must identify two committees and a dated review")
+    seen = set()
+    for committee in committees:
+        fppc = committee.get("fppc_id")
+        if fppc in seen or fppc not in ORGANIZATION_IDENTITIES or committee.get("portal_filer_id") != ORGANIZATION_IDENTITIES[fppc]:
+            raise ValueError("Unexpected or repeated organization identity")
+        seen.add(fppc)
+        for key in ("display_name", "reported_name", "committee_type", "purpose"):
+            if not isinstance(committee.get(key), str) or not 1 <= len(committee[key]) <= 500:
+                raise ValueError("Incomplete reviewed organization description")
+        source = committee["source"]
+        fid = source.get("filing_id")
+        if (not isinstance(fid, str) or not ID.fullmatch(fid) or source.get("form") != "410"
+                or source.get("source_url") != f"{CONNECT}/image/{fid}"
+                or not isinstance(source.get("sha256"), str) or not HASH.fullmatch(source["sha256"])
+                or dated(source["filed_at"]) > checked.date().isoformat()):
+            raise ValueError("Organization source requires exact official identity, date and PDF hash")
+        pages = source.get("reviewed_pages")
+        if not isinstance(pages, list) or not pages or any(type(page) is not int or not 1 <= page <= 200 for page in pages):
+            raise ValueError("Organization source requires reviewed pages")
+        sponsors = committee.get("sponsors")
+        if (committee.get("purpose_page") not in pages or not isinstance(sponsors, list) or not 1 <= len(sponsors) <= 8
+                or any(sponsor.get("page") not in pages or any(not isinstance(sponsor.get(key), str)
+                       or not 1 <= len(sponsor[key]) <= 500 for key in ("name", "affiliation")) for sponsor in sponsors)):
+            raise ValueError("Organization claims require reviewed source pages")
+    return committees
+
+
+def organization_inventory(value: dict, committee: dict, today: date) -> dict[str, dict]:
+    rows, count = value.get("filings"), value.get("totalCount")
+    if (not isinstance(rows, list) or not 1 <= len(rows) <= MAX_ORGANIZATION_INVENTORY
+            or type(count) is not int or count < 0 or (count and count != len(rows))):
+        raise ValueError("Organization inventory is empty, malformed or exceeds its bound")
+    baseline, seen, selected = committee["source"], set(), {}
+    for row in rows:
+        fid = row.get("id")
+        if not isinstance(fid, str) or not ID.fullmatch(fid) or fid in seen:
+            raise ValueError("Organization inventory has repeated or invalid filing identities")
+        seen.add(fid)
+        recognized = row.get("formName") in {"FPPC 410", "FPPC 410 (Amendment)"}
+        if not recognized and row.get("formId") != ORGANIZATION_FORM:
+            continue
+        if not recognized or row.get("formId") != ORGANIZATION_FORM:
+            raise ValueError("Organization inventory has conflicting form identity")
+        filed = dated(row["filingDate"])
+        if filed > today.isoformat() or not isinstance(row.get("filerName"), str) or not 1 <= len(row["filerName"]) <= 500:
+            raise ValueError("Organization inventory has invalid date or filer name")
+        if fid == baseline["filing_id"] or filed >= dated(baseline["filed_at"]):
+            selected[fid] = {"filing_id": fid, "form": "410", "filed_at": filed,
+                             "reported_name": row["filerName"], "fppc_id": committee["fppc_id"],
+                             "portal_filer_id": committee["portal_filer_id"]}
+    if baseline["filing_id"] not in selected or len(selected) > MAX_ORGANIZATION_SOURCES:
+        raise ValueError("Reviewed organization source disappeared or current sources exceed their bound")
+    return selected
+
+
+def organization_metadata(raw: dict, source: dict) -> dict:
+    if (str(raw.get("filingId")) != source["filing_id"] or raw.get("agency") != "RICH"
+            or raw.get("sosFilerId") != source["fppc_id"] or raw.get("formId") != ORGANIZATION_FORM
+            or raw.get("filerName") != source["reported_name"] or type(raw.get("isEfiled")) is not bool
+            or dated(raw["filingDate"]) != source["filed_at"]):
+        raise ValueError("Independent metadata does not identify the exact organization source")
+    for key in ("amends", "amendedBy"):
+        if raw.get(key) is not None and (not isinstance(raw[key], str) or not ID.fullmatch(raw[key])):
+            raise ValueError("Invalid organization amendment identity")
+    return {**source, "is_efiled": raw["isEfiled"], "amends": raw.get("amends"), "amended_by": raw.get("amendedBy")}
+
+
+def acquire_organizations(registry: dict, acquisition: Acquisition, existing: dict[str, dict], now: datetime) -> list[dict]:
+    """Discover changes; never infer a sponsor or supersede the public snapshot."""
+    committees = validate_organizations(registry)
+    selected, metadata_by_id, baselines = {}, {}, {}
+    acquisition.deferred_filings = []
+    for committee in committees:
+        portal = committee["portal_filer_id"]
+        url = f"https://netfile.com/api/public/sites/api/filings/byFiler?agencyCode=RICH&filerId={portal}&isArchived=false"
+        rows = organization_inventory(json.loads(acquisition.get(url, 256 * 1024, f"organization-{portal}.inventory.json")), committee, now.date())
+        for fid, source in rows.items():
+            if fid in selected:
+                raise ValueError("Organization filing belongs to multiple committees")
+            selected[fid], baselines[fid] = source, committee
+            raw = json.loads(acquisition.get(f"{CONNECT}/filing/info/{fid}?format=json", 128 * 1024, f"{fid}.metadata.json"))
+            metadata_by_id[fid] = raw, organization_metadata(raw, source)
+    acquisition.selected_count = len(selected)
+    records, changed, reads = [], 0, 0
+    order = sorted(selected, key=lambda fid: (fid in existing, existing.get(fid, {}).get("last_checked_at", ""), fid))
+    for fid in order:
+        committee, (raw, core), cached = baselines[fid], metadata_by_id[fid], existing.get(fid)
+        baseline = committee["source"]
+        version = sha(canonical({"checked_at": registry["checked_at"], "committee": committee}))
+        metadata_hash = sha(canonical(raw))
+        # The public registry pins PDF bytes. Once first verified, also preserve
+        # its metadata version until an explicitly reviewed snapshot changes.
+        anchor = cached["reviewed_metadata_sha256"] if cached and cached.get("baseline_version") == version else metadata_hash
+        same = bool(cached and cached["metadata_sha256"] == metadata_hash)
+        fresh = bool(same and cached.get("baseline_version") == version
+                     and datetime.fromisoformat(cached["last_checked_at"]) > now - timedelta(days=RECHECK_DAYS))
+        if not fresh:
+            if reads >= MAX_ORGANIZATION_PDFS or MAX_RUN_BYTES - getattr(acquisition, "bytes", 0) < MAX_PDF_BYTES:
+                acquisition.deferred_filings.append(fid)
+                continue
+            reads += 1
+            pdf = acquisition.get(f"{CONNECT}/image/{fid}", MAX_PDF_BYTES, f"{fid}.pdf")
+            if not pdf.startswith(b"%PDF-"):
+                raise ValueError("Organization source did not return a PDF")
+            pdf_hash = sha(pdf)
+        else:
+            pdf, pdf_hash = None, cached["pdf_sha256"]
+        reviewed = (fid == baseline["filing_id"] and pdf_hash == baseline["sha256"]
+                    and core["filed_at"] == dated(baseline["filed_at"]) and core["reported_name"] == committee["reported_name"]
+                    and core["amended_by"] is None and metadata_hash == anchor)
+        newly_changed = not reviewed and (not cached or pdf_hash != cached["pdf_sha256"] or not same)
+        if newly_changed and changed >= MAX_ORGANIZATION_CHANGED:
+            acquisition.deferred_filings.append(fid)
+            continue
+        changed += int(newly_changed)
+        write_needed = not fresh
+        records.append({"core": core, "core_sha256": sha(canonical(core)), "raw_metadata": raw,
+                        "metadata_sha256": metadata_hash, "pdf_sha256": pdf_hash, "pdf": pdf,
+                        "reviewed_metadata_sha256": anchor, "baseline_version": version,
+                        "last_checked_at": now.isoformat() if not fresh else cached["last_checked_at"],
+                        "pages": {"prepared_pages": [], "private_transcript": [], "omitted_pages": 0},
+                        "needs_packet": not reviewed, "write_needed": write_needed})
+    acquisition.prepared_count, acquisition.pdf_reads = changed, reads
+    return records
+
+
+def prepare_organization_packet(record: dict, committee: dict) -> Packet:
+    fid = record["core"]["filing_id"]
+    baseline = committee["source"]
+    return Packet(identity=f"committee-organization:{committee['fppc_id']}:{fid}", subject="2026-general",
+        title=f"Check organization report for {committee['display_name']}",
+        description="A new or changed official organization report needs a source check. This decision cannot publish or change sponsor claims.",
+        evidence={"question": "Does this report change any listed sponsor, committee purpose or identity?",
+          "recommendation": "Compare the old claims and linked originals. Prepare a reviewed JSON change only for facts established by the printed source; do not infer affiliations or amendment lineage.",
+          "alternatives": ["Retain the dated snapshot and record why.", "Prepare a source-checked snapshot PR with exact source pages and hash.", "Defer if the source does not settle the question."],
+          "previous_snapshot": committee,
+          "proposed_change": {"snapshot": "web/src/data/committee-organization-filings.json", "filing": record["core"]},
+          "sources": [{"url": f"{baseline['source_url']}#page={page}", "title": f"Reviewed organization report, page {page}"} for page in baseline["reviewed_pages"]]
+              + [{"url": f"{CONNECT}/image/{fid}", "title": f"New or changed Form 410 filing {fid}; inspect all pages"}],
+          "source_versions": [[fid, record["pdf_sha256"], record["metadata_sha256"]]],
+          "affected_pages": ["/elections/2026-general/money"],
+          "publication_effect": "None. Approval records a judgment only. A tested, source-checked JSON PR and deployment publishes a new dated snapshot."})
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--snapshot", type=Path, default=SNAPSHOT)
+    parser.add_argument("--organizations", type=Path, default=ORGANIZATIONS)
     parser.add_argument("--source-dir", type=Path, help="Use exact retained PDF/metadata files when present; no duplicate downloads")
     parser.add_argument("--apply", action="store_true", help="Persist private evidence and resolve-only packets; never publish numbers")
     parser.add_argument("--report", type=Path)
     args = parser.parse_args()
     snapshot = json.loads(args.snapshot.read_text(encoding="utf-8"))
     validate_snapshot(snapshot)
+    organizations = json.loads(args.organizations.read_text(encoding="utf-8"))
+    committees = {row["fppc_id"]: row for row in validate_organizations(organizations)}
     from db import get_connection
     conn = get_connection()
     try:
         conn.set_session(readonly=not args.apply)
         with conn.cursor() as cur:
             cur.execute("SET statement_timeout='15s'")
-        existing = read_existing(conn)
-        conn.commit()
-        acquisition = Acquisition(args.source_dir)
-        records = acquire(snapshot, acquisition, existing, datetime.now(timezone.utc))
-        counts: dict[str, int] = {}
-        if args.apply:
-            for record in records:
-                result = persist_record(conn, record, snapshot)
-                counts[result] = counts.get(result, 0) + 1
-        summary = {"mode": "apply" if args.apply else "dry_run", "filings_checked": len(records),
-                   "selected_filings": acquisition.selected_count, "deferred_filings": len(acquisition.deferred_filings),
-                   "prepared_sources": acquisition.prepared_count,
-                   "pdf_reads": acquisition.pdf_reads,
-                   "changed_sources": sum(record["needs_packet"] for record in records),
-                   "http_requests": acquisition.requests, "pdf_downloads": acquisition.pdf_downloads,
-                   "source_bytes_read": acquisition.bytes, "llm_calls": 0, "published": 0, **counts}
+        summaries, failures = {}, []
+        # Both watches share the existing command/job but acquire independently:
+        # a broken candidate source must not prevent organization discovery.
+        for section, artifact in (("paper", "paper_filing_review"), ("organizations", "committee_organization_review")):
+            try:
+                existing = read_existing(conn, artifact)
+                conn.commit()
+                acquisition = Acquisition(args.source_dir)
+                records = (acquire(snapshot, acquisition, existing, datetime.now(timezone.utc)) if section == "paper"
+                           else acquire_organizations(organizations, acquisition, existing, datetime.now(timezone.utc)))
+                counts: dict[str, int] = {}
+                if args.apply:
+                    for record in records:
+                        if section == "paper":
+                            result = persist_record(conn, record, snapshot)
+                        else:
+                            packet = prepare_organization_packet(record, committees[record["core"]["fppc_id"]]) if record["needs_packet"] else None
+                            result = persist_source_record(conn, record, packet, artifact)
+                        counts[result] = counts.get(result, 0) + 1
+                summaries[section] = {"filings_checked": len(records), "selected_filings": acquisition.selected_count,
+                    "deferred_filings": len(acquisition.deferred_filings), "prepared_sources": acquisition.prepared_count,
+                    "pdf_reads": acquisition.pdf_reads, "changed_sources": sum(record["needs_packet"] for record in records),
+                    "http_requests": acquisition.requests, "pdf_downloads": acquisition.pdf_downloads,
+                    "source_bytes_read": acquisition.bytes, **counts}
+            except Exception as error:
+                conn.rollback()
+                failures.append(section)
+                summaries[section] = {"status": "failed", "error_type": type(error).__name__,
+                    "reason": str(error) if isinstance(error, ValueError) else "Source acquisition or private persistence failed."}
+        summary = {"mode": "apply" if args.apply else "dry_run", **summaries.get("paper", {}),
+                   "organizations": summaries.get("organizations", {}), "failed_sections": failures,
+                   "llm_calls": 0, "published": 0}
         if args.report:
             args.report.parent.mkdir(parents=True, exist_ok=True)
             args.report.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
         print(json.dumps(summary, sort_keys=True))
+        if failures:
+            raise RuntimeError("Source monitoring failed for " + ", ".join(failures) + "; previous public snapshots were preserved")
     finally:
         conn.close()
 

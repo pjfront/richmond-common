@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 vi.mock('next/cache', () => ({ unstable_cache: (fn: unknown) => fn }))
 import { candidateMoney, type FinanceEvent } from './queries/finance-public'
-import { filterFinanceEvents, financeCsv, financeEventLabel } from './finance-ledger'
+import { filterFinanceEvents, financeCsv, financeEventLabel, financeFilterParams, parseFinanceFilters } from './finance-ledger'
 import { electionCalendar, NOVEMBER_DATES } from './november-election'
 
 const event = (overrides: Partial<FinanceEvent> = {}): FinanceEvent => ({
@@ -32,8 +32,32 @@ describe('public money meanings', () => {
   })
   it('follows exact committee IDs across both ends and reported spender', () => {
     const rows = [event({ recipient_fppc_id: '12', donor_fppc_id: '951606' }), event({ event_key: 'two' })]
-    expect(filterFinanceEvents(rows, '', '951606')).toHaveLength(1)
-    expect(filterFinanceEvents(rows, 'no match', '')).toHaveLength(0)
+    expect(filterFinanceEvents(rows, { committee: '951606' })).toHaveLength(1)
+    expect(filterFinanceEvents(rows, { q: 'no match' })).toHaveLength(0)
+  })
+  it('follows the selected committee in the stated direction, independently of which side filed', () => {
+    const rows = [event({ event_key: 'in' }),
+      event({ event_key: 'sender-report', event_kind: 'transfer', reporting_filer_fppc_id: '951606', donor_fppc_id: '951606' }),
+      event({ event_key: 'out', donor_fppc_id: '1481105', recipient_fppc_id: '951606' }),
+      event({ event_key: 'ad', event_kind: 'independent_expenditure', recipient_fppc_id: null }),
+      event({ event_key: 'other', recipient_fppc_id: '951606', reporting_filer_fppc_id: '951606' })]
+    expect(filterFinanceEvents(rows, { committee: '1481105', role: 'recipient' }).map(row => row.event_key)).toEqual(['in', 'sender-report'])
+    expect(filterFinanceEvents(rows, { committee: '1481105', role: 'source' }).map(row => row.event_key)).toEqual(['out', 'ad'])
+    expect(filterFinanceEvents(rows, { committee: '1481105', role: 'source', activity: 'independent_expenditure' }).map(row => row.event_key)).toEqual(['ad'])
+  })
+  it('round-trips filters and preserves corrections within their activity kind', () => {
+    const filters = { committee: '1481105', q: '  EXAMPLE  ', activity: 'contributions', role: 'recipient' }
+    const parsed = parseFinanceFilters(Object.fromEntries(financeFilterParams(filters)))
+    expect(parsed).toEqual({ ...filters, q: 'EXAMPLE' })
+    const rows = [event({ amount: -50 }), event({ event_kind: 'loan' })]
+    expect(filterFinanceEvents(rows, parsed)).toEqual([rows[0]])
+    expect(parseFinanceFilters({ committee: '148', activity: 'total', role: 'recipient' })).toEqual({ q: '', committee: '', activity: '', role: '' })
+  })
+  it('includes both reporting sides in contributions, even when a matched outgoing gift becomes a receipt', () => {
+    const rows = [event({ event_key: 'matched', donor_fppc_id: '951606', reconciliation_status: 'matched_exact' }),
+      event({ event_key: 'sender-only', event_kind: 'transfer', donor_fppc_id: '951606' }),
+      event({ event_key: 'loan', event_kind: 'loan', donor_fppc_id: '951606' })]
+    expect(filterFinanceEvents(rows, { committee: '951606', role: 'source', activity: 'contributions' }).map(row => row.event_key)).toEqual(['matched', 'sender-only'])
   })
   it('separates signed corrections from gross receipts without inferring a refund', () => {
     const rows = [event({ amount: 100.25 }),

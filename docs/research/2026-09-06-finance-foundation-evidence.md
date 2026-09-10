@@ -2,9 +2,11 @@
 
 This change preserves Richmond, California finance reports before deriving a public money view. It does not silently rebuild or overwrite the legacy contribution table.
 
+**September 10 correction:** Subsequent source review found that the May 29 RPOA transfer is described as a loan in the donor's Schedule H, and two East Bay Working Families rapid reports repeat an unresolved mailer claim. The historical figures below describe the September 6 acquisition, not certified gifts or spending totals. See the [source-conflict correction](2026-09-10-finance-source-conflicts.md) for the exact filings, conservative holds and added loan coverage.
+
 ## Verified defects and current source scope
 
-Read-only production inspection found 11 reversed 2026 Form 497 Part 2 records and one source assertion missing from the legacy table. The missing record is the May 18 $30,000 gift from Richmond Police Officers Association PAC (951606) to Safe Richmond Neighborhoods (1490887), filing 216787856. The original May 12, May 18 and May 29 reports each disclose a separate $30,000 gift and have unchecked amendment boxes. The three reports total $90,000; the legacy table retained $60,000 pointing in the wrong direction. No production data was changed by this audit.
+Read-only production inspection found 11 reversed 2026 Form 497 Part 2 records and one source assertion missing from the legacy table. The missing record is the May 18 $30,000 reported transfer from Richmond Police Officers Association PAC (951606) to Safe Richmond Neighborhoods (1490887), filing 216787856. The original May 12, May 18 and May 29 reports each disclose a $30,000 transfer and have unchecked amendment boxes. The three reported values sum to $90,000; the legacy table retained $60,000 pointing in the wrong direction. Those rapid reports alone do not establish that all three were gifts; see the September 10 loan-source correction above. No production data was changed by this audit.
 
 - [May 12 report](https://netfile.com/Connect2/api/public/image/216765092)
 - [May 18 report](https://netfile.com/Connect2/api/public/image/216787856)

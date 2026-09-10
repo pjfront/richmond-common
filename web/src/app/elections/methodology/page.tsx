@@ -11,7 +11,7 @@ export default function ElectionsMethodologyPage() {
     <Link href="/elections" className="inline-flex min-h-11 items-center text-civic-navy underline">← Elections</Link>
     <h1 className="mt-4 text-3xl font-bold text-civic-navy">How we show campaign money</h1>
     <p className="mt-3 leading-relaxed text-slate-700">A campaign total and an individual filing entry answer different questions. We keep each amount with the committee, dates and source that explain it.</p>
-    <p className="mt-2 text-sm text-slate-600">Methodology updated September 6, 2026.</p>
+    <p className="mt-2 text-sm text-slate-600">Methodology updated September 10, 2026.</p>
 
     <section className="mt-8" id="campaign-summaries">
       <h2 className="text-xl font-semibold text-civic-navy">What a campaign reports raising</h2>
@@ -26,10 +26,13 @@ export default function ElectionsMethodologyPage() {
       <ul className="mt-3 list-disc space-y-3 pl-5 leading-relaxed text-slate-700">
         <li>Multiple filings can describe the same contribution. The index keeps the original statements, follows explicit amendment links and connects matching reports. Equal amounts and nearby dates alone do not prove that two entries are duplicates.</li>
         <li>Cash contributions, loans, noncash support, refunds, outgoing contributions and independent expenditures are different kinds of activity. A committee transfer and the recipient committee’s later spending are not added as if they were two amounts of new money.</li>
-        <li>A rapid report matching a noncash entry cannot establish an additional cash gift. Conflicting claims stay out of public cash subtotals while the original reports are retained for review.</li>
+        <li>A receipt report matching a loan or noncash entry cannot establish an additional cash gift. Conflicting cash claims wait for source review. A loan schedule may describe a balance or activity; its amount is not automatically new borrowing.</li>
+        <li>Separate spending reports can repeat an expense even when neither directly replaces the other. Exact repeated descriptions, parties, dates and amounts prompt review; both entries wait outside the public list until the sources settle whether they represent one expense or separate purchases. The original statements are retained.</li>
+        <li>The cash-contribution filter includes both contributions received and contributions made. A committee’s role determines which direction is shown, regardless of which side filed the report. The download uses the same filters.</li>
         <li>The dates searched and the forms available are shown with the records. A partial index is not a campaign’s complete fundraising. If a read is incomplete or fails, we withhold the affected totals or export.</li>
         <li>Outside spending is separate from the candidate’s campaign. Support or opposition must come from the filing. A candidate’s name without an identified election does not establish spending for the November election.</li>
         <li>Committee links use reported FPPC identifiers. Similar names, shared addresses and treasurers do not establish ownership or control. An employee’s donation is not the employer’s donation. A nonprofit’s disclosed payment does not reveal its undisclosed funders.</li>
+        <li>A sponsor explanation comes from a checked organization report, with its date and exact pages. Sponsorship and giving money are separate relationships. The existing source monitor queues new or changed reports for review; it cannot automatically change the public explanation.</li>
         <li>The extraction threshold is a publication check, not a statistical probability that a political claim is true. Passing that check does not prove influence, wrongdoing or a causal link to a vote.</li>
       </ul>
       <Link href="/elections/2026-general/money" className="mt-2 inline-flex min-h-11 items-center text-civic-navy underline">Search the 2026 records and original sources →</Link>

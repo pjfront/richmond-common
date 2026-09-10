@@ -67,8 +67,8 @@ def acquire_snapshot(year: int, through: str, *, fetch=fetch_all_transactions, f
             limitations.append("Form 496 rapid reports only; periodic 460/461 independent spending is not yet included. The form has no election-date field.")
         if kind == 4:
             limitations.append("Form 496 Part 3 reports newly received funding; it is not independent spending and is reconciled with other receipt reports when exact and unique.")
-        if kind == 12:
-            limitations.append("Schedule B1 records may include loan balances and activity; these values are not treated as cash contributions or net new borrowing.")
+        if kind in {12, 14}:
+            limitations.append("Schedules B1 and H report loans received and made. Their values may describe balances or activity; they are not cash gifts or net-new borrowing totals. Exact matching receipt reports wait for review when the sources disagree about a loan.")
         coverage.append(dict(source="netfile", form_type=form, scope_key=scope,
                              status="partial", checked_at=now, activity_from=since, activity_through=through,
                              filing_count=len({a["filing_id"] for a in rows}), assertion_count=len(rows), pending_count=pending,

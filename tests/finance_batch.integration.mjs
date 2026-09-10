@@ -34,7 +34,7 @@ try {
   assert.equal(await count('documents'),504)
   assert.equal(await count('finance_assertions'),503)
   assert.equal(await count('finance_public_events'),503)
-  assert.equal(await count('finance_public_coverage'),7)
+  assert.equal(await count('finance_public_coverage'),8)
   const original=await sourceBytes()
   await db.exec('BEGIN');await run(fixture.phases[1]);await db.exec('COMMIT')
   assert.deepEqual(await sourceBytes(),original)

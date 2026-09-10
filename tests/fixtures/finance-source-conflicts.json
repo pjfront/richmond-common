@@ -1,0 +1,180 @@
+{
+  "source_checked_at": "2026-09-10",
+  "scope_key": "0660620:calendar-2026",
+  "loan_conflict": [
+    {
+      "transaction": {
+        "id": "27e52105-d8f5-40b5-935c-b495012ef230",
+        "filingId": "217081719",
+        "agency": 163,
+        "filerFppcId": "951606",
+        "filerName": "Richmond Police Officers Association PAC, Sponsored by Richmond Police Officers Association",
+        "date": "2026-05-29T00:00:00.0000000-07:00",
+        "amount": 30000.0,
+        "amountType": "NotApplicable",
+        "transactionType": 14,
+        "name": "Safe Richmond Neighborhoods supporting Ahmad Anderson for Mayor 2026 sponsored by the Richmond Police Officers Association",
+        "transactionFppcId": "1490887",
+        "candidate": "",
+        "code": "",
+        "description": ""
+      },
+      "metadata": {
+        "filingId": "217081719",
+        "amends": null,
+        "amendedBy": null,
+        "amendmentSequenceNumber": 0
+      }
+    },
+    {
+      "transaction": {
+        "id": "9650c6f9-545f-4341-b163-b4b20038ac89",
+        "filingId": "217288271",
+        "agency": 163,
+        "filerFppcId": "1490887",
+        "filerName": "Safe Richmond Neighborhoods supporting Ahmad Anderson for Mayor 2026 sponsored by the Richmond Police Officers Association",
+        "date": "2026-05-29T00:00:00.0000000-07:00",
+        "amount": 30000.0,
+        "amountType": "NotApplicable",
+        "transactionType": 0,
+        "name": "Richmond Police Officers Association PAC",
+        "transactionFppcId": "951606",
+        "candidate": "",
+        "code": "",
+        "description": ""
+      },
+      "metadata": {
+        "filingId": "217288271",
+        "amends": "217125677",
+        "amendedBy": null,
+        "amendmentSequenceNumber": 1
+      }
+    },
+    {
+      "transaction": {
+        "id": "45814e3f-10b7-4837-82b1-b45a00442661",
+        "filingId": "216840276",
+        "agency": 163,
+        "filerFppcId": "1490887",
+        "filerName": "Safe Richmond Neighborhoods supporting Ahmad Anderson for Mayor 2026 sponsored by the Richmond Police Officers Association",
+        "date": "2026-05-29T00:00:00.0000000-07:00",
+        "amount": 30000.0,
+        "amountType": "NotApplicable",
+        "transactionType": 20,
+        "name": "Richmond Police Officers Association PAC",
+        "transactionFppcId": "951606",
+        "candidate": "",
+        "code": "",
+        "description": ""
+      },
+      "metadata": {
+        "filingId": "216840276"
+      }
+    },
+    {
+      "transaction": {
+        "id": "fa1ba819-249c-40e5-9a57-b45a01461217",
+        "filingId": "216841017",
+        "agency": 163,
+        "filerFppcId": "951606",
+        "filerName": "Richmond Police Officers Association PAC, Sponsored by Richmond Police Officers Association",
+        "date": "2026-05-29T00:00:00.0000000-07:00",
+        "amount": 30000.0,
+        "amountType": "NotApplicable",
+        "transactionType": 21,
+        "name": "Safe Richmond Neighborhoods supporting Ahmad Anderson for Mayor 2026 sponsored by the Richmond Police Officers Association",
+        "transactionFppcId": "1490887",
+        "candidate": "Ahmad Anderson",
+        "code": "",
+        "description": ""
+      },
+      "metadata": {
+        "filingId": "216841017"
+      }
+    },
+    {
+      "transaction": {
+        "id": "4e8a1acf-6a0b-4069-b146-b46d012b06d5",
+        "filingId": "216896453",
+        "agency": 163,
+        "filerFppcId": "1490887",
+        "filerName": "Safe Richmond Neighborhoods supporting Ahmad Anderson for Mayor 2026 sponsored by the Richmond Police Officers Association",
+        "date": "2026-05-29T00:00:00.0000000-07:00",
+        "amount": 30000.0,
+        "amountType": "NotApplicable",
+        "transactionType": 4,
+        "name": "Richmond Police Officers Association PAC",
+        "transactionFppcId": "951606",
+        "candidate": "",
+        "code": "",
+        "description": ""
+      },
+      "metadata": {
+        "filingId": "216896453",
+        "amends": "216836600",
+        "amendedBy": null,
+        "amendmentSequenceNumber": 1
+      }
+    }
+  ],
+  "ie_repetition": [
+    {
+      "transaction": {
+        "id": "0d2037b0-c356-4cd4-ab80-b441011fa681",
+        "filingId": "216728089",
+        "agency": 163,
+        "filerFppcId": "1390351",
+        "filerName": "East Bay Working Families, a coalition of unions and community groups",
+        "date": "2026-05-04T00:00:00.0000000-07:00",
+        "amount": 12682.3,
+        "amountType": "NotApplicable",
+        "transactionType": 19,
+        "name": "",
+        "transactionFppcId": "",
+        "candidate": "Claudia Jimenez",
+        "code": "",
+        "description": "Mailer"
+      },
+      "metadata": {
+        "filingId": "216728089",
+        "amends": null,
+        "amendedBy": null,
+        "amendmentSequenceNumber": 0
+      },
+      "pdf_context": {
+        "candidate_name": "Claudia Jimenez",
+        "support_oppose": "S",
+        "evidence_page": 1
+      }
+    },
+    {
+      "transaction": {
+        "id": "83023461-f480-4477-8854-b44a01675d14",
+        "filingId": "216772061",
+        "agency": 163,
+        "filerFppcId": "1390351",
+        "filerName": "East Bay Working Families, a coalition of unions and community groups",
+        "date": "2026-05-04T00:00:00.0000000-07:00",
+        "amount": 12682.3,
+        "amountType": "NotApplicable",
+        "transactionType": 19,
+        "name": "",
+        "transactionFppcId": "",
+        "candidate": "Claudia Jimenez",
+        "code": "",
+        "description": "Mailer"
+      },
+      "metadata": {
+        "filingId": "216772061",
+        "amends": "216720589",
+        "amendedBy": null,
+        "amendmentSequenceNumber": 2
+      },
+      "pdf_context": {
+        "candidate_name": "Claudia Jimenez",
+        "support_oppose": "S",
+        "evidence_page": 2
+      }
+    }
+  ]
+}
