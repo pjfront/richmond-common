@@ -52,7 +52,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$ALLOW_PAID_PREVIEW_BOOTSTRAP" != "true" ]; then
-            echo "::error::Paid Preview bootstrap is disabled by the current zero-new-spend policy. No branch was created. Use local/offline checks. Keep RICHMOND_ALLOW_PAID_PREVIEW_BOOTSTRAP unset or false; enabling it requires an explicit new user budget. Existing Preview verification and cleanup remain available."
+            echo "::error::ACTION: Use local/offline checks; paid Preview bootstrap is disabled by the current zero-new-spend policy. No branch was created. Keep RICHMOND_ALLOW_PAID_PREVIEW_BOOTSTRAP unset or false; enabling it requires an explicit new user budget. Existing Preview verification and cleanup remain available."
             exit 1
           fi
 
