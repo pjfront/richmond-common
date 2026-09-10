@@ -1,6 +1,14 @@
 # Richmond Commons: current implementation plan
 
-Updated September 6, 2026. This is the active plan; earlier sprint experiments remain historical context.
+Updated September 9, 2026. This is the active plan; earlier sprint experiments remain historical context.
+
+## Operating cost constraint
+
+The operator made free operation a hard constraint on September 9: identify recurring charges and reduce the site to free service tiers wherever feasible. A substantially cheaper paid option is a fallback to present with its exact ongoing cost and tradeoffs, not an assumed budget. The project should not require recurring personal subsidy before revenue or donations justify it.
+
+Cost investigation and reduction take priority alongside completing the existing resident experience. Do not add paid services, paid preview databases, plan upgrades, automatic credit reloads, or higher model-spending caps. Prefer local verification, existing free services, bounded background work, and cached public pages. Existing capped spending is not permission to increase it.
+
+Verify the actual provider, account, invoice line items, and current usage before attributing a charge or claiming savings. Distinguish a free-tier quota problem from a paid invoice, account-wide usage from this project's usage, and historical measurements from the current deployment. Preserve source records and a tested recovery path before any storage reduction or service migration. Prepare a concrete, verified transition before a billing change that affects availability or data retention; do not downgrade an oversized production database blindly.
 
 ## Authority and boundaries
 
@@ -13,6 +21,8 @@ On September 6, the operator explicitly answered “Yes” to one digest test at
 The representative canary must use the completed August 31–September 6 UTC publication week, available from September 7 at 00:00 UTC (September 6 at 5 p.m. Richmond time). The planned subscriber schedule is Monday at 16:30 UTC (9:30 a.m. PDT / 8:30 a.m. PST). Prepare and test activation before the canary, then activate only after its exact provider result and content are verified. Preserve one canary attempt and stop on ambiguity; a new run or a changed idempotency key is not a substitute for investigating the existing attempt.
 
 ## Delivery order
+
+First establish the current cost baseline and a safe route to free operation. Apply the constraint above to every item below.
 
 1. Restrict private operator tables and public reference-table writes; verify effective anonymous permissions in an executable database test.
 2. Preserve finance source assertions, correct contributions-made direction, replace destructive fuzzy deduplication with explicit reconciliation, and discover local independent-expenditure reports and amendment lineage.
