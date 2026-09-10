@@ -100,7 +100,7 @@ export const getPublicFinanceSnapshot = unstable_cache(async (): Promise<PublicF
     throw new Error('Finance source coverage was incomplete')
   }
   return { events, coverage: (data ?? []) as unknown as FinanceCoverage[], truncated }
-}, ['finance-public-2026-v3'], { revalidate: 900, tags: ['finance-public'] })
+}, ['finance-public-2026-v4'], { revalidate: 900, tags: ['finance-public'] })
 
 export function candidateMoney(events: FinanceEvent[], committeeId: string, candidateName: string) {
   const receipts = events.filter(row => row.recipient_fppc_id === committeeId && row.event_kind === 'receipt')

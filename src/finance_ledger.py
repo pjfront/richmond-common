@@ -14,7 +14,7 @@ import json
 import re
 from typing import Any, Mapping
 
-FORMS = {0: "F460A", 1: "F460C", 4: "F496P3", 12: "F460B1", 19: "S496", 20: "F497P1", 21: "F497P2"}
+FORMS = {0: "F460A", 1: "F460C", 4: "F496P3", 12: "F460B1", 14: "F460H", 19: "S496", 20: "F497P1", 21: "F497P2"}
 TYPES = tuple(FORMS)
 RECEIPT_TYPES = {0, 4, 20, 21}
 
@@ -62,13 +62,13 @@ def assertion_from_netfile(tx: dict, info: dict, scope_key: str, pdf_context: di
             amount = None
     except (InvalidOperation, TypeError):
         amount = None
-    event_kind = {1: "noncash", 12: "loan", 19: "independent_expenditure", 21: "transfer"}.get(kind, "receipt")
-    amount_kind = {1: "reported_noncash_value", 12: "reported_loan_amount"}.get(kind, "monetary")
+    event_kind = {1: "noncash", 12: "loan", 14: "loan", 19: "independent_expenditure", 21: "transfer"}.get(kind, "receipt")
+    amount_kind = {1: "reported_noncash_value", 12: "reported_loan_amount", 14: "reported_loan_amount"}.get(kind, "monetary")
     # A signed negative entry proves an adjustment, not necessarily a cash refund.
     if amount is not None and amount < 0:
         amount_kind = "negative_adjustment"
     donor, donor_id, recipient, recipient_id = counterparty, counterparty_id, reporter, reporter_id
-    if kind == 21:
+    if kind in {14, 21}:
         donor, donor_id, recipient, recipient_id = reporter, reporter_id, counterparty, counterparty_id
     if kind == 19:
         # Expenditure API has no payee identity. A spender is not an original donor.
@@ -79,7 +79,7 @@ def assertion_from_netfile(tx: dict, info: dict, scope_key: str, pdf_context: di
     reasons = []
     if amount is None or not iso_date(tx.get("date")) or not reporter:
         reasons.append("missing_amount_date_or_reporting_filer")
-    if kind in RECEIPT_TYPES and (not donor or not recipient):
+    if kind in RECEIPT_TYPES | {12, 14} and (not donor or not recipient):
         reasons.append("missing_reported_counterparty")
     if kind == 19 and (not (candidate or measure) or stance not in {"S", "O"}):
         reasons.append("independent_expenditure_target_or_stance_unverified")
@@ -152,6 +152,70 @@ def rapid_noncash_counterpart(rapid: Mapping[str, Any], periodic: Mapping[str, A
                 and amount.is_finite() and other_amount.is_finite() and amount > 0 and amount == other_amount)
 
 
+def receipt_loan_counterpart(receipt: Mapping[str, Any], loan: Mapping[str, Any]) -> bool:
+    """Identify an exact committee loan/receipt conflict, never resolve it.
+
+    Both parties must have explicit FPPC IDs. A loan schedule's API amount may
+    describe a balance or activity; it cannot establish another cash gift or
+    a net-new loan. Retain both reports for comparison without merging them.
+    """
+    if (receipt.get("transaction_type") not in RECEIPT_TYPES or loan.get("transaction_type") not in {12, 14}
+            or not receipt.get("is_current") or not loan.get("is_current") or loan.get("review_reason")
+            or receipt.get("source") != "netfile" or loan.get("source") != "netfile"
+            or not receipt.get("scope_key") or receipt.get("scope_key") != loan.get("scope_key")
+            or receipt.get("event_kind") not in {"receipt", "transfer"} or loan.get("event_kind") != "loan"
+            or receipt.get("amount_kind") != "monetary" or loan.get("amount_kind") != "reported_loan_amount"):
+        return False
+    donor_id, recipient_id = fppc_id(receipt.get("donor_fppc_id")), fppc_id(receipt.get("recipient_fppc_id"))
+    if (not donor_id or not recipient_id or donor_id != fppc_id(loan.get("donor_fppc_id"))
+            or recipient_id != fppc_id(loan.get("recipient_fppc_id"))
+            or fppc_id(receipt.get("reporting_filer_fppc_id")) != (donor_id if receipt.get("transaction_type") == 21 else recipient_id)
+            or fppc_id(loan.get("reporting_filer_fppc_id")) != (donor_id if loan.get("transaction_type") == 14 else recipient_id)):
+        return False
+    day = iso_date(receipt.get("activity_date"))
+    try:
+        amount, other_amount = Decimal(str(receipt.get("amount"))), Decimal(str(loan.get("amount")))
+    except InvalidOperation:
+        return False
+    return bool(day and day == iso_date(loan.get("activity_date")) and amount.is_finite()
+                and other_amount.is_finite() and amount > 0 and amount == other_amount)
+
+
+def independent_expenditure_review_key(row: Mapping[str, Any]) -> tuple | None:
+    """Exact described rapid spending that warrants comparison across filings.
+
+    This is a review key, not an economic-event identity. Two actual purchases
+    can have identical descriptions and values. A repeated claim must not be
+    added twice while that source question is unresolved.
+    """
+    if (row.get("source") != "netfile" or row.get("transaction_type") != 19
+            or not row.get("is_current") or not row.get("scope_key")
+            or row.get("event_kind") != "independent_expenditure" or row.get("amount_kind") != "monetary"
+            or row.get("support_oppose") not in {"S", "O"}
+            or row.get("review_reason") not in {None, "independent_expenditure_cross_report_repetition"}):
+        return None
+    filer, day = fppc_id(row.get("reporting_filer_fppc_id")), iso_date(row.get("activity_date"))
+    target = normalized_name(row.get("candidate_name"))
+    # The supported 496 parser verifies candidate layouts only. Do not broaden
+    # this to ballot measures or missing/generic descriptions without evidence.
+    description = normalized_name(row.get("raw_payload", {}).get("transaction", {}).get("description"))
+    if not filer or not day or not target or row.get("measure_name") or not description:
+        return None
+    try:
+        amount = Decimal(str(row.get("amount")))
+    except InvalidOperation:
+        return None
+    if not amount.is_finite() or amount <= 0:
+        return None
+    return (row["scope_key"], filer, day, amount, target, row["support_oppose"], row.get("election_date"), description)
+
+
+def independent_expenditure_counterpart(left: Mapping[str, Any], right: Mapping[str, Any]) -> bool:
+    key = independent_expenditure_review_key(left)
+    return bool(key and clean(left.get("filing_id")) and clean(right.get("filing_id"))
+                and left["filing_id"] != right["filing_id"] and key == independent_expenditure_review_key(right))
+
+
 def reconcile(assertions: list[dict]) -> list[dict]:
     """Keep same-role repeated gifts; match unique exact cross-report claims.
 
@@ -163,6 +227,26 @@ def reconcile(assertions: list[dict]) -> list[dict]:
     for a in assertions:
         if a["is_current"] and a.get("donor_fppc_id"):
             name_ids[normalized_name(a.get("donor_name"))].add(a["donor_fppc_id"])
+    spending_claims = defaultdict(list)
+    for a in assertions:
+        key = independent_expenditure_review_key(a)
+        if key:
+            spending_claims[key].append(a)
+    for candidates in spending_claims.values():
+        if len({a["filing_id"] for a in candidates}) > 1:
+            for a in candidates:
+                a.update(reconciliation_status="pending_review", review_reason="independent_expenditure_cross_report_repetition",
+                         canonical_event_key=None)
+    loans = defaultdict(list)
+    for a in assertions:
+        if a["is_current"] and not a["review_reason"] and a["transaction_type"] in {12, 14}:
+            loans[(a.get("donor_fppc_id"), a.get("recipient_fppc_id"), a.get("amount"), a.get("activity_date"))].append(a)
+    for a in assertions:
+        if a["is_current"] and not a["review_reason"] and a["transaction_type"] in RECEIPT_TYPES:
+            candidates = loans.get((a.get("donor_fppc_id"), a.get("recipient_fppc_id"), a.get("amount"), a.get("activity_date")), [])
+            if any(receipt_loan_counterpart(a, candidate) for candidate in candidates):
+                a.update(reconciliation_status="pending_review", review_reason="receipt_loan_classification_conflict",
+                         canonical_event_key=None)
     noncash = defaultdict(list)
     for a in assertions:
         if a["is_current"] and not a["review_reason"] and a["transaction_type"] == 1:

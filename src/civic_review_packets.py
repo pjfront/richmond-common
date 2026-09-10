@@ -21,7 +21,7 @@ from typing import Any, Mapping, Sequence
 from urllib.parse import quote, urlsplit
 from zoneinfo import ZoneInfo
 
-from finance_ledger import rapid_noncash_counterpart
+from finance_ledger import rapid_noncash_counterpart, receipt_loan_counterpart, independent_expenditure_counterpart
 
 
 PRODUCER = "civic_review_packets"
@@ -46,12 +46,14 @@ SUBJECTS = {
 ALLOWED_SUBJECTS = {*SUBJECTS, "2026-general"}
 OFFICIAL_AGENDA_HOSTS = {
     "www.richmondca.gov", "richmondca.gov", "www.ci.richmond.ca.us", "ci.richmond.ca.us",
-    "richmondca.escribemeetings.com",
+    "richmondca.escribemeetings.com", "pub-richmond.escribemeetings.com",
 }
 REASONS = {
     "ambiguous_cross_report_multiplicity": "Several entries could describe the same transfer; their number differs across reports.",
     "cross_report_date_disagreement": "Possible counterpart reports give different activity dates within fourteen days.",
     "rapid_report_noncash_conflict": "A rapid Form 497 report matches a current noncash Schedule C entry by reported parties, amount and exact date. The rapid form does not establish an additional cash receipt; compare both originals before changing the cash classification.",
+    "receipt_loan_classification_conflict": "A receipt or transfer report and a loan schedule identify the same committees, amount and date. The sources may describe a loan rather than an additional cash gift. Compare the original loan columns and receipt entries; the reports have not been merged or reclassified.",
+    "independent_expenditure_cross_report_repetition": "Separate current rapid reports list the same spender, date, candidate, support/opposition, amount and description. They could repeat one expense or describe distinct purchases. Compare the original pages and report totals before counting either entry; no duplicate has been assumed or deleted.",
     "missing_amount_date_or_reporting_filer": "An amount, activity date, or reporting filer is missing from the extracted record.",
     "missing_reported_counterparty": "A reported donor or recipient is missing from the extracted record.",
     "independent_expenditure_target_or_stance_unverified": "The candidate or measure, or support/opposition checkbox, has not been verified.",
@@ -59,7 +61,8 @@ REASONS = {
 FINANCE_COLUMNS = """source,scope_key,record_key,content_hash,filing_id,form_type,transaction_type,
  reporting_filer_name,reporting_filer_fppc_id,donor_name,donor_fppc_id,recipient_name,recipient_fppc_id,
  amount,amount_kind,activity_date,event_kind,support_oppose,candidate_name,measure_name,election_date,
- source_url,source_tier,is_current,reconciliation_status,canonical_event_key,review_reason"""
+ source_url,source_tier,is_current,reconciliation_status,canonical_event_key,review_reason,
+ jsonb_build_object('transaction',jsonb_build_object('description',raw_payload->'transaction'->>'description')) AS raw_payload"""
 
 
 def fingerprint(value: Any) -> str:
@@ -130,12 +133,24 @@ def reported_entry(row: Mapping[str, Any]) -> dict[str, Any]:
     entry["source"] = {"url": official_url(row.get("source_url"), finance=True),
                        "title": f"{row.get('form_type')} · filing {row.get('filing_id')}"}
     entry["source_content_hash"] = row.get("content_hash")
+    if row.get("event_kind") == "independent_expenditure":
+        entry["description"] = row.get("raw_payload", {}).get("transaction", {}).get("description")
     return entry
 
 
 def possible_counterpart(left: Mapping[str, Any], right: Mapping[str, Any]) -> bool:
     """Package a comparison, never infer an entity match or economic event."""
+    if ("receipt_loan_classification_conflict" in {left.get("review_reason"), right.get("review_reason")}
+            and dated(left.get("activity_date")) != dated(right.get("activity_date"))):
+        # A loan-classification review concerns an exact dated amount. Nearby
+        # separate transfers are not its counterpart and can crowd the source
+        # packet enough to hide one of the originals under the display cap.
+        return False
     if rapid_noncash_counterpart(left, right) or rapid_noncash_counterpart(right, left):
+        return True
+    if receipt_loan_counterpart(left, right) or receipt_loan_counterpart(right, left):
+        return True
+    if independent_expenditure_counterpart(left, right):
         return True
     if left.get("transaction_type") not in {0, 4, 20, 21} or right.get("transaction_type") not in {0, 4, 20, 21}:
         return False

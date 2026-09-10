@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "checked_at": "2026-09-10T18:32:57.095289+00:00",
+  "committees": [
+    {
+      "fppc_id": "1490887",
+      "portal_filer_id": "216706544",
+      "display_name": "Safe Richmond Neighborhoods",
+      "reported_name": "Safe Richmond Neighborhoods supporting Ahmad Anderson for Mayor 2026 sponsored by the Richmond Police Officers Association",
+      "committee_type": "Primarily formed committee",
+      "purpose": "Formed to support Ahmad Anderson for Richmond mayor.",
+      "purpose_page": 2,
+      "sponsors": [
+        {
+          "name": "Richmond Police Officers Association",
+          "affiliation": "Police Officers' Union",
+          "page": 3
+        }
+      ],
+      "source": {
+        "filing_id": "216859596",
+        "form": "410",
+        "source_url": "https://netfile.com/Connect2/api/public/image/216859596",
+        "sha256": "f7458ab90a9a7298078afc9a571e64e0ac6c153e96ff7b8af1d8305b395f7663",
+        "filed_at": "2026-06-04",
+        "reviewed_pages": [
+          1,
+          2,
+          3
+        ]
+      }
+    },
+    {
+      "fppc_id": "1390351",
+      "portal_filer_id": "168662145",
+      "display_name": "East Bay Working Families",
+      "reported_name": "East Bay Working Families, a coalition of unions and community groups",
+      "committee_type": "General purpose city committee",
+      "purpose": "Supports or opposes local candidates and ballot measures.",
+      "purpose_page": 3,
+      "sponsors": [
+        {
+          "name": "ACCE Action",
+          "affiliation": "Community Organization",
+          "page": 3
+        },
+        {
+          "name": "APEN Action",
+          "affiliation": "Community Organization",
+          "page": 4
+        },
+        {
+          "name": "Service Employees International Union Local 1021",
+          "affiliation": "Labor Union",
+          "page": 4
+        }
+      ],
+      "source": {
+        "filing_id": "217301754",
+        "form": "410",
+        "source_url": "https://netfile.com/Connect2/api/public/image/217301754",
+        "sha256": "871206d9117a0133eb27256d12f35d16fa3b3c27185e97fbf8904a2efbf1f080",
+        "filed_at": "2026-08-27",
+        "reviewed_pages": [
+          1,
+          3,
+          4
+        ]
+      }
+    }
+  ]
+}

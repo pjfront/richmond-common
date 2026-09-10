@@ -16,11 +16,12 @@ Public portal: https://public.netfile.com/pub2/?AID=RICH
 Transaction types (FPPC schedules):
   0  = F460A  — Monetary Contributions Received (Schedule A)
   1  = F460C  — Non-Monetary Contributions (Schedule C)
-  5  = F460D  — Summary (expenditures summary)
+  5  = F460D  — Contributions and Independent Expenditures Made (mixed kinds)
   6  = F460E  — Payments Made (Schedule E)
   11 = F460F  — Accrued Expenses (Unpaid Bills)
   12 = F460B1 — Loans Received
-  13 = F460B2 — Loans Made
+  13 = F460B2 — Loan Guarantors
+  14 = F460H  — Loans Made to Others
   20 = F497P1 — Late Contribution Report: Contributions Received
   21 = F497P2 — Late Contribution Report: Contributions Made
 
@@ -100,7 +101,7 @@ EXPENDITURE_TYPES = {
 }
 
 ALL_TYPES = {**CONTRIBUTION_TYPES, **EXPENDITURE_TYPES}
-ALL_TYPES.update({4: "F496P3", 12: "F460B1", 19: "S496"})
+ALL_TYPES.update({4: "F496P3", 12: "F460B1", 14: "F460H", 19: "S496"})
 
 # Rate limiting
 REQUEST_DELAY = 0.5  # seconds between API calls
