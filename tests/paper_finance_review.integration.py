@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 import paper_finance_review as paper
 from test_paper_finance_review import fixture, Sources, PDF, NOW
+import test_organization_finance_review as organization
 
 spec = importlib.util.spec_from_file_location("packet_database_fixture", ROOT / "tests/civic_review_packets.integration.py")
 bridge = importlib.util.module_from_spec(spec)
@@ -175,7 +176,64 @@ def main() -> None:
         repaired["pages"]["prepared_pages"][0]["amount_tokens"].append("2500.00")
         verify(paper.persist_record(db, repaired, snapshot), "unchanged")
         verify(db.call("SELECT review_version,evidence,status FROM pending_decisions WHERE id=$1", [after["id"]])["rows"][0], closed)
-        print(f"Paper source writer: {checks} PostgreSQL assertions passed; no production access")
+        # The two Form 410 watches reuse this exact private writer and inbox.
+        registry, inventories, metadata, pdfs = organization.fixture()
+        org_rows = paper.acquire_organizations(registry, organization.Sources(inventories, metadata, pdfs), {}, organization.NOW)
+        for row in org_rows:
+            verify(paper.persist_source_record(db, row, None, "committee_organization_review"), "source_retained")
+        org_cache = paper.read_existing(db, "committee_organization_review")
+        db.commit()
+        verify(set(org_cache), {"216859596", "217301754"})
+        verify("217094857" in paper.read_existing(db), True)
+        db.commit()
+        sources = organization.Sources(inventories, metadata, pdfs)
+        replay = paper.acquire_organizations(registry, sources, org_cache, organization.NOW + timedelta(days=1))
+        verify(any("/image/" in call for call in sources.calls), False)
+        for row in replay:
+            verify(paper.persist_source_record(db, row, None, "committee_organization_review"), "unchanged")
+
+        fid = organization.add_source(registry, inventories, metadata, pdfs)
+        new = next(row for row in paper.acquire_organizations(registry, organization.Sources(inventories, metadata, pdfs), org_cache, organization.NOW)
+                   if row["core"]["filing_id"] == fid)
+        packet = paper.prepare_organization_packet(new, registry["committees"][0])
+        verify(paper.persist_source_record(db, new, packet, "committee_organization_review"), "created")
+        decision = db.call("SELECT * FROM pending_decisions WHERE entity_id=$1", [packet.identity])["rows"][0]
+        verify(decision["action_kind"], "resolve_only")
+        verify(decision["target_brief_id"], None)
+        verify(scalar("SELECT count(*)::int FROM civic_brief_candidates"), 0)
+        result = db.call("SELECT review_decision($1,'reject',$2,gen_random_uuid(),NULL,'test') AS result", [decision["id"], decision["review_version"]])["rows"][0]["result"]
+        verify(result["effect"], "decision_recorded")
+        verify(paper.persist_source_record(db, new, packet, "committee_organization_review"), "unchanged")
+        verify(db.call("SELECT status,review_version FROM pending_decisions WHERE id=$1", [decision["id"]])["rows"][0]["status"], "rejected")
+
+        for role in ("anon", "authenticated"):
+            db.call(f"RESET ROLE; SET ROLE {role};", exec=True)
+            verify(scalar("SELECT count(*)::int FROM documents WHERE metadata->>'artifact_kind' LIKE 'committee_organization_%'"), 0)
+        db.call("RESET ROLE; SET ROLE service_role;", exec=True)
+        replacement = deepcopy(new)
+        replacement["pdf"] += b"reviewed replacement"
+        replacement["pdf_sha256"] = paper.sha(replacement["pdf"])
+        replacement_packet = paper.prepare_organization_packet(replacement, registry["committees"][0])
+        verify(paper.persist_source_record(db, replacement, replacement_packet, "committee_organization_review"), "created")
+        decision = db.call("SELECT * FROM pending_decisions WHERE entity_id=$1 AND status='pending'", [packet.identity])["rows"][0]
+        result = db.call("SELECT review_decision($1,'approve',$2,gen_random_uuid(),NULL,'test') AS result", [decision["id"], decision["review_version"]])["rows"][0]["result"]
+        verify(result["effect"], "decision_recorded")
+        verify(scalar("SELECT count(*)::int FROM civic_brief_candidates"), 0)
+        verify(scalar("SELECT count(*)::int FROM finance_assertions"), 0)
+        verify(scalar("SELECT count(*)::int FROM finance_events"), 0)
+
+        before_documents = scalar("SELECT count(*)::int FROM documents")
+        db.call("RESET ROLE; ALTER TABLE pending_decisions ADD CONSTRAINT reject_organization_packet CHECK(entity_id NOT LIKE 'committee-organization:%') NOT VALID; SET ROLE service_role;", exec=True)
+        failed = deepcopy(replacement)
+        failed["pdf"] += b"rollback"
+        failed["pdf_sha256"] = paper.sha(failed["pdf"])
+        try:
+            paper.persist_source_record(db, failed, paper.prepare_organization_packet(failed, registry["committees"][0]), "committee_organization_review")
+            raise AssertionError("Expected organization queue failure")
+        except RuntimeError:
+            checks += 1
+        verify(scalar("SELECT count(*)::int FROM documents"), before_documents)
+        print(f"Paper and organization source writer: {checks} PostgreSQL assertions passed; no production access")
     finally:
         db.close()
 

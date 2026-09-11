@@ -180,7 +180,36 @@ def main():
             assert review("approve", updated["review_version"])["effect"] == "decision_recorded"
             assert db.call("SELECT status FROM civic_brief_candidates WHERE id=$1", [decision["target_brief_id"]])["rows"][0]["status"] == "draft"
             assert db.call("SELECT count(*)::int AS n FROM civic_brief_candidates WHERE status='published'")["rows"][0]["n"] == 1
-        print("Packet writer PostgreSQL integration passed: role grants, private draft, refresh versions, stale approval, publication, rejection suppression, atomic rollback, cancelled/retired/removed source withdrawal, unchanged poll times, repeat safety, preserved deferred state and published content.")
+        # Exercise the actual finance SQL projection and both reviewed source
+        # conflicts. Raw source payloads must not ride along with descriptions.
+        from finance_ledger import assertion_from_netfile, reconcile
+        db.call("RESET ROLE; CREATE TABLE documents(id uuid PRIMARY KEY,source_type text);", exec=True)
+        db.call((root / "src/migrations/148_finance_assertion_ledger.sql").read_text(encoding="utf-8"), exec=True)
+        fixture = json.loads((root / "tests/fixtures/finance-source-conflicts.json").read_text())
+        assertions = [assertion_from_netfile(row["transaction"], row["metadata"], fixture["scope_key"], row.get("pdf_context"))
+                      for key in ("loan_conflict", "ie_repetition") for row in fixture[key]]
+        reconcile(assertions)
+        for row in assertions:
+            row["raw_payload"]["private_address_fixture"] = "PRIVATE ADDRESS MUST NOT BE READ"
+            db.call("INSERT INTO finance_assertions SELECT * FROM jsonb_populate_record(NULL::finance_assertions,$1::jsonb)",
+                    [json.dumps({**row, "id": str(uuid4())}, default=str)])
+        db.call("SET ROLE service_role")
+        selected, _ = packets.read_inputs(db, "finance", date(2026, 9, 10))
+        db.commit()
+        assert len(selected) == 7 and "PRIVATE ADDRESS" not in str(selected)
+        assert all(set(row["raw_payload"]) == {"transaction"} for row in selected)
+        finance_packets = packets.prepare_finance_packets(selected, date(2026, 9, 10))
+        assert len(finance_packets) == 2 and all(packet.kind is None for packet in finance_packets)
+        before_briefs = db.call("SELECT count(*)::int AS n FROM civic_brief_candidates")["rows"][0]["n"]
+        for packet in finance_packets:
+            assert packets.persist_packet(db, packet) == "created"
+            assert packets.persist_packet(db, packet) == "unchanged"
+            decision = db.call("SELECT * FROM pending_decisions WHERE entity_id=$1", [packet.identity])["rows"][0]
+            assert decision["action_kind"] == "resolve_only" and decision["target_brief_id"] is None
+            assert review("approve", decision["review_version"])["effect"] == "decision_recorded"
+        assert db.call("SELECT count(*)::int AS n FROM civic_brief_candidates")["rows"][0]["n"] == before_briefs
+        assert db.call("SELECT count(*)::int AS n FROM finance_assertions WHERE reconciliation_status='pending_review'")["rows"][0]["n"] == 6
+        print("Packet writer PostgreSQL integration passed: role grants, private draft, refresh versions, stale approval, publication, rejection suppression, atomic rollback, source withdrawal, repeat safety, preserved deferred state, address-free finance source projection and resolve-only loan/spending conflict judgments.")
     finally:
         db.close()
 

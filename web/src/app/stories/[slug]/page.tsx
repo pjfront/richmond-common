@@ -30,6 +30,7 @@ export default async function StoryPage({ params }: { params: Promise<{ slug: st
       <p className="mt-5 text-xl leading-8 text-slate-700"><Localized {...story.summary} /></p>
       <p className="mt-5 inline-block border-l-4 border-civic-navy bg-slate-100 px-4 py-2 font-medium leading-7"><Localized {...story.status} /></p>
       <div className="mt-5"><SourceNote /></div>
+      <a href="#story-agenda" className={`${civicLink} mt-3`}><Localized en="Follow the next step" es="Seguir el próximo paso" /><span aria-hidden="true">↓</span></a>
     </header>
     <div className="grid items-start gap-10 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] lg:gap-14">
       <div className="min-w-0 space-y-10">
