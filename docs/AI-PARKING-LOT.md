@@ -6,6 +6,10 @@ _Convention: Every session adds observations here. Items stay until promoted to 
 
 ---
 
+## 2026-09-06 weekly digest activation preparation
+
+- The prepared Monday 16:30 UTC schedule requires the original repository, trusted main, the exact automatic event, a first run attempt, and the deployed broadcast capability. Manual dispatch remains an empty owner-only canary. One bounded POST uses the existing weekly delivery claims; uncertain or partial results fail for ledger/provider inspection rather than an automatic resend. This patch stays unmerged and inactive until the approved representative canary passes after the completed-week rollover; code preparation is not evidence of an email send or live activation.
+
 ## 2026-09-06 paper finance source continuity
 
 - Anderson's amounts now have a source-hash/page-pinned JSON contract instead of relying on a missing electronic transaction row or a legacy synthetic gap. The daily finance job prepares newly changed paper sources with local OCR and private retained evidence, then an existing resolve-only engineering packet. Numeric publication still requires a checked JSON PR; generic approval does not execute a repair. Unchanged/rejected sources are suppressed and raw finance documents retain migration148's privacy boundary. See `docs/paper-finance-review.md` for bounds, replay behavior and the unexercised local Tesseract limitation.
