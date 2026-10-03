@@ -44,6 +44,7 @@ export interface CommonsAgendaRecord {
   recordingUrl: string | null
   indexedAt: string
   motions: CommonsMotion[]
+  voteSourceReview?: import('./stage-vote-source-review').StageVoteSourceReview
 }
 
 export interface CommonsMoneyRecord {

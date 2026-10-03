@@ -1453,6 +1453,7 @@ queries:
     tables: [meetings, bodies, agenda_items, motions, votes, meeting_attendance,
              closed_session_items]
     used_by: ["/meetings/[id]"]
+    note: "Read-only staging applies the planned shared stage-vote-source-review.ts hold before page props: exact item/meeting/item-number identity suppresses both held motions, summary_headline and plain_language_summary while retaining item titles and source links. See searchCommons source-review note."
 
   getAdjacentMeetings:
     file: queries.ts
@@ -1558,6 +1559,7 @@ queries:
     file: queries.ts
     tables: [agenda_items, meetings, motions, votes, public_comments]
     used_by: ["/meetings/[id]/items/[itemNumber]"]
+    note: "Read-only staging applies the same item-specific source-review hold as getMeeting before page props; held motion outcomes, tallies, roll calls and generated explanations are unavailable, while titles and primary source links remain. No database repair."
 
   getAgendaItemSlugs:
     file: queries/meetings.ts
@@ -1899,6 +1901,28 @@ queries:
     tables: [meetings, agenda_items, motions, votes, finance_events, finance_source_coverage]
     used_by: ["/", "/search"]
     description: "Read-only staged agenda, vote and money search. searchSite supplies bounded lexical candidates; active compact agenda projections supply exact item links, tags and meeting dates; motions and votes preserve recorded choices and source. Money uses getPublicFinanceSnapshot's existing public 2026 projections. Explicit submit and deterministic phrase interpretation; no model calls, query logging, write RPCs or generated answers."
+    note: >-
+      October 3, 2026 read-only vote source-review hold: agenda item
+      9cf375c8-edc1-413c-8ee0-6485348fbc6f, meeting
+      5f560013-daea-499a-8ecd-ca1a089c8a0c, March 2, 2010 J-2. Working primary
+      minutes https://www.ci.richmond.ca.us/ArchiveCenter/ViewFile/Item/2809 page 9
+      record original-motion ayes Bates, Butt, Lopez and Rogers; nay McLaughlin;
+      abstentions Ritterman and Viramontes; no absent members. Stored rows
+      incorrectly attribute Beckles abstain and Tom Bates aye, omit Lopez and
+      Viramontes, and mark a second motion failed without a recorded failed vote.
+      The legacy Archive.aspx?ADID=2809 link had an earlier QA 404 and a later
+      HTTP 200; availability is intermittent, not a permanent retirement.
+      Shared lib/stage-vote-source-review.ts helpers
+      stageVoteSourceReviewForItem and holdStageVoteSourceRecords match exact
+      item ID, meeting ID and item number before search or page props. Hold both
+      motions and their outcomes, tallies, roll calls and generated explanations,
+      plus this item's summary_headline and plain_language_summary; retain
+      title/source links and expose voteSourceReview reason, checkedAt and sourceUrl.
+      Vote-search totals are withheld for held results. Minutes origin is labelled Extracted from official
+      minutes with an automated-extraction accuracy caveat, not verified.
+      No database repair, invented identities, model calls or writes. Current
+      extraction schema motion-result enum passed|failed needs future unknown/withdrawn/unvoted
+      support before repairing unsupported outcomes.
 
   searchSite:
     file: queries.ts
@@ -2844,12 +2868,14 @@ field_map:
       column: agenda_items.plain_language_summary
       sources: []
       enrichment: summary_generation
+      note: "The read-only staging source-review hold suppresses this field for the exact March 2, 2010 J-2 item; title and source links remain. See searchCommons note."
 
     "summary headline":
       query: getMeeting
       column: agenda_items.summary_headline
       sources: []
       enrichment: summary_generation
+      note: "Suppressed for the same exact staging source-review item; do not repeat an unsupported stored vote outcome."
 
     "item category":
       query: getMeeting
@@ -2861,6 +2887,7 @@ field_map:
       query: getMeeting
       column: motions.motion_text
       sources: [minutes_extraction]
+      note: "Both motions of the exact staging source-review item are held, including results, tallies, roll calls and generated explanations. Stored source='minutes' denotes automated extraction, not verified accuracy."
 
     "motion result":
       query: getMeeting
@@ -3221,7 +3248,7 @@ field_map:
       column: "motions.id + motion_text + result + source + created_at; votes.motion_id + official_id + official_name + vote_choice + source"
       sources: [minutes_extraction]
       enrichment: transcript_vote_extraction
-      note: "Complete bounded motion/vote reads for shown items; recorded source stays visible. Conflicting or absent choices are not recorded, and transcript-derived choices remain tentative. No generated vote narrative or inferred outcome."
+      note: "Complete bounded motion/vote reads for shown items; recorded source stays visible. Conflicting or absent choices are not recorded, and transcript-derived choices remain tentative. No generated vote narrative or inferred outcome. The shared staging source-review hold suppresses both motions of the exact March 2, 2010 J-2 item and its generated summaries; retains its title/source links; and exposes the reason and two held motions. Minutes-derived records are labelled Extracted from official minutes with an automated-extraction accuracy caveat, not verified. See searchCommons note."
 
     "reported money event and source coverage":
       query: searchCommons
@@ -3364,6 +3391,7 @@ field_map:
       column: "agenda_items + motions + votes + public_comments + comment_themes joined"
       sources: [escribemeetings, minutes_extraction]
       enrichment: theme_extraction
+      note: "Read-only stage applies the shared exact-identity vote source-review hold before page props: both held motions and generated vote explanations, summary_headline and plain_language_summary are suppressed; original title and source links remain. See searchCommons note."
 
     "community comments":
       api_route: "/api/community-comments"

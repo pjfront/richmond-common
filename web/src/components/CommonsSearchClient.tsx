@@ -8,6 +8,7 @@ import type { CommonsAgendaRecord, CommonsMode, CommonsMoneyRecord, CommonsSearc
 import { financeEventLabel, isFinanceAdjustment } from '@/lib/finance-ledger'
 import { formatCivicDate } from '@/lib/november-election'
 import FinanceCoverageNote from './civic/FinanceCoverageNote'
+import VoteSourceReviewNotice from './VoteSourceReviewNotice'
 
 const control = 'min-h-11 w-full rounded-md border border-slate-400 bg-white px-3 py-2 text-base text-slate-900 focus:outline-2 focus:outline-offset-2 focus:outline-civic-navy'
 const linkClass = 'inline-flex min-h-11 items-center text-civic-navy underline underline-offset-4 focus:outline-2 focus:outline-offset-2'
@@ -15,16 +16,18 @@ const defaults: CommonsSearchFilters = { q: '', mode: 'agenda', topic: '', from:
 const money = (amount: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount)
 
 function sourceLabel(source: string | null): string {
-  return source === 'minutes' ? 'Official minutes' : source === 'transcript' ? 'Tentative — meeting recording' : 'Source not established'
+  return source === 'minutes' ? 'Extracted from official minutes' : source === 'transcript' ? 'Tentative — meeting recording' : 'Source not established'
 }
 
-function AgendaRecord({ record }: { record: CommonsAgendaRecord }) {
+export function AgendaRecord({ record }: { record: CommonsAgendaRecord }) {
   return <article className="rounded-xl border border-slate-300 bg-white p-5 sm:p-6">
     <p className="text-base text-slate-600">{formatCivicDate(record.meetingDate)} · Item {record.itemNumber}</p>
     <h2 className="mt-2 text-xl font-semibold leading-snug text-civic-navy"><Link className="inline-flex min-h-11 items-center underline decoration-slate-300 underline-offset-4" href={record.url}>{record.title}</Link></h2>
     {(record.topic || record.category) && <p className="mt-3 text-base text-slate-700">Tags: {[record.topic, record.category?.replaceAll('_', ' ')].filter(Boolean).join(' · ')}</p>}
-    {record.kind === 'votes' && <details className="mt-4 rounded-lg border border-slate-200 px-4">
+    {record.voteSourceReview && <VoteSourceReviewNotice review={record.voteSourceReview} />}
+    {record.kind === 'votes' && !record.voteSourceReview && <details className="mt-4 rounded-lg border border-slate-200 px-4">
       <summary className="min-h-11 cursor-pointer py-3 font-medium text-civic-navy">Recorded motions ({record.motions.length})</summary>
+      <p className="mt-2 text-slate-600">These are automated extractions. Names, choices, and results may contain errors; check the original document before relying on them.</p>
       <ol className="divide-y divide-slate-200">{record.motions.map((motion, index) => <li key={motion.id} className="py-4">
         <h3 className="font-semibold text-slate-800">Motion {index + 1}</h3>
         {motion.text && <p className="mt-2 whitespace-pre-wrap leading-relaxed text-slate-700">{motion.text}</p>}

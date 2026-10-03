@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({ from: vi.fn(), searchSite: vi.fn(), finance: vi.fn() }))
 vi.mock('./_shared', () => ({ supabase: { from: mocks.from }, RICHMOND_FIPS: '0660620' }))
 vi.mock('./search', () => ({ searchSite: mocks.searchSite }))
@@ -19,6 +19,7 @@ const agenda = { id: 'item-1', meeting_id: 'meeting-1', item_number: 'H.3', titl
 const event = { event_key: 'event-1', scope_key: '0660620:calendar-2026', event_kind: 'receipt', donor_name: 'A Contributor', recipient_name: 'Jimenez committee', donor_fppc_id: null, recipient_fppc_id: '1234567', reporting_filer_name: 'Jimenez committee', reporting_filer_fppc_id: '1234567', amount: 100, amount_kind: 'cash', activity_date: '2026-08-01', support_oppose: null, candidate_name: null, measure_name: null, election_date: null, filing_ids: ['1'], source_urls: ['https://example.gov/filing.pdf'], source_url: 'https://example.gov/filing.pdf', extracted_at: '2026-08-02T00:00:00Z', source_tier: 1, reconciliation_status: 'source_reported' }
 
 describe('read-only staging record retrieval', () => {
+  afterEach(() => vi.unstubAllEnvs())
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.from.mockReset()
@@ -82,6 +83,23 @@ describe('read-only staging record retrieval', () => {
       { id: 'vote-2', motion_id: 'motion-1', official_id: 'official-1', official_name: 'Member One', vote_choice: 'nay', source: 'transcript' }])
     const result = await searchCommons(request('q=housing&mode=votes'))
     expect(result.records[0]).toMatchObject({ kind: 'votes', motions: [{ source: 'transcript', votes: [{ name: 'Member One', choice: 'not-recorded' }] }] })
+  })
+  it('holds the verified erroneous Point Molate item while preserving ordinary minutes roll calls', async () => {
+    vi.stubEnv('RICHMOND_READ_ONLY_STAGE', 'true')
+    const held = { ...agenda, id: '9cf375c8-edc1-413c-8ee0-6485348fbc6f', meeting_id: '5f560013-daea-499a-8ecd-ca1a089c8a0c', item_number: 'J-2',
+      title: 'Point Molate LDA Extension with Upstream Point Molate LLC', meetings: { ...agenda.meetings, id: '5f560013-daea-499a-8ecd-ca1a089c8a0c', meeting_date: '2010-03-02', agenda_url: null,
+        minutes_url: 'https://www.ci.richmond.ca.us/Archive.aspx?ADID=2809' } }
+    mocks.searchSite.mockImplementation(async (_q: string, options: { offset: number; resultType: string }) => options.offset === 0 && options.resultType === 'agenda_item' ? [{ id: held.id }, { id: agenda.id }] : [])
+    page([held, agenda])
+    const motions = page([{ id: 'ordinary-motion', agenda_item_id: agenda.id, motion_text: 'Approve services', source: 'minutes', result: 'passed', sequence_number: 1, created_at: agenda.created_at }])
+    page([{ id: 'ordinary-vote', motion_id: 'ordinary-motion', official_id: 'official-1', official_name: 'Member One', vote_choice: 'aye', source: 'minutes' }])
+    const result = await searchCommons(request('q=Point+Molate&mode=votes'))
+    expect(result.records[0]).toMatchObject({ id: held.id, motions: [], voteSourceReview: { checkedAt: '2026-10-03' },
+      url: '/meetings/5f560013-daea-499a-8ecd-ca1a089c8a0c/items/j-2', sourceUrl: 'https://www.ci.richmond.ca.us/ArchiveCenter/ViewFile/Item/2809' })
+    expect(result.records[1]).toMatchObject({ motions: [{ result: 'passed', source: 'minutes', votes: [{ name: 'Member One', choice: 'aye' }] }] })
+    expect(motions.in).toHaveBeenCalledWith('agenda_item_id', [agenda.id])
+    expect(result.total).toBeNull()
+    expect(result.limitations.join(' ')).toContain('held for source review')
   })
   it('matches reported recipient direction, preserves signed amounts, and never adds outside spending to donations', async () => {
     mocks.finance.mockResolvedValue({ events: [event, { ...event, event_key: 'wrong-direction', donor_name: 'Jimenez', recipient_name: 'Other committee' },

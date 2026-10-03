@@ -6,6 +6,7 @@ import { agendaItemPath } from '../format'
 import { readCompleteRecords } from '../complete-record-read'
 import { failReadPath } from '../read-path-unavailable'
 import { normalizeMotionVotes } from '../vote-records'
+import { stageVoteSourceReviewForItem } from '../stage-vote-source-review'
 import { COMMONS_PAGE_SIZE, COMMONS_RANKED_LIMIT, matchesCommonsScope, publicSourceUrl } from '../commons-search'
 import type { CommonsAgendaRecord, CommonsMotion, CommonsSearchPlan, CommonsSearchResponse } from '../commons-search'
 import type { Tables } from '../types'
@@ -29,14 +30,16 @@ function agendaRecord(row: AgendaProjection, votesOnly: boolean): CommonsAgendaR
     || row.agenda_source_retired_at !== null || row.meetings.source_cancelled_at !== null || !row.title || !row.created_at) {
     failReadPath('Commons agenda search', 'Invalid active source identity')
   }
-  const sourceUrl = publicSourceUrl(row.meetings.agenda_url) ?? publicSourceUrl(row.meetings.minutes_url)
+  const review = stageVoteSourceReviewForItem(row)
+  const sourceUrl = review?.sourceUrl ?? publicSourceUrl(row.meetings.agenda_url) ?? publicSourceUrl(row.meetings.minutes_url)
   // An old indexed item without a document link cannot be attributed. Withhold
   // that card and disclose the gap instead of blocking correctly sourced cards.
   if (!sourceUrl) return null
   return { kind: votesOnly ? 'votes' : 'agenda', id: row.id, title: row.title, itemNumber: row.item_number,
     meetingDate: row.meetings.meeting_date, topic: row.topic_label, category: row.category,
     url: agendaItemPath(row.meeting_id, row.item_number), sourceUrl,
-    minutesUrl: publicSourceUrl(row.meetings.minutes_url), recordingUrl: publicSourceUrl(row.meetings.video_url), indexedAt: row.created_at, motions: [] }
+    minutesUrl: review?.sourceUrl ?? publicSourceUrl(row.meetings.minutes_url), recordingUrl: publicSourceUrl(row.meetings.video_url), indexedAt: row.created_at, motions: [],
+    ...(review ? { voteSourceReview: review } : {}) }
 }
 
 async function readMotions(itemIds: string[]): Promise<MotionProjection[]> {
@@ -49,7 +52,7 @@ async function readMotions(itemIds: string[]): Promise<MotionProjection[]> {
 }
 
 async function enrichVotes(records: CommonsAgendaRecord[], motions?: MotionProjection[]): Promise<void> {
-  const items = new Map(records.map(record => [record.id, record]))
+  const items = new Map(records.filter(record => !record.voteSourceReview).map(record => [record.id, record]))
   const motionRows = motions?.filter(row => items.has(row.agenda_item_id)) ?? await readMotions([...items.keys()])
   if (motionRows.some(row => !items.has(row.agenda_item_id))) failReadPath('Commons motion records', 'Motion belongs to another item')
   const motionIds = new Set(motionRows.map(row => row.id))
@@ -121,9 +124,9 @@ export async function searchCommons(plan: CommonsSearchPlan): Promise<CommonsSea
     topics = [...new Set(rows.flatMap(row => row.topic_label ? [row.topic_label] : []))].sort()
     rows = rows.filter(row => matchesCommonsScope({ topic: row.topic_label, meetingDate: row.meetings.meeting_date }, plan))
     if (plan.mode === 'votes') {
-      allMotions = await readMotions(rows.map(row => row.id))
+      allMotions = await readMotions(rows.filter(row => !stageVoteSourceReviewForItem(row)).map(row => row.id))
       const withMotions = new Set(allMotions.map(row => row.agenda_item_id))
-      rows = rows.filter(row => withMotions.has(row.id))
+      rows = rows.filter(row => withMotions.has(row.id) || stageVoteSourceReviewForItem(row))
     }
     total = rows.length
     hasMore = start + COMMONS_PAGE_SIZE < rows.length
@@ -164,6 +167,10 @@ export async function searchCommons(plan: CommonsSearchPlan): Promise<CommonsSea
   if (records.length !== rows.length) {
     limitations.push('Some retrieved items are withheld because an original meeting document link is unavailable.')
     total = null
+  }
+  if (records.some(record => record.voteSourceReview)) {
+    limitations.push('Motion and vote records for a retrieved item are held for source review because they conflict with its original minutes. The item and source document remain available.')
+    if (plan.mode === 'votes') total = null
   }
   if (plan.mode === 'votes') await enrichVotes(records, allMotions)
   return { filters, interpretation: plan.interpretation, records, topics, hasMore, total,

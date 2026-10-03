@@ -195,7 +195,7 @@ gates:
 
   - id: meeting-item-finance-section
     file: web/src/app/meetings/[id]/items/[itemNumber]/page.tsx
-    line: 205
+    line: 207
     category: pending_graduation
     gated_at: '2026-03-15'
     view_at: /meetings

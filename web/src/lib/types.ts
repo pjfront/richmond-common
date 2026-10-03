@@ -482,6 +482,8 @@ export interface CommentSummary {
 
 export interface AgendaItemWithMotions extends AgendaItem {
   motions: MotionWithVotes[]
+  /** Stage-only source-review hold; disputed motion rows are absent from props. */
+  voteSourceReview?: import('./stage-vote-source-review').StageVoteSourceReview
   /** Legacy extracted estimate; null is unknown. Public views use comment records. */
   public_comment_count: number | null
   /** Aggregated comment summary with notable speaker detection */
