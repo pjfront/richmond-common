@@ -2433,6 +2433,14 @@ api_routes:
     description: "Hybrid FTS + semantic search with RRF ranking; does not persist resident queries"
     used_by_pages: ["/search"]
 
+  "/api/site-access":
+    file: "web/src/app/api/site-access/route.ts"
+    method: POST
+    tables_read: []
+    tables_written: []
+    description: "Same-origin password-only access; sets a separate sealed seven-day site cookie and redirects to a safe local path without accounts or database writes."
+    used_by_pages: ["*"]
+
   "/api/public-records":
     file: "web/src/app/api/public-records/route.ts"
     method: GET

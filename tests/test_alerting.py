@@ -8,6 +8,8 @@ import datetime as dt
 import json
 import sys
 import textwrap
+import urllib.error
+from email.message import Message
 from pathlib import Path
 
 import pytest
@@ -57,10 +59,11 @@ def _write(tmp_path, name, text):
 
 
 class _FakeResponse:
-    def __init__(self, body, status=200):
+    def __init__(self, body, status=200, headers=None):
         self.body = body if isinstance(body, bytes) else body.encode("utf-8")
         self.status = status
         self.read_limits = []
+        self.headers = headers or {}
 
     def __enter__(self):
         return self
@@ -153,6 +156,54 @@ def _provider_failure():
 
 
 class TestPublicSiteProbe:
+    @staticmethod
+    def _password_headers():
+        headers = Message()
+        headers["X-Richmond-Site-Access"] = "required"
+        return headers
+
+    def test_password_gate_and_protected_health_pass_without_copying_source_data(self):
+        homepage = _FakeResponse("private body never read", status=401, headers=self._password_headers())
+        health = _FakeResponse('{"status":"protected"}')
+        opener = _SequenceOpener(homepage, health)
+        result = probe_public_site(opener=opener, sleeper=lambda _: None)
+        assert result["status"] == "pass"
+        assert len(opener.calls) == 2
+        assert homepage.read_limits == []
+        assert "database health is not probed anonymously" in str(result)
+        assert "private body" not in str(result)
+        assert "body" not in str(result)
+
+    def test_urllib_password_challenge_is_an_expected_single_attempt(self):
+        challenge = urllib.error.HTTPError(
+            "https://richmondcommons.org/", 401, "Unauthorized", self._password_headers(), None,
+        )
+        opener = _SequenceOpener(challenge, _FakeResponse('{"status":"protected"}'))
+        sleeps = []
+        result = probe_public_site(opener=opener, sleeper=sleeps.append)
+        assert result["status"] == "pass"
+        assert len(opener.calls) == 2
+        assert sleeps == []
+
+    def test_arbitrary_unauthorized_response_is_not_treated_as_intentional_protection(self):
+        opener = _SequenceOpener(
+            _FakeResponse("Unauthorized", status=401),
+            _FakeResponse("Unauthorized", status=401),
+            _FakeResponse('{"status":"protected"}'),
+        )
+        assert probe_public_site(opener=opener, sleeper=lambda _: None)["status"] == "fail"
+
+    @pytest.mark.parametrize("protected_homepage", [True, False])
+    def test_gate_and_health_must_agree(self, protected_homepage):
+        homepage = _FakeResponse(
+            "Richmond Commons", status=401 if protected_homepage else 200,
+            headers=self._password_headers() if protected_homepage else None,
+        )
+        health = _FakeResponse('{"status":"healthy"}' if protected_homepage else '{"status":"protected"}')
+        result = probe_public_site(opener=_SequenceOpener(homepage, health), sleeper=lambda _: None)
+        assert result["status"] == "fail"
+        assert "password-gate status disagreed" in str(result)
+
     def test_two_endpoints_pass_with_fixed_timeout_and_size_cap(self):
         homepage = _FakeResponse("<title>Richmond Commons</title>")
         health = _FakeResponse('{"status":"healthy","private":"do-not-copy"}')
