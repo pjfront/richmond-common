@@ -118,4 +118,13 @@ describe('read-only staging record retrieval', () => {
     expect(result.hasMore).toBe(false)
     expect(result.total).toBe(21)
   })
+  it('distinguishes dates outside finance coverage from no reported activity', async () => {
+    const outside = await searchCommons(request('q=Donations+to+Jimenez+in+2025'))
+    expect(outside.records).toEqual([])
+    expect(outside.limitations.join(' ')).toContain('outside the indexed activity window')
+    expect(outside.limitations.join(' ')).toContain('cannot establish reported activity for those dates')
+    const covered = await searchCommons(request('q=Donations+to+Jimenez&from=2026-08-01&to=2026-08-01'))
+    expect(covered.records).toHaveLength(1)
+    expect(covered.limitations.join(' ')).not.toContain('outside the indexed activity window')
+  })
 })

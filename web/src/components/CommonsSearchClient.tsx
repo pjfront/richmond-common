@@ -3,16 +3,17 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { commonsSearchParams, planCommonsSearch } from '@/lib/commons-search'
-import type { CommonsAgendaRecord, CommonsMode, CommonsMoneyRecord, CommonsSearchFilters, CommonsSearchResponse } from '@/lib/commons-search'
+import { commonsDraftParams, commonsPageParams, commonsSearchDraft } from '@/lib/commons-search-form'
+import type { CommonsSearchDraft } from '@/lib/commons-search-form'
+import type { CommonsAgendaRecord, CommonsMoneyRecord, CommonsSearchResponse } from '@/lib/commons-search'
 import { financeEventLabel, isFinanceAdjustment } from '@/lib/finance-ledger'
 import { formatCivicDate } from '@/lib/november-election'
 import FinanceCoverageNote from './civic/FinanceCoverageNote'
 import VoteSourceReviewNotice from './VoteSourceReviewNotice'
 
-const control = 'min-h-11 w-full rounded-md border border-slate-400 bg-white px-3 py-2 text-base text-slate-900 focus:outline-2 focus:outline-offset-2 focus:outline-civic-navy'
+const control = 'min-h-11 w-full rounded-md border border-slate-500 bg-white px-3 py-2 text-base text-slate-900 focus:outline-2 focus:outline-offset-2 focus:outline-civic-navy'
 const linkClass = 'inline-flex min-h-11 items-center text-civic-navy underline underline-offset-4 focus:outline-2 focus:outline-offset-2'
-const defaults: CommonsSearchFilters = { q: '', mode: 'agenda', topic: '', from: '', to: '', page: 1 }
+const defaults: CommonsSearchDraft = { q: '', mode: 'auto', topic: '', from: '', to: '', page: 1 }
 const money = (amount: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount)
 
 function sourceLabel(source: string | null): string {
@@ -71,7 +72,7 @@ export default function CommonsSearchClient() {
   const router = useRouter()
   const pathname = usePathname()
   const urlState = searchParams.toString()
-  const [draft, setDraft] = useState<CommonsSearchFilters>(defaults)
+  const [draft, setDraft] = useState<CommonsSearchDraft>(defaults)
   const [response, setResponse] = useState<CommonsSearchResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -83,24 +84,23 @@ export default function CommonsSearchClient() {
     const id = ++requestId.current
     const controller = new AbortController()
     const params = new URLSearchParams(urlState)
-    let filters: CommonsSearchFilters
-    try { filters = planCommonsSearch(params) } catch (failure) {
+    let nextDraft: CommonsSearchDraft
+    try { nextDraft = commonsSearchDraft(params) } catch (failure) {
       setError(failure instanceof Error ? failure.message : 'Check the search filters.')
       setLoading(false)
       return () => controller.abort()
     }
-    setDraft(filters)
+    setDraft(nextDraft)
     if (!urlState) { setLoading(false); setError(null); setResponse(null); return () => controller.abort() }
     setLoading(true)
     setError(null)
     async function load() {
       try {
-        const result = await fetch(`/api/commons/search?${commonsSearchParams(filters)}`, { signal: controller.signal })
+        const result = await fetch(`/api/commons/search?${params}`, { signal: controller.signal })
         const data = await result.json()
         if (!result.ok) throw new Error(typeof data.error === 'string' ? data.error : 'The source records could not be loaded.')
         if (id !== requestId.current) return
         setResponse(data as CommonsSearchResponse)
-        resultsRef.current?.focus({ preventScroll: true })
       } catch (failure) {
         if (controller.signal.aborted || id !== requestId.current) return
         setError(failure instanceof Error ? failure.message : 'The source records could not be loaded. Please try again.')
@@ -110,33 +110,36 @@ export default function CommonsSearchClient() {
     return () => controller.abort()
   }, [urlState, attempt])
 
+  useEffect(() => {
+    if (response) resultsRef.current?.focus({ preventScroll: true })
+  }, [response])
+
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     try {
-      const plan = planCommonsSearch(commonsSearchParams({ ...draft, page: 1 }))
-      const params = commonsSearchParams(plan).toString()
+      const params = commonsDraftParams(draft).toString()
       if (pathname === '/search' && params === urlState) setAttempt(value => value + 1)
       else router.push(`/search?${params}`)
     } catch (failure) { setError(failure instanceof Error ? failure.message : 'Check the search filters.') }
   }
-  function pageUrl(page: number) { return `/search?${commonsSearchParams({ ...(response?.filters ?? draft), page })}` }
+  function pageUrl(page: number) { return `/search?${commonsPageParams(new URLSearchParams(urlState), page)}` }
 
   return <section aria-label="Search public records" className="space-y-5">
     <form action="/search" method="get" onSubmit={submit} className="rounded-xl border border-slate-300 bg-white p-5 sm:p-6">
       <label htmlFor="commons-query" className="block text-lg font-semibold text-civic-navy">Search decisions, votes, or campaign money</label>
       <div className="mt-3 flex flex-col gap-3 sm:flex-row"><input id="commons-query" name="q" type="search" maxLength={200} value={draft.q} onChange={event => setDraft({ ...draft, q: event.target.value })} placeholder="Housing decisions in 2026" className={control} /><button type="submit" className="min-h-11 rounded-md bg-civic-navy px-6 py-2 text-base font-semibold text-white focus:outline-2 focus:outline-offset-2 focus:outline-civic-navy">Search</button></div>
       <div className="mt-5 grid gap-4 sm:grid-cols-2">
-        <div><label htmlFor="commons-mode" className="block font-medium text-slate-800">Look in</label><select id="commons-mode" name="mode" value={draft.mode} onChange={event => setDraft({ ...draft, mode: event.target.value as CommonsMode, topic: event.target.value === 'money' ? '' : draft.topic })} className={`${control} mt-2`}><option value="agenda">Agenda items</option><option value="votes">Votes</option><option value="money">Money</option></select></div>
+        <div><label htmlFor="commons-mode" className="block font-medium text-slate-800">Look in</label><select id="commons-mode" name={draft.mode === 'auto' ? undefined : 'mode'} value={draft.mode} onChange={event => setDraft({ ...draft, mode: event.target.value as CommonsSearchDraft['mode'], topic: event.target.value === 'money' ? '' : draft.topic })} className={`${control} mt-2`}><option value="auto">Choose from my question</option><option value="agenda">Agenda items</option><option value="votes">Votes</option><option value="money">Money</option></select></div>
         {draft.mode !== 'money' && <div><label htmlFor="commons-topic" className="block font-medium text-slate-800">Tag (exact match)</label><input id="commons-topic" name="topic" value={draft.topic} onChange={event => setDraft({ ...draft, topic: event.target.value })} list="commons-topics" maxLength={100} className={`${control} mt-2`} placeholder="Any tag" /><datalist id="commons-topics">{response?.topics.map(topic => <option value={topic} key={topic} />)}</datalist></div>}
-        <div><label htmlFor="commons-from" className="block font-medium text-slate-800">{draft.mode === 'money' ? 'Activity from' : 'Meeting from'}</label><input id="commons-from" name="from" type="date" value={draft.from} onChange={event => setDraft({ ...draft, from: event.target.value })} className={`${control} mt-2`} /></div>
+        <div><label htmlFor="commons-from" className="block font-medium text-slate-800">{draft.mode === 'auto' ? 'From date' : draft.mode === 'money' ? 'Activity from' : 'Meeting from'}</label><input id="commons-from" name="from" type="date" value={draft.from} onChange={event => setDraft({ ...draft, from: event.target.value })} className={`${control} mt-2`} /></div>
         <div><label htmlFor="commons-to" className="block font-medium text-slate-800">Through</label><input id="commons-to" name="to" type="date" value={draft.to} onChange={event => setDraft({ ...draft, to: event.target.value })} className={`${control} mt-2`} /></div>
       </div>
       <p className="mt-4 text-base leading-relaxed text-slate-600">Use names, topics, or simple phrases. This staged search recognizes a few question patterns and retrieves indexed records. Broader natural-language answers are still being prepared.</p>
     </form>
-    {!response && !loading && !error && <div className="text-base text-slate-700"><p className="font-medium">Try a search</p><ul className="mt-1 flex flex-wrap gap-x-6"><li><Link className={linkClass} href="/search?q=Housing+decisions+in+2026&mode=agenda">Housing decisions in 2026</Link></li><li><Link className={linkClass} href="/search?q=Who+voted+on+Point+Molate%3F&mode=votes">Who voted on Point Molate?</Link></li><li><Link className={linkClass} href="/search?q=Donations+to+Jimenez&mode=money">Donations to Jimenez</Link></li></ul><p className="mt-2">Leave the search blank to browse. Tags suggested after a search come from the retrieved items.</p></div>}
+    {!response && !loading && !error && <div className="text-base text-slate-700"><p className="font-medium">Try a search</p><ul className="mt-1 flex flex-wrap gap-x-6"><li><Link className={linkClass} href="/search?q=Housing+decisions+in+2026">Housing decisions in 2026</Link></li><li><Link className={linkClass} href="/search?q=Who+voted+on+Point+Molate%3F">Who voted on Point Molate?</Link></li><li><Link className={linkClass} href="/search?q=Donations+to+Jimenez">Donations to Jimenez</Link></li></ul><p className="mt-2">Leave the search blank to browse. Tags suggested after a search come from the retrieved items.</p></div>}
     {loading && <div aria-live="polite" className="space-y-3"><p className="text-base text-slate-700">Loading source records…</p>{[0, 1].map(value => <div key={value} aria-hidden="true" className="rounded-xl border border-slate-200 bg-white p-6"><div className="h-4 w-36 rounded bg-slate-200" /><div className="mt-4 h-6 w-4/5 rounded bg-slate-200" /><div className="mt-5 h-4 w-3/5 rounded bg-slate-200" /></div>)}</div>}
     {error && <p role="alert" className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-base text-slate-800">{error} {response && 'Previously loaded records remain below.'}</p>}
-    {response && <div ref={resultsRef} tabIndex={-1} className="space-y-5 focus:outline-none">
+    {response && <div ref={resultsRef} role="region" aria-label="Search results" tabIndex={-1} className="space-y-5 focus:outline-2 focus:outline-offset-4 focus:outline-civic-navy">
       <p role="status" className="text-base font-medium text-slate-800">{response.records.length} {response.records.length === 1 ? 'record' : 'records'} shown · page {response.filters.page}{response.total !== null ? ` · ${response.total} matches in ${response.limited ? 'the retrieved set' : 'this index'}` : ''}</p>
       <p className="text-base text-slate-700">Search interpreted as: {response.interpretation.join(' · ')}.</p>
       <aside className="rounded-lg bg-slate-100 p-4 text-base leading-relaxed text-slate-700">{response.limitations.map(limit => <p className="mt-2 first:mt-0" key={limit}>{limit}</p>)}</aside>

@@ -9,7 +9,7 @@ const navigation = [
 export default function StageHeader() {
   return (
     <header className="border-b border-slate-200 bg-white">
-      <a href="#main-content" className="sr-only z-50 rounded-md bg-civic-navy px-4 py-3 text-white focus:not-sr-only focus:absolute focus:left-4 focus:top-4">Skip to content</a>
+      <a href="#main-content" className="sr-only z-50 rounded-md bg-civic-navy text-white focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:min-h-11 focus:px-4 focus:py-3">Skip to content</a>
       <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-6 gap-y-3 px-4 py-4 sm:px-6 lg:px-8">
         <Link href="/" className="inline-flex min-h-11 flex-col justify-center text-civic-navy">
           <span className="text-xl font-bold tracking-tight">Richmond Commons</span>
@@ -22,7 +22,7 @@ export default function StageHeader() {
           </nav>
           <form action="/search" method="get" role="search" aria-label="Search the public record" className="flex min-w-0 gap-2">
             <label htmlFor="header-search" className="sr-only">Search a name or topic</label>
-            <input id="header-search" name="q" type="search" maxLength={200} placeholder="Name or topic" className="min-h-11 w-full min-w-0 rounded-md border border-slate-300 px-3 text-base" />
+            <input id="header-search" name="q" type="search" maxLength={200} placeholder="Name or topic" className="min-h-11 w-full min-w-0 rounded-md border border-slate-500 px-3 text-base focus:outline-2 focus:outline-offset-2 focus:outline-civic-navy" />
             <button type="submit" className="min-h-11 shrink-0 rounded-md bg-civic-navy px-4 font-medium text-white hover:bg-civic-navy-light">Search</button>
           </form>
         </div>

@@ -33,6 +33,8 @@ Password protection, private/no-store responses, noindex metadata, robots exclus
 - Existing meeting inventory, meeting detail, and exact item-detail URLs remain the browse and evidence paths.
 - `/money` uses the existing public finance snapshot, filters, source coverage, and original filing links. It does not compute a fundraising total from filtered transactions.
 - The first search API uses existing public read paths and bounded question patterns. Supported interpretation and source-read failures are visible. No model-generated answer or arbitrary semantic understanding is implied.
+- The search form chooses agenda, votes or money from supported question wording unless the resident deliberately selects a record kind. Inferred years stay out of editable controls and share URLs, so a subsequent question can change its own scope. Resolved record kind, names and date scope are disclosed with the results; unsupported questions are explicitly keyword-only searches rather than claimed answers.
+- Common housing, voting and contributor questions are covered by representative parser tests. The [question coverage matrix](../research/2026-10-03-search-question-coverage.md) separates tested contracts from independently checked source evidence and remaining capabilities. Finance date searches disclose the existing January 1–November 3, 2026 activity window and warn when requested dates extend beyond it.
 - The staged layout omits analytics, operator-session probing, subscription and feedback providers. Meeting subscription actions are hidden in read-only mode; correction buttons are absent when their feedback provider is unavailable.
 - No credits, accounts, checkout, payment webhooks, or monthly paid-query allowances are functional in this slice.
 

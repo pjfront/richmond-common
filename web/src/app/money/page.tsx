@@ -62,17 +62,17 @@ export default async function MoneyPage({ searchParams }: { searchParams: Promis
       <form key={urlParams.toString()} action="/money#records" method="get" className="mt-7 rounded-xl border border-slate-200 bg-white p-4 sm:p-6">
         {committee && <input type="hidden" name="committee" value={committee} />}
         <label htmlFor="money-search" className="block font-semibold text-civic-navy">{committee ? 'Search within this committee’s records' : 'Contributor, committee, candidate, or FPPC number'}</label>
-        <input id="money-search" type="search" name="q" defaultValue={q} maxLength={150} placeholder="Name printed on a mailer, or a contributor’s name" className="mt-2 min-h-12 w-full rounded-md border border-slate-300 px-3 text-base" />
+        <input id="money-search" type="search" name="q" defaultValue={q} maxLength={150} placeholder="Name printed on a mailer, or a contributor’s name" className="mt-2 min-h-12 w-full rounded-md border border-slate-500 px-3 text-base focus:outline-2 focus:outline-offset-2 focus:outline-civic-navy" />
         <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end">
           <div className="min-w-0 flex-1">
             <label htmlFor="money-activity" className="block font-medium text-slate-700">Kind of activity</label>
-            <select id="money-activity" name="activity" defaultValue={activity} className="mt-2 min-h-11 w-full rounded-md border border-slate-300 bg-white px-3 text-base">
+            <select id="money-activity" name="activity" defaultValue={activity} className="mt-2 min-h-11 w-full rounded-md border border-slate-500 bg-white px-3 text-base focus:outline-2 focus:outline-offset-2 focus:outline-civic-navy">
               {FINANCE_ACTIVITIES.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
           </div>
           {committee && <div className="min-w-0 flex-1">
             <label htmlFor="money-role" className="block font-medium text-slate-700">This committee</label>
-            <select id="money-role" name="role" defaultValue={role} className="mt-2 min-h-11 w-full rounded-md border border-slate-300 bg-white px-3 text-base">
+            <select id="money-role" name="role" defaultValue={role} className="mt-2 min-h-11 w-full rounded-md border border-slate-500 bg-white px-3 text-base focus:outline-2 focus:outline-offset-2 focus:outline-civic-navy">
               <option value="">All records involving it</option>
               <option value="recipient">Recipient or borrower</option>
               <option value="source">Contributor, lender, or spender</option>
@@ -119,8 +119,8 @@ export default async function MoneyPage({ searchParams }: { searchParams: Promis
               </>}
               <p className="mt-3 leading-relaxed text-slate-600">Activity: {formatCivicDate(row.activity_date)} · {row.election_date ? `Election: ${formatCivicDate(row.election_date)}` : 'Election not established in this record'}</p>
               <div className="mt-4 border-t border-slate-200 pt-3">
-                <p className="text-sm leading-relaxed text-slate-600">Source tier {row.source_tier} · official filing · retrieved {formatCivicDate(row.extracted_at)} · {row.reconciliation_status === 'matched_exact' ? 'Matching source reports linked' : 'Source-reported activity'}</p>
-                <p className="mt-1 break-words text-sm leading-relaxed text-slate-600">Reported filing IDs: {row.filing_ids.join(', ') || 'Not available'}</p>
+                <p className="text-base leading-relaxed text-slate-600">Source tier {row.source_tier} · official filing · retrieved {formatCivicDate(row.extracted_at)} · {row.reconciliation_status === 'matched_exact' ? 'Matching source reports linked' : 'Source-reported activity'}</p>
+                <p className="mt-1 break-words text-base leading-relaxed text-slate-600">Reported filing IDs: {row.filing_ids.join(', ') || 'Not available'}</p>
                 <div className="mt-1 flex flex-wrap gap-x-5">{[...new Set(row.source_urls.length ? row.source_urls : [row.source_url])].map((url, index) => <a href={url} key={url} className={linkClass}>Source document {index + 1}</a>)}</div>
               </div>
             </li>)}
@@ -137,7 +137,7 @@ export default async function MoneyPage({ searchParams }: { searchParams: Promis
         <p className="mt-3 leading-relaxed text-slate-700">These records show reported financial activity. Similar names, shared addresses, employment, or a common treasurer do not by themselves establish ownership or control. A donation and a vote do not establish why a council member voted.</p>
         <Link href="/elections/methodology" className={`${linkClass} mt-2`}>Read the counting and identity rules →</Link>
       </aside>
-      <p className="mt-6 text-sm leading-relaxed text-slate-600">Richmond Commons. “Campaign money.” Source retrieval dates appear with each record. Search filters remain in this page&apos;s link.</p>
+      <p className="mt-6 text-base leading-relaxed text-slate-600">Richmond Commons. “Campaign money.” Source retrieval dates appear with each record. Search filters remain in this page&apos;s link.</p>
     </article>
   )
 }

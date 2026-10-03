@@ -1,7 +1,7 @@
 import { supabase, RICHMOND_FIPS } from './_shared'
 import { searchSite } from './search'
 import { getPublicFinanceSnapshot } from './finance-public'
-import { filterFinanceEvents } from '../finance-ledger'
+import { filterFinanceEvents, PUBLIC_FINANCE_ACTIVITY_FROM, PUBLIC_FINANCE_ACTIVITY_THROUGH } from '../finance-ledger'
 import { agendaItemPath } from '../format'
 import { readCompleteRecords } from '../complete-record-read'
 import { failReadPath } from '../read-path-unavailable'
@@ -88,7 +88,10 @@ export async function searchCommons(plan: CommonsSearchPlan): Promise<CommonsSea
     return { filters, interpretation: plan.interpretation, records: shown.map(event => ({ kind: 'money', id: event.event_key, event })),
       topics: [], hasMore: start + shown.length < matches.length && plan.page < 100, total: matches.length,
       limited: snapshot.truncated, coverage: snapshot.coverage,
-      limitations: ['Money searches use the published 2026 filing index. Missing results do not establish that no activity occurred.',
+      limitations: [`Money searches use the published 2026 filing index, bounded to activity from ${PUBLIC_FINANCE_ACTIVITY_FROM} through ${PUBLIC_FINANCE_ACTIVITY_THROUGH}. Source coverage varies; missing results do not establish that no activity occurred.`,
+        ...((plan.from && (plan.from < PUBLIC_FINANCE_ACTIVITY_FROM || plan.from > PUBLIC_FINANCE_ACTIVITY_THROUGH))
+          || (plan.to && (plan.to < PUBLIC_FINANCE_ACTIVITY_FROM || plan.to > PUBLIC_FINANCE_ACTIVITY_THROUGH))
+          ? ['Some requested dates are outside the indexed activity window. This search cannot establish reported activity for those dates.'] : []),
         'Names are matched as reported; this search does not resolve similarly named people or establish influence.',
         ...(snapshot.truncated ? ['The source projection reached its 5,000-record bound; results cover that limited set.'] : [])] }
   }

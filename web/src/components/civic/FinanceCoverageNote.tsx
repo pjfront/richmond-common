@@ -13,7 +13,7 @@ const forms: Record<string, string> = {
 }
 
 export default function FinanceCoverageNote({ coverage }: { coverage: FinanceCoverage[] }) {
-  return <details className="mt-4 rounded-lg border border-slate-200 px-4 text-sm text-slate-600">
+  return <details className="mt-4 rounded-lg border border-slate-200 px-4 text-base text-slate-600">
     <summary className="min-h-11 cursor-pointer py-3 font-medium text-slate-700">Which reports are included, and when were they checked?</summary>
     <p className="mb-3 leading-relaxed">These source checks and review counts cover the whole Richmond index, across all committees and search filters.</p>
     <p className="mb-3 leading-relaxed">This is a partial index of Richmond&apos;s electronic filings. Paper reports and reports filed only with another agency may be missing. Outside spending currently comes from rapid reports; periodic spending reports are not yet included. Records with conflicting descriptions or possible repetition wait for review.</p>
