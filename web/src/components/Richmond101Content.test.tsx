@@ -64,7 +64,7 @@ describe('Richmond 101 operator draft', () => {
     const navigation = source('./Nav.tsx')
     const sitemap = source('../app/sitemap.ts')
 
-    expect(middleware).toContain("matcher: ['/operator/:path*']")
+    expect(middleware).toContain("matcher: ['/:path*']")
     expect(operatorLayout).toContain('robots: { index: false, follow: false }')
     expect(navigation).not.toContain('richmond-101')
     expect(sitemap).not.toContain('richmond-101')
