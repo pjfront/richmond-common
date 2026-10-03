@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { revalidatePath, revalidateTag } from 'next/cache'
 import { clientKey, enforceRateLimit } from '@/lib/rate-limit'
 import { AGENDA_METADATA_CACHE_TAG, SPLIT_MOTIONS_CACHE_TAG } from '@/lib/read-path-cache'
+import { readBoundedRevalidationBody, secretMatches } from '@/lib/site-access'
 
 /**
  * On-demand ISR revalidation endpoint.
@@ -31,28 +32,17 @@ const KNOWN_PATHS = [
 ]
 
 export async function POST(request: NextRequest) {
+  const secret = process.env.REVALIDATION_SECRET
+  if (!secret) {
+    return NextResponse.json({ error: 'Revalidation unavailable' }, { status: 503 })
+  }
   const limit = await enforceRateLimit('revalidate', clientKey(request))
   if (!limit.allowed) return limit.response!
 
-  const body = await request.json().catch(() => ({})) as Record<string, unknown>
-  const secret = process.env.REVALIDATION_SECRET
-
-  // If a secret is configured, require it
-  if (secret && body.secret !== secret) {
+  const body = await readBoundedRevalidationBody(request)
+  if (!body) return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
+  if (typeof body.secret !== 'string' || !await secretMatches(body.secret, secret)) {
     return NextResponse.json({ error: 'Invalid secret' }, { status: 401 })
-  }
-
-  // If no secret is configured, only allow from localhost/internal
-  if (!secret) {
-    const forwarded = request.headers.get('x-forwarded-for')
-    const ip = forwarded?.split(',')[0]?.trim() ?? ''
-    const isLocal = ip === '127.0.0.1' || ip === '::1' || ip === ''
-    if (!isLocal) {
-      return NextResponse.json(
-        { error: 'REVALIDATION_SECRET not configured and request is not local' },
-        { status: 401 }
-      )
-    }
   }
 
   const paths: string[] = body.all

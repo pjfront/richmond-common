@@ -783,6 +783,14 @@ def _public_probe_error(exc: Exception) -> str:
     return type(exc).__name__
 
 
+def _site_password_challenge(headers: Any) -> bool:
+    """Recognize only our intentional gate, never an arbitrary HTTP 401."""
+    return bool(
+        headers
+        and headers.get("X-Richmond-Site-Access") == "required"
+    )
+
+
 def _bounded_public_get(
     url: str,
     label: str,
@@ -805,6 +813,14 @@ def _bounded_public_get(
                 status = int(
                     getattr(response, "status", None) or response.getcode()
                 )
+                if status == 401 and label == "homepage" and _site_password_challenge(
+                    getattr(response, "headers", None)
+                ):
+                    return {
+                        "label": label, "status": "pass", "http_status": status,
+                        "attempts": attempt, "password_protected": True,
+                        "detail": "HTTP 401; Richmond Commons password gate is serving",
+                    }
                 body = response.read(SITE_PROBE_MAX_BYTES)[:SITE_PROBE_MAX_BYTES]
             if 200 <= status < 300:
                 return {
@@ -816,6 +832,17 @@ def _bounded_public_get(
                 }
             last_error = f"HTTP {status}"
         except Exception as exc:  # this probe must become alert data, not abort mail
+            if (
+                isinstance(exc, urllib.error.HTTPError)
+                and exc.code == 401 and label == "homepage"
+                and _site_password_challenge(exc.headers)
+            ):
+                exc.close()
+                return {
+                    "label": label, "status": "pass", "http_status": 401,
+                    "attempts": attempt, "password_protected": True,
+                    "detail": "HTTP 401; Richmond Commons password gate is serving",
+                }
             last_error = _public_probe_error(exc)
         if attempt < SITE_PROBE_MAX_ATTEMPTS:
             sleeper(1)
@@ -858,7 +885,8 @@ def probe_public_site(
         homepage = _bounded_public_get(
             resolved_site_url, "homepage", resolved_opener, resolved_sleeper
         )
-        if homepage["status"] == "pass":
+        password_protected = homepage.pop("password_protected", False)
+        if homepage["status"] == "pass" and not password_protected:
             page_text = homepage.pop("body").decode("utf-8", errors="replace")
             if PUBLIC_SITE_MARKER in page_text:
                 homepage["detail"] = (
@@ -890,9 +918,19 @@ def probe_public_site(
                 reported = (
                     payload.get("status") if isinstance(payload, dict) else None
                 )
-                if reported == "healthy":
+                if reported == "protected" and password_protected:
+                    health["detail"] = (
+                        f"HTTP {health['http_status']}; password gate is serving; "
+                        "database health is not probed anonymously"
+                    )
+                elif reported == "healthy" and not password_protected:
                     health["detail"] = (
                         f"HTTP {health['http_status']}; API reported healthy"
+                    )
+                elif reported in ("healthy", "protected"):
+                    health["status"] = "fail"
+                    health["detail"] = (
+                        "homepage and /api/health password-gate status disagreed"
                     )
                 elif isinstance(reported, str):
                     safe_status = _safe_operator_text(reported, 60)

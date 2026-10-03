@@ -40,4 +40,16 @@ describe('source revalidation expires the compact split-motion projection', () =
     expect(mocks.revalidatePath).not.toHaveBeenCalled()
     expect(mocks.revalidateTag).not.toHaveBeenCalled()
   })
+  it.each([undefined, '127.0.0.1', '::1'])('refuses missing configuration regardless of forwarded address %s', async forwarded => {
+    vi.stubEnv('REVALIDATION_SECRET', '')
+    const incoming = request({ all: true })
+    if (forwarded) incoming.headers.set('x-forwarded-for', forwarded)
+    expect((await POST(incoming)).status).toBe(503)
+    expect(mocks.enforceRateLimit).not.toHaveBeenCalled()
+    expect(mocks.revalidatePath).not.toHaveBeenCalled()
+  })
+  it('rejects an oversized job body before revalidation', async () => {
+    expect((await POST(request({ all: true, secret: 'fixture-secret', padding: 'x'.repeat(8192) }))).status).toBe(400)
+    expect(mocks.revalidatePath).not.toHaveBeenCalled()
+  })
 })
