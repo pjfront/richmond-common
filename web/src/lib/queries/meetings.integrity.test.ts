@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({ from: vi.fn() }))
 vi.mock('react', async original => ({ ...await original<typeof import('react')>(), cache: (fn: unknown) => fn }))
@@ -31,6 +31,7 @@ function install(overrides: Record<string, Result[]> = {}) {
 }
 
 describe('meeting source record integrity', () => {
+  afterEach(() => vi.unstubAllEnvs())
   beforeEach(() => { mocks.from.mockReset() })
   it('retains unknown estimates and does not fetch a competing theme/people count', async () => {
     install()
@@ -57,5 +58,23 @@ describe('meeting source record integrity', () => {
     install({ motions: [{ data: [{ id: 'motion-1', agenda_item_id: 'item-1' }], count: 1, error: null }],
       votes: [{ data: [], count: 1, error: null }] })
     await expect(getMeeting(meetingId)).rejects.toThrow('temporarily unavailable')
+  })
+  it('holds both erroneous motions before meeting props while retaining another item’s roll call', async () => {
+    vi.stubEnv('RICHMOND_READ_ONLY_STAGE', 'true')
+    const heldId = '9cf375c8-edc1-413c-8ee0-6485348fbc6f'
+    const heldMeeting = '5f560013-daea-499a-8ecd-ca1a089c8a0c'
+    install({ meetings: [{ data: { id: heldMeeting, city_fips: '0660620', bodies: null, minutes_url: 'https://www.ci.richmond.ca.us/Archive.aspx?ADID=2809' }, error: null }],
+      agenda_items: [{ data: [{ id: heldId, meeting_id: heldMeeting, item_number: 'J-2', title: 'Point Molate LDA Extension', plain_language_summary: 'Beckles abstained.', summary_headline: 'False result' },
+        { id: 'ordinary-item', meeting_id: heldMeeting, item_number: 'G-1', title: 'Ordinary item' }], count: 2, error: null }],
+      motions: [{ data: [{ id: '87f3da0c-72ad-46dc-be37-f8581b204c58', agenda_item_id: heldId, result: 'passed' },
+        { id: '1a5ba9fd-d167-47da-9b8e-cb5763c9106b', agenda_item_id: heldId, result: 'failed' }, { id: 'ordinary-motion', agenda_item_id: 'ordinary-item', result: 'passed' }], count: 3, error: null }],
+      votes: [{ data: [{ id: 'wrong-vote', motion_id: '87f3da0c-72ad-46dc-be37-f8581b204c58', official_name: 'Jovanka Beckles', vote_choice: 'abstain' },
+        { id: 'ordinary-vote', motion_id: 'ordinary-motion', official_name: 'Member One', vote_choice: 'aye' }], count: 2, error: null }],
+    })
+    const result = await getMeeting(heldMeeting)
+    expect(result?.agenda_items[0]).toMatchObject({ motions: [], summary_headline: null, plain_language_summary: null, voteSourceReview: { checkedAt: '2026-10-03' } })
+    expect(result?.agenda_items[1].motions[0].votes[0]).toMatchObject({ official_name: 'Member One', vote_choice: 'aye' })
+    expect(result?.minutes_url).toBe('https://www.ci.richmond.ca.us/ArchiveCenter/ViewFile/Item/2809')
+    expect(JSON.stringify(result)).not.toMatch(/Beckles|87f3da0c|1a5ba9fd|False result/)
   })
 })

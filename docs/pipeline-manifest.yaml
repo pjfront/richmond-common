@@ -330,7 +330,8 @@ tables:
       enrichments: []
     read_by:
       enrichments: []
-      queries: []
+      queries: [getPublicFinanceSnapshot, searchCommons]
+    notes: "Public reads use the finance_public_events projection, never private raw assertions."
   finance_source_coverage:
     layer: 2
     description: "Acquisition timestamps, covered activity dates and explicit source gaps."
@@ -339,7 +340,8 @@ tables:
       enrichments: []
     read_by:
       enrichments: []
-      queries: []
+      queries: [getPublicFinanceSnapshot, searchCommons]
+    notes: "Public reads use the finance_public_coverage projection."
   # ── Layer 1: Document Lake ──────────────────────────────────
 
   documents:
@@ -372,7 +374,7 @@ tables:
       enrichments: [orientation_generation]
     read_by:
       enrichments: [conflict_scanning, orientation_generation, transcript_vote_extraction, civic_review_packet_generation]
-      queries: [getMeetings, getMeetingsWithCounts, getMeeting, getMeetingsWithFlags, getMeetingForReport, getCrossMeetingPatterns, getCommissionMeetings]
+      queries: [getMeetings, getMeetingsWithCounts, getMeeting, getMeetingsWithFlags, getMeetingForReport, getCrossMeetingPatterns, getCommissionMeetings, searchCommons]
 
   agenda_items_embeddings:
     layer: 3
@@ -415,7 +417,7 @@ tables:
     read_by:
       enrichments: [conflict_scanning, orientation_generation, summary_generation, civic_review_packet_generation]
       queries: [getMeeting, getMeetingForReport,
-                getCategoryStats, getControversialItems]
+                getCategoryStats, getControversialItems, searchCommons]
 
   motions:
     layer: 2
@@ -426,7 +428,7 @@ tables:
     read_by:
       enrichments: [vote_explainer_generation]
       queries: [getMeeting,
-                getAllFinancialConnectionSummaries, getCrossMeetingPatterns]
+                getAllFinancialConnectionSummaries, getCrossMeetingPatterns, searchCommons]
 
   votes:
     layer: 2
@@ -437,7 +439,7 @@ tables:
     read_by:
       enrichments: []
       queries: [getMeeting, getOfficialVotingRecord, getOfficialWithStats, getOfficialCategoryBreakdown,
-                getCrossMeetingPatterns]
+                getCrossMeetingPatterns, searchCommons]
 
   meeting_attendance:
     layer: 2
@@ -1405,8 +1407,8 @@ queries:
   getPublicFinanceSnapshot:
     file: queries/finance-public.ts
     tables: [finance_events, finance_source_coverage]
-    used_by: ["/elections/2026-general", "/elections/2026-general/money"]
-    description: "Bounded cached public projections with explicit source coverage; read errors are not cached as no activity."
+    used_by: ["/elections/2026-general", "/elections/2026-general/money", "/money", "/", "/search"]
+    description: "Bounded cached finance_public_events and finance_public_coverage projections with explicit 2026 source coverage; read errors are not cached as no activity. Commons search uses this same snapshot."
   getAndersonFilingCoverage:
     file: queries/candidate-filing-coverage.ts
     tables: []
@@ -1451,6 +1453,7 @@ queries:
     tables: [meetings, bodies, agenda_items, motions, votes, meeting_attendance,
              closed_session_items]
     used_by: ["/meetings/[id]"]
+    note: "Read-only staging applies the planned shared stage-vote-source-review.ts hold before page props: exact item/meeting/item-number identity suppresses both held motions, summary_headline and plain_language_summary while retaining item titles and source links. See searchCommons source-review note."
 
   getAdjacentMeetings:
     file: queries.ts
@@ -1556,6 +1559,7 @@ queries:
     file: queries.ts
     tables: [agenda_items, meetings, motions, votes, public_comments]
     used_by: ["/meetings/[id]/items/[itemNumber]"]
+    note: "Read-only staging applies the same item-specific source-review hold as getMeeting before page props; held motion outcomes, tallies, roll calls and generated explanations are unavailable, while titles and primary source links remain. No database repair."
 
   getAgendaItemSlugs:
     file: queries/meetings.ts
@@ -1892,15 +1896,45 @@ queries:
     returns: "Complete bounded individual entries retaining amounts, kinds, dates, recipient identity and source links. No election attribution or aggregation."
 
   # ── Search ──────────────────────────────────────────────────
+  searchCommons:
+    file: queries/commons-search.ts
+    tables: [meetings, agenda_items, motions, votes, finance_events, finance_source_coverage]
+    used_by: ["/", "/search"]
+    description: "Read-only staged agenda, vote and money search. searchSite supplies bounded lexical candidates; active compact agenda projections supply exact item links, tags and meeting dates; motions and votes preserve recorded choices and source. Money uses getPublicFinanceSnapshot's existing public 2026 projections. Explicit submit and deterministic phrase interpretation; no model calls, query logging, write RPCs or generated answers."
+    note: >-
+      October 3, 2026 read-only vote source-review hold: agenda item
+      9cf375c8-edc1-413c-8ee0-6485348fbc6f, meeting
+      5f560013-daea-499a-8ecd-ca1a089c8a0c, March 2, 2010 J-2. Working primary
+      minutes https://www.ci.richmond.ca.us/ArchiveCenter/ViewFile/Item/2809 page 9
+      record original-motion ayes Bates, Butt, Lopez and Rogers; nay McLaughlin;
+      abstentions Ritterman and Viramontes; no absent members. Stored rows
+      incorrectly attribute Beckles abstain and Tom Bates aye, omit Lopez and
+      Viramontes, and mark a second motion failed without a recorded failed vote.
+      The legacy Archive.aspx?ADID=2809 link had an earlier QA 404 and a later
+      HTTP 200; availability is intermittent, not a permanent retirement.
+      Shared lib/stage-vote-source-review.ts helpers
+      stageVoteSourceReviewForItem and holdStageVoteSourceRecords match exact
+      item ID, meeting ID and item number before search or page props. Hold both
+      motions and their outcomes, tallies, roll calls and generated explanations,
+      plus this item's summary_headline and plain_language_summary; retain
+      title/source links and expose voteSourceReview reason, checkedAt and sourceUrl.
+      Vote-search totals are withheld for held results. Minutes origin is labelled Extracted from official
+      minutes with an automated-extraction accuracy caveat, not verified.
+      No database repair, invented identities, model calls or writes. Current
+      extraction schema motion-result enum passed|failed needs future unknown/withdrawn/unvoted
+      support before repairing unsupported outcomes.
+
   searchSite:
     file: queries.ts
     tables: [meetings, agenda_items, officials, motions]  # Full-text search
     used_by: ["/search"]
+    description: "Read-only lexical search_site RPC; Commons search uses it for bounded agenda and vote-explanation candidates."
 
   searchHybrid:
     file: queries.ts
     tables: [meetings, agenda_items, officials, motions]  # FTS + vector similarity (RRF)
-    used_by: ["/search"]
+    used_by: []
+    description: "Retained legacy /api/search helper; this endpoint is unavailable in the read-only stage."
 
   findSimilarItems:
     file: queries.ts
@@ -1938,6 +1972,10 @@ pages:
   "/elections/2026-general/money":
     queries: [getPublicFinanceSnapshot]
     description: "Search reported legal names/FPPC identifiers and read/download source-linked public events."
+  "/money":
+    queries: [getPublicFinanceSnapshot]
+    api_routes: ["/api/finance/export"]
+    description: "Staged source-linked public 2026 filing ledger with reported-name, committee, activity and direction filters. An exact event parameter selects its containing page; coverage, signed adjustments and distinct money kinds stay visible."
   "/elections/2026-general/money/ahmad-anderson":
     queries: [getAndersonFilingCoverage]
     description: "Anderson's source-checked reported period amounts, latest-period spending/cash, and separately dated rapid receipts from anderson-reported-finance.json; source inconsistencies and unverified donor completeness remain explicit. No monetary database query."
@@ -1955,8 +1993,9 @@ pages:
               electionToSlug]
 
   "/":
-    description: "Home — sourced civic stories, upcoming council meetings and November choices"
-    queries: [getResidentSnapshot]
+    description: "Read-only stage shows the search-first Commons home; normal mode retains sourced civic stories, upcoming council meetings and November choices."
+    queries: [getResidentSnapshot, searchCommons]
+    api_routes: ["/api/commons/search"]
 
   "/meetings":
     description: "Meeting discovery — month-grouped list and mini-calendar; no scanner aggregation on the public path"
@@ -2118,8 +2157,9 @@ pages:
     queries: [getPublicRecordsSnapshot]
 
   "/search":
-    description: "Full-text and semantic search"
-    queries: [searchSite]
+    description: "Explicit-submit staged search for agenda items, recorded motions/roll calls and public campaign-money entries; bounded lexical matching plus deterministic typed filters, with source links and visible limitations."
+    queries: [searchCommons]
+    api_routes: ["/api/commons/search"]
 
   "/data-quality":
     description: "Data freshness and quality monitoring"
@@ -2342,7 +2382,8 @@ rpcs:
     migration: "143"
     reads_from: [meetings, agenda_items, officials, motions]
     returns: "full-text search results"
-    used_by_queries: [searchSite, searchHybrid]
+    used_by_queries: [searchSite, searchHybrid, searchCommons]
+    used_by_api_routes: ["/api/commons/search", "/api/search"]
     notes: "Migration 143 preserves the public signature while bounding inputs, filtering retired/cancelled records, and materializing a GIN-backed candidate set before ranking."
 
   search_hybrid:
@@ -2385,7 +2426,7 @@ api_routes:
     tables_read: [finance_events, finance_source_coverage]
     tables_written: []
     description: "Bounded public ledger CSV, formula-neutralized with original sources, no private payloads or street addresses."
-    used_by_pages: ["/elections/2026-general/money"]
+    used_by_pages: ["/elections/2026-general/money", "/money"]
   "/api/health":
     file: "web/src/app/api/health/route.ts"
     method: GET
@@ -2430,8 +2471,8 @@ api_routes:
     method: GET
     rpcs_called: [search_hybrid, search_site]  # Hybrid when OPENAI_API_KEY set, FTS fallback
     tables_written: []
-    description: "Hybrid FTS + semantic search with RRF ranking; does not persist resident queries"
-    used_by_pages: ["/search"]
+    description: "Retained legacy hybrid FTS + semantic search with RRF ranking; does not persist resident queries. Unavailable in the read-only stage."
+    used_by_pages: []
 
   "/api/site-access":
     file: "web/src/app/api/site-access/route.ts"
@@ -2440,6 +2481,15 @@ api_routes:
     tables_written: []
     description: "Same-origin password-only access; sets a separate sealed seven-day site cookie and redirects to a safe local path without accounts or database writes."
     used_by_pages: ["*"]
+
+  "/api/commons/search":
+    file: "web/src/app/api/commons/search/route.ts"
+    method: GET
+    tables_read: [meetings, agenda_items, motions, votes, finance_events, finance_source_coverage]
+    tables_written: []
+    rpcs_called: [search_site]
+    description: "Private no-store responses from searchCommons using public credentials only. Bounded lexical candidates and typed active agenda/vote reads, or finance_public_events/finance_public_coverage via the shared snapshot. No model, admin key, arbitrary SQL, query logging or write RPC. Failures return unavailable rather than empty results."
+    used_by_pages: ["/", "/search"]
 
   "/api/public-records":
     file: "web/src/app/api/public-records/route.ts"
@@ -2666,6 +2716,22 @@ field_map:
       query: getPublicFinanceSnapshot
       column: finance_events.source_url
       sources: [netfile]
+  "/money":
+    "reported event, amount, activity date and original filing":
+      query: getPublicFinanceSnapshot
+      column: "finance_public_events.event_key + event_kind + amount + amount_kind + activity_date + donor_name + recipient_name + source_url + source_urls"
+      sources: [netfile]
+      note: "Public 2026 projection of finance_events, bounded at 5,000 rows with truncation disclosed. Signed adjustments, loans, noncash and independent expenditures retain separate meanings; reported names are not resolved identities. Exact event links select the containing 25-row page."
+    "source coverage and checked date":
+      query: getPublicFinanceSnapshot
+      column: "finance_public_coverage.status + checked_at + activity_from + activity_through + limitations + source_url"
+      sources: [netfile]
+      note: "Public projection of finance_source_coverage. Missing events never establish no activity; source gaps and pending review remain visible."
+    "source-linked CSV download":
+      api_route: "/api/finance/export"
+      column: "Same filtered public snapshot with finance event source links"
+      sources: [netfile]
+      note: "A truncated snapshot returns export unavailable; coverage remains visible on the page rather than being included as transaction rows."
   "/elections/2026-general/money/ahmad-anderson":
     "reported amounts, source pages and period boundaries":
       column: "web/src/data/anderson-reported-finance.json"
@@ -2754,6 +2820,13 @@ field_map:
       column: meetings.agenda_url
       sources: [escribemeetings]
 
+    "staged agenda, vote and money search results":
+      query: searchCommons
+      api_route: "/api/commons/search"
+      column: "agenda_items.title + topic_label + category; meetings.meeting_date + agenda_url + minutes_url; motions.motion_text + result + source; votes.official_name + vote_choice + source; public finance event and coverage projections"
+      sources: [escribemeetings, minutes_extraction, netfile]
+      note: "Only rendered on the read-only stage home. The shared Commons client explicitly submits lexical keywords and deterministic filters; it displays exact record/source links and the same bounded-result and source-coverage limitations as /search. Normal mode uses getResidentSnapshot above."
+
   # ── Meeting List (/meetings) ────────────────────────────────
 
   "/meetings":
@@ -2795,12 +2868,14 @@ field_map:
       column: agenda_items.plain_language_summary
       sources: []
       enrichment: summary_generation
+      note: "The read-only staging source-review hold suppresses this field for the exact March 2, 2010 J-2 item; title and source links remain. See searchCommons note."
 
     "summary headline":
       query: getMeeting
       column: agenda_items.summary_headline
       sources: []
       enrichment: summary_generation
+      note: "Suppressed for the same exact staging source-review item; do not repeat an unsupported stored vote outcome."
 
     "item category":
       query: getMeeting
@@ -2812,6 +2887,7 @@ field_map:
       query: getMeeting
       column: motions.motion_text
       sources: [minutes_extraction]
+      note: "Both motions of the exact staging source-review item are held, including results, tallies, roll calls and generated explanations. Stored source='minutes' denotes automated extraction, not verified accuracy."
 
     "motion result":
       query: getMeeting
@@ -3152,20 +3228,34 @@ field_map:
       note: "Closed status and days_to_close do not establish first-response timing or legal compliance."
 
   "/search":
-    "search results":
+    "bounded lexical candidate matches":
       query: searchSite
       rpc: search_site
-      column: "meetings + agenda_items + officials (full-text + semantic)"
+      column: "agenda_items full-text matches and motions vote-explanation full-text matches"
       sources: [escribemeetings, minutes_extraction]
-      enrichment: commission_seeding
+      note: "searchCommons requests at most 100 ranked agenda matches plus 100 vote explanations in votes mode. Candidate identities are checked against active agenda projections before display; tags/dates narrow the retrieved set, not a complete history. No embeddings or generation are invoked."
 
-    "hybrid search results":
-      query: searchHybrid
-      rpc: search_hybrid
-      column: "meetings + agenda_items + officials + motions (FTS + vector via RRF)"
+    "agenda item identity, meeting date, tag and source":
+      query: searchCommons
+      api_route: "/api/commons/search"
+      column: "agenda_items.id + item_number + title + topic_label + category + created_at; meetings.id + meeting_date + agenda_url + minutes_url + video_url"
       sources: [escribemeetings, minutes_extraction]
-      enrichment: embedding_generation
-      note: "Used when OPENAI_API_KEY is configured; FTS-only fallback otherwise"
+      note: "Exact canonical item links; cancelled meetings and retired agenda sources excluded. created_at is labelled indexed time, not source activity or extraction time. Records without an original meeting document link are withheld with an explicit limitation. Blank browse applies tag/date predicates before pagination and caps access at 2,000 items."
+
+    "recorded motion and roll-call choices":
+      query: searchCommons
+      api_route: "/api/commons/search"
+      column: "motions.id + motion_text + result + source + created_at; votes.motion_id + official_id + official_name + vote_choice + source"
+      sources: [minutes_extraction]
+      enrichment: transcript_vote_extraction
+      note: "Complete bounded motion/vote reads for shown items; recorded source stays visible. Conflicting or absent choices are not recorded, and transcript-derived choices remain tentative. No generated vote narrative or inferred outcome. The shared staging source-review hold suppresses both motions of the exact March 2, 2010 J-2 item and its generated summaries; retains its title/source links; and exposes the reason and two held motions. Minutes-derived records are labelled Extracted from official minutes with an automated-extraction accuracy caveat, not verified. See searchCommons note."
+
+    "reported money event and source coverage":
+      query: searchCommons
+      api_route: "/api/commons/search"
+      column: "finance_public_events event identity, reported names, amount/kind, activity date, source links and extracted_at; finance_public_coverage status, checked_at, covered activity dates and limitations"
+      sources: [netfile]
+      note: "Uses getPublicFinanceSnapshot's cached public projections of finance_events and finance_source_coverage. Names are matched as reported; date and recipient/donor direction filters remain explicit. The 2026 scope, 5,000-row bound and coverage gaps are disclosed; money details link to the exact /money event."
 
   # ── Data Quality (/data-quality) ────────────────────────────
 
@@ -3301,6 +3391,7 @@ field_map:
       column: "agenda_items + motions + votes + public_comments + comment_themes joined"
       sources: [escribemeetings, minutes_extraction]
       enrichment: theme_extraction
+      note: "Read-only stage applies the shared exact-identity vote source-review hold before page props: both held motions and generated vote explanations, summary_headline and plain_language_summary are suppressed; original title and source links remain. See searchCommons note."
 
     "community comments":
       api_route: "/api/community-comments"

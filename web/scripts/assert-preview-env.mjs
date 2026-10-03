@@ -10,6 +10,8 @@
 const PRODUCTION_SUPABASE_HOST = 'ahrwvmizzykyyfavdvfv.supabase.co'
 const SUPABASE_PROJECT_REF_PATTERN = /^[a-z0-9]{20}$/
 const FULL_GIT_SHA_PATTERN = /^[a-f0-9]{40}$/
+const READ_ONLY_STAGE_BRANCH = 'codex/commons-search-stage'
+const readOnlyStage = process.env.RICHMOND_READ_ONLY_STAGE === 'true'
 
 const SERVER_ONLY_CREDENTIALS = [
   'AI_GATEWAY_API_KEY',
@@ -46,13 +48,18 @@ const SERVER_ONLY_CREDENTIALS = [
 ]
 
 if (process.env.VERCEL_ENV !== 'preview') {
+  if (readOnlyStage && process.env.VERCEL_ENV === 'production') {
+    console.error('Private staging cannot be deployed as production. Prepare and verify the launch release separately.')
+    process.exit(1)
+  }
   console.log('Preview environment guard: non-preview deployment, no restrictions applied.')
   process.exit(0)
 }
 
 const violations = SERVER_ONLY_CREDENTIALS.filter(
-  (name) => (process.env[name] ?? '').trim().length > 0,
+  (name) => name !== 'SITE_ACCESS_PASSWORD' && (process.env[name] ?? '').trim().length > 0,
 )
+const siteAccessPassword = process.env.SITE_ACCESS_PASSWORD ?? ''
 
 const publicSupabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').trim()
 const expectedGitBranch = (
@@ -68,6 +75,27 @@ const expectedGitSha = (process.env.RICHMOND_PREVIEW_SOURCE_HEAD_SHA ?? '')
 const expectedSupabaseRef = (
   process.env.RICHMOND_PREVIEW_SUPABASE_REF ?? ''
 ).trim()
+
+// The user authorized a private, public-data-only staging site on October 3.
+// This exception is bound to one branch and commit; all privileged credentials
+// remain forbidden. Runtime middleware separately denies mutations and APIs.
+if (readOnlyStage) {
+  if (actualGitBranch !== READ_ONLY_STAGE_BRANCH) {
+    violations.push('RICHMOND_READ_ONLY_STAGE (wrong staging branch)')
+  }
+  if (process.env.SITE_ACCESS_REQUIRED !== 'true') {
+    violations.push('SITE_ACCESS_REQUIRED (staging must be password protected)')
+  }
+  if (siteAccessPassword.trim().length < 24 || siteAccessPassword.length > 1024) {
+    violations.push('SITE_ACCESS_PASSWORD (staging password missing or invalid length)')
+  }
+  if (process.env.RICHMOND_API_BUDGET_LOCK !== 'true') {
+    violations.push('RICHMOND_API_BUDGET_LOCK (staging paid inference must be locked)')
+  }
+  if (expectedSupabaseRef !== 'ahrwvmizzykyyfavdvfv') {
+    violations.push('RICHMOND_PREVIEW_SUPABASE_REF (wrong public-data project)')
+  }
+}
 
 if (!actualGitBranch) {
   violations.push('VERCEL_GIT_COMMIT_REF (missing)')
@@ -100,8 +128,11 @@ if (!publicSupabaseUrl) {
     if (parsedUrl.protocol !== 'https:') {
       violations.push('NEXT_PUBLIC_SUPABASE_URL (must use HTTPS)')
     }
-    if (parsedUrl.hostname === PRODUCTION_SUPABASE_HOST) {
+    if (parsedUrl.hostname === PRODUCTION_SUPABASE_HOST && !readOnlyStage) {
       violations.push('NEXT_PUBLIC_SUPABASE_URL (production project)')
+    }
+    if (readOnlyStage && parsedUrl.href !== `https://${PRODUCTION_SUPABASE_HOST}/`) {
+      violations.push('NEXT_PUBLIC_SUPABASE_URL (wrong public-data origin)')
     }
     if (
       SUPABASE_PROJECT_REF_PATTERN.test(expectedSupabaseRef) &&
@@ -123,6 +154,12 @@ if (!publicSupabaseAnonKey) {
   violations.push('NEXT_PUBLIC_SUPABASE_ANON_KEY (not a public key)')
 }
 
+// This private credential is permitted only after every branch, commit,
+// public-data, password and budget-lock check for read-only staging has passed.
+if (siteAccessPassword.trim() && (!readOnlyStage || violations.length > 0)) {
+  violations.push('SITE_ACCESS_PASSWORD (outside approved read-only staging)')
+}
+
 if (violations.length > 0) {
   console.error('Preview deployment blocked: unsafe or incomplete environment configuration:')
   for (const violation of violations) console.error(`  - ${violation}`)
@@ -132,7 +169,9 @@ if (violations.length > 0) {
   process.exit(1)
 }
 
-console.log('Preview environment guard passed: isolated public Supabase configuration is present and no server-only credentials are in scope.')
+console.log(readOnlyStage
+  ? 'Preview environment guard passed: password-protected, branch-bound public-data staging; privileged credentials and paid inference are absent.'
+  : 'Preview environment guard passed: isolated public Supabase configuration is present and no server-only credentials are in scope.')
 
 function isPublicSupabaseKey(value) {
   if (value.startsWith('sb_publishable_')) return true

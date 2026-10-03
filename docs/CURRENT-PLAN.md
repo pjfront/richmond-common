@@ -1,6 +1,18 @@
 # Richmond Commons: current implementation plan
 
-Updated September 9, 2026. This is the active plan; earlier sprint experiments remain historical context.
+Updated October 3, 2026. This is the active plan; earlier sprint experiments remain historical context.
+
+## Active product direction: search-first relaunch
+
+The operator approved streamlining Richmond Commons around agenda items, their tags, recorded votes, and campaign donations. Meeting order remains an optional way to browse. Search is the main entry. Build a private staged replacement using the existing data and infrastructure, with a public-release target no later than November 3, 2026. This target is not an automatic future deployment instruction.
+
+The implementation and release sequence is in [the October relaunch plan](plans/2026-10-03-search-first-relaunch.md). The current branch stages Search / Meetings / Money, exact agenda-item detail links, and source-backed campaign records. Preserve the underlying source records, schemas, ingestion jobs, and recoverable legacy routes; remove navigation breadth before retiring data or pipelines.
+
+The staged experience is private and read-only. It has no operator session probes, analytics, feedback forms, subscription enrollment, email sends, model calls, billing, or account creation. Its production database access uses the existing public anonymous read configuration. A narrow staged-preview guard, the project's own password-only form with a short-lived HttpOnly cookie, noindex metadata, and denied mutation routes are separate controls; noindex alone is not privacy. Do not provision a Supabase preview branch, add a service, apply a migration, or increase a spending cap for this relaunch preview.
+
+True natural-language search is part of the relaunch goal. The first preview supports explicit submitted searches and bounded, deterministic interpretation of supported questions; it does not yet establish arbitrary semantic understanding or produce generated research answers. Validate topic retrieval and exact vote/finance queries against the original sources before extending those claims.
+
+Five free generated research queries per person per month, followed by prepaid credits, is a proposed cost-recovery policy to validate. Ordinary record access, meeting browse, filters, and source links stay free. No paid-query balance, payment account, price, or automatic reload is implemented or authorized by the staged prototype. Measure inference and hosting costs separately, validate the charging unit and demand, and make any payment-account or billing decision concrete before enabling purchases. The existing zero-new-spend constraint below remains in force.
 
 ## Operating cost constraint
 
@@ -20,9 +32,9 @@ On September 6, the operator explicitly answered “Yes” to one digest test at
 
 The representative canary must use the completed August 31–September 6 UTC publication week, available from September 7 at 00:00 UTC (September 6 at 5 p.m. Richmond time). The planned subscriber schedule is Monday at 16:30 UTC (9:30 a.m. PDT / 8:30 a.m. PST). Prepare and test activation before the canary, then activate only after its exact provider result and content are verified. Preserve one canary attempt and stop on ambiguity; a new run or a changed idempotency key is not a substitute for investigating the existing attempt.
 
-## Delivery order
+## September delivery context
 
-First establish the current cost baseline and a safe route to free operation. Apply the constraint above to every item below.
+The following records the September scope. The October relaunch sequence above now leads product work; source integrity and the operating-cost constraints remain prerequisites.
 
 1. Restrict private operator tables and public reference-table writes; verify effective anonymous permissions in an executable database test.
 2. Preserve finance source assertions, correct contributions-made direction, replace destructive fuzzy deduplication with explicit reconciliation, and discover local independent-expenditure reports and amendment lineage.

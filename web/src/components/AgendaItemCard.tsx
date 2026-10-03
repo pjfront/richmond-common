@@ -14,6 +14,7 @@ import VoteRollCall from './VoteRollCall'
 import ExpandableOfficialText from './ExpandableOfficialText'
 import FormattedDescription from './FormattedDescription'
 import { PlainLanguageAttribution } from './SourceAttribution'
+import VoteSourceReviewNotice from './VoteSourceReviewNotice'
 
 interface AgendaItemCardProps {
   item: AgendaItemWithMotions
@@ -68,7 +69,7 @@ export default function AgendaItemCard({
 
   // ── Collapsed state: card with metadata hints ──────────────
   if (!expanded) {
-    const hasContent = hasSummary || hasDescription || hasMotions
+    const hasContent = hasSummary || hasDescription || hasMotions || !!item.voteSourceReview
     return (
       <div
         id={`agenda-item-${item.id}`}
@@ -85,6 +86,7 @@ export default function AgendaItemCard({
             </span>
             {/* Metadata hints — preview the richness inside */}
             <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
+              {item.voteSourceReview && <span className="text-sm font-medium text-amber-800">Vote records held for source review</span>}
               {result && (
                 <span className={`inline-flex items-center px-1.5 py-px rounded text-[11px] font-medium ${
                   result.color === 'text-vote-aye'
@@ -184,8 +186,9 @@ export default function AgendaItemCard({
         </div>
       </div>
 
-      {(hasDescription || hasMotions || hasSummary) && (
+      {(hasDescription || hasMotions || hasSummary || item.voteSourceReview) && (
         <div className="px-4 pb-4 sm:ml-8">
+          {item.voteSourceReview && <VoteSourceReviewNotice review={item.voteSourceReview} />}
           {hasSummary && (
             <div className="bg-slate-50 border border-slate-200 rounded-md p-3 mb-3">
               <p className="text-xs font-medium text-slate-500 mb-1">In Plain English</p>

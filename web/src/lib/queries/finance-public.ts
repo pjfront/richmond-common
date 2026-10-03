@@ -1,6 +1,6 @@
 import { unstable_cache } from 'next/cache'
 import { supabase } from '@/lib/supabase'
-import { isFinanceAdjustment } from '@/lib/finance-ledger'
+import { isFinanceAdjustment, PUBLIC_FINANCE_ACTIVITY_FROM, PUBLIC_FINANCE_ACTIVITY_THROUGH } from '@/lib/finance-ledger'
 
 export const PUBLIC_FINANCE_SCOPE = '0660620:calendar-2026'
 
@@ -64,7 +64,7 @@ export const getPublicFinanceSnapshot = unstable_cache(async (): Promise<PublicF
     const end = Math.min(offset + 999, 4999)
     const { data, error, count } = await supabase.from('finance_public_events').select(EVENT_COLUMNS, { count: 'exact' })
       .eq('scope_key', PUBLIC_FINANCE_SCOPE)
-      .gte('activity_date', '2026-01-01').lte('activity_date', '2026-11-03')
+      .gte('activity_date', PUBLIC_FINANCE_ACTIVITY_FROM).lte('activity_date', PUBLIC_FINANCE_ACTIVITY_THROUGH)
       .order('activity_date', { ascending: false }).order('event_key')
       .range(offset, end)
     if (error) throw new Error(`Finance projection unavailable (${error.code ?? 'query error'})`)

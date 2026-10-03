@@ -1,5 +1,8 @@
 import type { FinanceEvent } from './queries/finance-public'
 
+export const PUBLIC_FINANCE_ACTIVITY_FROM = '2026-01-01'
+export const PUBLIC_FINANCE_ACTIVITY_THROUGH = '2026-11-03'
+
 /** A signed correction does not establish that cash was refunded. */
 export function isFinanceAdjustment(event: Pick<FinanceEvent, 'amount' | 'amount_kind'>): boolean {
   return event.amount < 0 || event.amount_kind.endsWith('_adjustment')

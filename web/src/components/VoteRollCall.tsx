@@ -176,6 +176,7 @@ export default function VoteRollCall({ motions }: { motions: MotionWithVotes[] }
 
   return (
     <div className="space-y-4">
+      <p className="text-base leading-relaxed text-slate-600">These are automated extractions. Names, choices, and results may contain errors; check the original document before relying on them.</p>
       {/* Motions with individual vote records */}
       {withRollCall.length > 0 && (
         <div className="space-y-4">
@@ -233,7 +234,7 @@ export default function VoteRollCall({ motions }: { motions: MotionWithVotes[] }
                   </div>
                 )}
                 <div className="flex items-start justify-between gap-2 sm:gap-4">
-                  <div className="flex-1 min-w-0"><p className="mb-1 text-sm font-medium text-slate-600">{motionKindLabel(motion)} · {motion.source === 'minutes' ? 'Official minutes' : 'Tentative record'}</p><p className="text-sm text-slate-700 break-words">{motion.motion_text}</p></div>
+                  <div className="flex-1 min-w-0"><p className="mb-1 text-sm font-medium text-slate-600">{motionKindLabel(motion)} · {motion.source === 'minutes' ? 'Extracted from official minutes' : 'Tentative record'}</p><p className="text-sm text-slate-700 break-words">{motion.motion_text}</p></div>
                   <div className="max-w-[45%] text-right shrink-0">
                     <span className={`font-semibold text-sm ${resultColor}`}>
                       {result === 'unknown' ? 'Outcome unverified' : result.charAt(0).toUpperCase() + result.slice(1)}
@@ -284,7 +285,7 @@ export default function VoteRollCall({ motions }: { motions: MotionWithVotes[] }
 
               return (
                 <div key={motion.id} className="flex items-baseline justify-between gap-3 py-1">
-                  <div className="flex-1 min-w-0"><p className="mb-1 text-sm font-medium text-slate-600">{motionKindLabel(motion)} · {motion.source === 'minutes' ? 'Official minutes' : 'Tentative record'}</p><p className="text-sm text-slate-600 break-words">{motion.motion_text}</p></div>
+                  <div className="flex-1 min-w-0"><p className="mb-1 text-sm font-medium text-slate-600">{motionKindLabel(motion)} · {motion.source === 'minutes' ? 'Extracted from official minutes' : 'Tentative record'}</p><p className="text-sm text-slate-600 break-words">{motion.motion_text}</p></div>
                   <span className={`max-w-[40%] text-sm font-medium shrink-0 ${resultColor}`}>
                     {result === 'unknown' ? 'Outcome unverified' : result.charAt(0).toUpperCase() + result.slice(1)}
                   </span>

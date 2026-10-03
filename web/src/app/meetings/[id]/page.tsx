@@ -12,6 +12,7 @@ import SubscribeCTA from '@/components/SubscribeCTA'
 import RecapEmailPanel from '@/components/RecapEmailPanel'
 import OperatorMeetingSections from '@/components/OperatorMeetingSections'
 import { S29_PUBLIC_TREATMENT_ENABLED } from '@/lib/s29-release-phase'
+import { isReadOnlyStage } from '@/lib/read-only-stage'
 import {
   canonicalUrl,
   meetingEventStructuredData,
@@ -102,14 +103,14 @@ export default async function MeetingDetailPage({
           }}
         />
       )}
-      <OperatorGate>
+      {!isReadOnlyStage() && <OperatorGate>
         <RecordVisit
           type="meeting"
           id={id}
           title={`${formatDate(meeting.meeting_date)} ${meeting.meeting_type}`}
           url={`/meetings/${id}`}
         />
-      </OperatorGate>
+      </OperatorGate>}
       {/* Header */}
       <div className="mb-6">
         <div className="flex items-center justify-between mb-4">
@@ -193,7 +194,7 @@ export default async function MeetingDetailPage({
       </OperatorGate>
 
       {/* Stay informed CTA */}
-      <SubscribeCTA />
+      {!isReadOnlyStage() && <SubscribeCTA />}
 
       {/* Attendance */}
       <div className="mb-6">

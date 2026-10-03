@@ -169,6 +169,8 @@ def _run_preview_guard(**updates: str) -> subprocess.CompletedProcess[str]:
     env.pop("RICHMOND_PREVIEW_GIT_BRANCH", None)
     env.pop("RICHMOND_PREVIEW_SUPABASE_REF", None)
     env.pop("RICHMOND_PREVIEW_SOURCE_HEAD_SHA", None)
+    for key in ("RICHMOND_READ_ONLY_STAGE", "SITE_ACCESS_REQUIRED", "SITE_ACCESS_PASSWORD", "RICHMOND_API_BUDGET_LOCK"):
+        env.pop(key, None)
     env.update(updates)
     return subprocess.run(
         [node, str(PREVIEW_GUARD)],
@@ -292,3 +294,87 @@ def test_preview_guard_behavior_matrix():
         DATABASE_URL="production-value",
     )
     assert production.returncode == 0, production.stderr
+
+
+def _read_only_stage_env() -> dict[str, str]:
+    return {
+        "VERCEL_ENV": "preview",
+        "VERCEL_GIT_COMMIT_REF": "codex/commons-search-stage",
+        "RICHMOND_PREVIEW_GIT_BRANCH": "codex/commons-search-stage",
+        "VERCEL_GIT_COMMIT_SHA": "3" * 40,
+        "RICHMOND_PREVIEW_SOURCE_HEAD_SHA": "3" * 40,
+        "RICHMOND_PREVIEW_SUPABASE_REF": "ahrwvmizzykyyfavdvfv",
+        "NEXT_PUBLIC_SUPABASE_URL": "https://ahrwvmizzykyyfavdvfv.supabase.co",
+        "NEXT_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_test-value",
+        "RICHMOND_READ_ONLY_STAGE": "true",
+        "SITE_ACCESS_REQUIRED": "true",
+        "SITE_ACCESS_PASSWORD": "test-staging-password-at-least-24-characters",
+        "RICHMOND_API_BUDGET_LOCK": "true",
+    }
+
+
+def test_read_only_staging_exception_is_private_and_branch_bound():
+    stage = _read_only_stage_env()
+    passed = _run_preview_guard(**stage)
+    assert passed.returncode == 0, passed.stderr
+    for key in FORBIDDEN_PREVIEW_KEYS:
+        if key == "SITE_ACCESS_PASSWORD":
+            continue
+        blocked = _run_preview_guard(**{**stage, key: "must-not-be-available"})
+        assert blocked.returncode != 0, key
+        assert "SITE_ACCESS_PASSWORD (outside approved read-only staging)" in blocked.stderr
+
+
+@pytest.mark.parametrize(
+    ("changes", "violation"),
+    [
+        ({"VERCEL_ENV": "production"}, "Private staging cannot be deployed as production"),
+        (
+            {"VERCEL_GIT_COMMIT_REF": "codex/other", "RICHMOND_PREVIEW_GIT_BRANCH": "codex/other"},
+            "RICHMOND_READ_ONLY_STAGE (wrong staging branch)",
+        ),
+        ({"VERCEL_GIT_COMMIT_REF": ""}, "VERCEL_GIT_COMMIT_REF (missing)"),
+        ({"RICHMOND_PREVIEW_GIT_BRANCH": ""}, "RICHMOND_PREVIEW_GIT_BRANCH (missing)"),
+        ({"RICHMOND_PREVIEW_GIT_BRANCH": "codex/other"}, "wrong branch scope"),
+        ({"VERCEL_GIT_COMMIT_SHA": "4" * 40}, "wrong commit scope"),
+        ({"VERCEL_GIT_COMMIT_SHA": ""}, "VERCEL_GIT_COMMIT_SHA (missing or invalid)"),
+        ({"VERCEL_GIT_COMMIT_SHA": "3" * 7}, "VERCEL_GIT_COMMIT_SHA (missing or invalid)"),
+        ({"RICHMOND_PREVIEW_SOURCE_HEAD_SHA": ""}, "RICHMOND_PREVIEW_SOURCE_HEAD_SHA (missing or invalid)"),
+        ({"RICHMOND_PREVIEW_SOURCE_HEAD_SHA": "3" * 7}, "RICHMOND_PREVIEW_SOURCE_HEAD_SHA (missing or invalid)"),
+        ({"SITE_ACCESS_REQUIRED": "false"}, "SITE_ACCESS_REQUIRED (staging must be password protected)"),
+        ({"SITE_ACCESS_PASSWORD": ""}, "SITE_ACCESS_PASSWORD (staging password missing or invalid length)"),
+        ({"SITE_ACCESS_PASSWORD": "x" * 23}, "SITE_ACCESS_PASSWORD (staging password missing or invalid length)"),
+        ({"SITE_ACCESS_PASSWORD": " " * 24}, "SITE_ACCESS_PASSWORD (staging password missing or invalid length)"),
+        ({"SITE_ACCESS_PASSWORD": "x" * 1025}, "SITE_ACCESS_PASSWORD (staging password missing or invalid length)"),
+        ({"RICHMOND_API_BUDGET_LOCK": "false"}, "RICHMOND_API_BUDGET_LOCK (staging paid inference must be locked)"),
+        ({"RICHMOND_PREVIEW_SUPABASE_REF": "abcdefghijklmnopqrst"}, "wrong public-data project"),
+        ({"NEXT_PUBLIC_SUPABASE_URL": ""}, "NEXT_PUBLIC_SUPABASE_URL (missing)"),
+        ({"NEXT_PUBLIC_SUPABASE_URL": "https://user@ahrwvmizzykyyfavdvfv.supabase.co"}, "wrong public-data origin"),
+        ({"NEXT_PUBLIC_SUPABASE_URL": "https://ahrwvmizzykyyfavdvfv.supabase.co/path"}, "wrong public-data origin"),
+        ({"NEXT_PUBLIC_SUPABASE_URL": "https://ahrwvmizzykyyfavdvfv.supabase.co?key=value"}, "wrong public-data origin"),
+        ({"NEXT_PUBLIC_SUPABASE_URL": "https://ahrwvmizzykyyfavdvfv.supabase.co#fragment"}, "wrong public-data origin"),
+        ({"NEXT_PUBLIC_SUPABASE_URL": "http://ahrwvmizzykyyfavdvfv.supabase.co"}, "must use HTTPS"),
+        ({"NEXT_PUBLIC_SUPABASE_URL": "https://abcdefghijklmnopqrst.supabase.co"}, "wrong public-data origin"),
+        ({"NEXT_PUBLIC_SUPABASE_ANON_KEY": ""}, "NEXT_PUBLIC_SUPABASE_ANON_KEY (missing)"),
+        ({"NEXT_PUBLIC_SUPABASE_ANON_KEY": "sb_secret_must-never-be-public"}, "not a public key"),
+        ({"RICHMOND_READ_ONLY_STAGE": "false"}, "SITE_ACCESS_PASSWORD (outside approved read-only staging)"),
+        ({"RICHMOND_READ_ONLY_STAGE": ""}, "SITE_ACCESS_PASSWORD (outside approved read-only staging)"),
+    ],
+)
+def test_read_only_staging_rejects_incomplete_scope(changes: dict[str, str], violation: str):
+    stage = {**_read_only_stage_env(), **changes}
+    blocked = _run_preview_guard(**stage)
+    assert blocked.returncode != 0
+    assert violation in blocked.stderr
+    if stage["SITE_ACCESS_PASSWORD"]:
+        assert stage["SITE_ACCESS_PASSWORD"] not in blocked.stdout + blocked.stderr
+    if stage["VERCEL_ENV"] == "preview" and stage["SITE_ACCESS_PASSWORD"].strip():
+        assert "SITE_ACCESS_PASSWORD (outside approved read-only staging)" in blocked.stderr
+
+
+@pytest.mark.parametrize("password_length", [24, 1024])
+def test_read_only_staging_accepts_password_length_boundaries(password_length: int):
+    stage = {**_read_only_stage_env(), "SITE_ACCESS_PASSWORD": "x" * password_length}
+    passed = _run_preview_guard(**stage)
+    assert passed.returncode == 0, passed.stderr
+    assert stage["SITE_ACCESS_PASSWORD"] not in passed.stdout + passed.stderr

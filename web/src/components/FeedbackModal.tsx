@@ -15,10 +15,12 @@ import type { FeedbackType } from '@/lib/types'
 
 interface FeedbackModalContextValue {
   openModal: () => void
+  available: boolean
 }
 
 const FeedbackModalContext = createContext<FeedbackModalContextValue>({
   openModal: () => {},
+  available: false,
 })
 
 export function useFeedbackModal() {
@@ -33,7 +35,7 @@ export function FeedbackModalProvider({ children }: { children: ReactNode }) {
   const closeModal = useCallback(() => setIsOpen(false), [])
 
   return (
-    <FeedbackModalContext.Provider value={{ openModal }}>
+    <FeedbackModalContext.Provider value={{ openModal, available: true }}>
       {children}
       {isOpen && <FeedbackModalContent onClose={closeModal} />}
     </FeedbackModalContext.Provider>

@@ -1,26 +1,24 @@
 import type { Metadata } from 'next'
 import { Suspense } from 'react'
-import SearchPageClient from '@/components/SearchPageClient'
+import CommonsSearchClient from '@/components/CommonsSearchClient'
 
-export const dynamic = 'force-dynamic'  // search depends on query params per request
+export const dynamic = 'force-dynamic'
 
 export const metadata: Metadata = {
   title: 'Search',
-  description: 'Search across Richmond city council meetings, agenda items, and council members.',
+  description: 'Search Richmond agenda items, recorded votes, and reported campaign money, with original sources.',
 }
 
 export default function SearchPage() {
   return (
-    <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold text-civic-navy">Search</h1>
-        <p className="text-slate-600 mt-1 text-sm">
-          Search across meetings, agenda items, and council members.
-        </p>
+    <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
+      <h1 className="text-3xl font-bold tracking-tight text-civic-navy sm:text-4xl">Search the public record</h1>
+      <p className="mt-4 max-w-2xl text-lg leading-relaxed text-slate-700">Find a decision, a recorded vote, or reported campaign money. Use a topic, name, or short question to get started.</p>
+      <div className="mt-8 rounded-xl border border-slate-200 bg-white p-4 sm:p-6">
+        <Suspense fallback={<div aria-live="polite" aria-busy="true"><p className="mb-3 text-slate-700">Loading search…</p><div aria-hidden="true" className="h-12 rounded-md bg-slate-100" /></div>}>
+          <CommonsSearchClient />
+        </Suspense>
       </div>
-      <Suspense fallback={<p className="text-sm text-slate-500 text-center py-8">Loading...</p>}>
-        <SearchPageClient />
-      </Suspense>
     </div>
   )
 }
