@@ -2,14 +2,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
 import { unstable_doesMiddlewareMatch } from 'next/experimental/testing/server'
 const mocks = vi.hoisted(() => ({ session: { isOperator: false }, getIronSession: vi.fn() }))
-vi.mock('iron-session', () => ({ getIronSession: mocks.getIronSession }))
+vi.mock('iron-session', async importOriginal => ({ ...(await importOriginal<typeof import('iron-session')>()), getIronSession: mocks.getIronSession }))
 vi.mock('@/lib/operator-session', () => ({ getOperatorSessionOptions: () => ({ cookieName: 'test', password: 'x'.repeat(32) }) }))
 import { config, middleware } from './middleware'
+import { sealSiteAccess, SITE_ACCESS_COOKIE } from '@/lib/site-access'
 
 describe('sitewide middleware boundary', () => {
   beforeEach(() => {
     vi.stubEnv('SITE_ACCESS_REQUIRED', 'true')
     vi.stubEnv('SITE_ACCESS_PASSWORD', 'fixture-preview-password')
+    vi.stubEnv('RICHMOND_READ_ONLY_STAGE', 'false')
     mocks.session.isOperator = false
     mocks.getIronSession.mockReset().mockResolvedValue(mocks.session)
   })
@@ -49,5 +51,66 @@ describe('sitewide middleware boundary', () => {
     expect(publicResponse.headers.has('X-Robots-Tag')).toBe(false)
     const operator = await middleware(new NextRequest('https://richmondcommons.org/operator/settings'))
     expect(operator.status).toBe(307)
+  })
+})
+
+describe('read-only stage before every authentication exception', () => {
+  const password = 'fixture-preview-password'
+  beforeEach(() => {
+    vi.stubEnv('RICHMOND_READ_ONLY_STAGE', 'true')
+    vi.stubEnv('SITE_ACCESS_REQUIRED', 'true')
+    vi.stubEnv('SITE_ACCESS_PASSWORD', password)
+    vi.stubEnv('API_SECRET', 'fixture-machine-service-secret')
+    vi.stubEnv('REVALIDATION_SECRET', 'fixture-revalidation-secret')
+    mocks.getIronSession.mockReset().mockResolvedValue({ isOperator: true })
+  })
+  afterEach(() => vi.unstubAllEnvs())
+
+  it.each([
+    ['POST', '/'], ['POST', '/meetings/id'], ['POST', '/api/commons/search'],
+    ['POST', '/api/email/send-recap'], ['POST', '/api/email/send-digest'], ['GET', '/api/email/send-digest'],
+    ['POST', '/api/revalidate'], ['GET', '/api/health'], ['GET', '/api/subscribe?token=fixture'],
+    ['GET', '/operator'], ['GET', '/api/operator/session'], ['GET', '/api/site-access'],
+  ])('denies %s %s despite valid site, operator and service credentials', async (method, path) => {
+    const cookie = await sealSiteAccess(password)
+    const response = await middleware(new NextRequest(`https://richmondcommons.org${path}`, {
+      method, headers: { Cookie: `${SITE_ACCESS_COOKIE}=${cookie}; rtp_operator=fixture`,
+        Authorization: 'Bearer fixture-machine-service-secret', Origin: 'https://richmondcommons.org', 'Content-Type': 'application/json' },
+      ...(method === 'POST' ? { body: JSON.stringify({ secret: 'fixture-revalidation-secret' }) } : {}),
+    }))
+    expect(response.status).toBe(404)
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store')
+    expect(response.headers.get('X-Robots-Tag')).toBe('noindex, nofollow')
+    expect(mocks.getIronSession).not.toHaveBeenCalled()
+  })
+
+  it('cannot use scripted Basic access to reopen a denied mutation', async () => {
+    const response = await middleware(new NextRequest('https://richmondcommons.org/api/revalidate', {
+      method: 'POST', headers: { Authorization: `Basic ${btoa(`richmond:${password}`)}` },
+      body: JSON.stringify({ secret: 'fixture-revalidation-secret' }),
+    }))
+    expect(response.status).toBe(404)
+  })
+
+  it('allows the exact password-cookie POST to reach its independent same-origin handler', async () => {
+    const response = await middleware(new NextRequest('https://richmondcommons.org/api/site-access', {
+      method: 'POST', headers: { Origin: 'https://richmondcommons.org', 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'password=not-yet-authenticated',
+    }))
+    expect(response.headers.get('x-middleware-next')).toBe('1')
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store')
+  })
+
+  it('requires the password for allowed reads and permits them with the separate site cookie', async () => {
+    const anonymous = await middleware(new NextRequest('https://richmondcommons.org/search?q=housing'))
+    expect(anonymous.status).toBe(401)
+    expect(anonymous.headers.has('WWW-Authenticate')).toBe(false)
+    const cookie = await sealSiteAccess(password)
+    for (const path of ['/search?q=housing', '/api/commons/search?q=housing', '/api/finance/export?q=housing', '/_next/static/chunks/app.js']) {
+      const response = await middleware(new NextRequest(`https://richmondcommons.org${path}`, { headers: { Cookie: `${SITE_ACCESS_COOKIE}=${cookie}` } }))
+      expect(response.headers.get('x-middleware-next')).toBe('1')
+      expect(response.headers.get('Vercel-CDN-Cache-Control')).toBe('no-store')
+    }
+    expect(mocks.getIronSession).not.toHaveBeenCalled()
   })
 })

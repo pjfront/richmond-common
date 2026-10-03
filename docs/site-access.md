@@ -4,7 +4,7 @@ The October 3, 2026 operator instruction authorizes a temporary password gate wh
 
 ## Configuration
 
-Set `SITE_ACCESS_REQUIRED=true` and a high-entropy server-only `SITE_ACCESS_PASSWORD` of at least 24 characters in the Production environment. These variables must never have a `NEXT_PUBLIC_` prefix, appear in URLs or logs, or be committed with secret values. The isolated-preview build guard rejects `SITE_ACCESS_PASSWORD` so a production credential cannot leak into preview scope.
+Set `SITE_ACCESS_REQUIRED=true` and a high-entropy server-only `SITE_ACCESS_PASSWORD` of at least 24 characters in the Production environment. These variables must never have a `NEXT_PUBLIC_` prefix, appear in URLs or logs, or be committed with secret values. The normal isolated-preview build guard rejects `SITE_ACCESS_PASSWORD` so a production credential cannot leak into preview scope. The separately authorized read-only staging branch permits its own site-access password only with the exact branch and full source SHA, explicit read-only/password flags, locked inference, the verified production public-data origin, and a public Supabase key. Privileged database, operator, email, model and machine-service credentials remain forbidden there.
 
 The visible entry page is a self-contained password form served by middleware. It has no username, account registration, access-request link or external resources. It posts only to `/api/site-access`, which requires a same-origin form submission, validates the password, seals a separate `rtp_site_access` cookie and redirects with HTTP 303 to a safe local return path. The cookie lasts seven days, uses HttpOnly and SameSite strict, is Secure in production, and grants no operator privileges. Its sealing key is derived from the password with a separate SHA-256 namespace; rotating the password invalidates existing site cookies without changing operator sessions. The existing operator sign-in remains separate.
 
@@ -17,6 +17,8 @@ Middleware matches every route, including root, meeting and item pages, RSC/pref
 Credential checks compare fixed-size SHA-256 digests with Web Crypto. No database or paid service is called to authenticate site access. Basic authorization remains supported for bounded scripted verification, but the gate never sends `WWW-Authenticate` and never triggers a browser-native authentication popup.
 
 ## Narrow service exceptions
+
+These exceptions apply to the temporarily protected production site. Read-only staging checks its method/path capability boundary **before** cookie, Basic or machine-secret authentication. Only `POST /api/site-access` is permitted as an authentication mutation; every other mutation and every unsupported API/operator route is denied, even with valid access credentials. Its read API allowlist is limited to `GET`/`HEAD` on `/api/commons/search` and `/api/finance/export`. The production service exceptions below cannot reopen those denied staging routes.
 
 The following exceptions preserve existing independent authorization. A machine secret never provides general browsing access, and allowing a request through middleware does not bypass the route's own checks.
 

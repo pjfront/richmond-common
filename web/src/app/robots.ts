@@ -1,6 +1,8 @@
 import type { MetadataRoute } from 'next'
+import { isReadOnlyStage } from '@/lib/read-only-stage'
 
 export default function robots(): MetadataRoute.Robots {
+  if (isReadOnlyStage()) return { rules: { userAgent: '*', disallow: '/' } }
   return {
     rules: [
       {

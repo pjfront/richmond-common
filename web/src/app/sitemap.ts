@@ -1,4 +1,5 @@
 import type { MetadataRoute } from 'next'
+import { isReadOnlyStage } from '@/lib/read-only-stage'
 import { electionToSlug } from '@/lib/queries/elections'
 import { nameToSlug } from '@/lib/queries/_shared'
 import { getOfficials } from '@/lib/queries/council'
@@ -220,5 +221,6 @@ export async function buildSitemap(asOf: Date): Promise<MetadataRoute.Sitemap> {
 }
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+  if (isReadOnlyStage()) return []
   return buildSitemap(new Date())
 }
