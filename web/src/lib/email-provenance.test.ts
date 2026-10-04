@@ -25,7 +25,7 @@ const granicus: Provenance = {
 }
 
 describe('email recap provenance disclosures', () => {
-  it('keeps the welcome cadence factual before weekly digest activation', () => {
+  it('states the conditional Monday cadence without changing general council consent', () => {
     const { html, text } = buildWelcomeEmail(
       null,
       'https://example.test/unsubscribe',
@@ -35,7 +35,9 @@ describe('email recap provenance disclosures', () => {
     for (const content of [html, text]) {
       const normalized = content.replace(/\s+/g, ' ')
       expect(normalized).toContain('only when general council emails are enabled')
-      expect(normalized).toContain('has not started')
+      expect(normalized).toContain('Mondays at 9:30 a.m. PDT / 8:30 a.m. PST')
+      expect(normalized).toContain('only when a story or election you follow has a newly published update')
+      expect(normalized).not.toContain('has not started')
       expect(normalized).not.toContain('Before and after each')
       expect(normalized).not.toContain('weekly recap')
       expect(normalized).toContain('where available')

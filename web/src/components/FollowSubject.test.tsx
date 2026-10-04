@@ -5,16 +5,19 @@ import SubscribePage from '@/app/subscribe/page'
 import PreferencesPanel from './PreferencesPanel'
 
 describe('truthful subject follow journeys', () => {
-  it('carries the approved subject into signup and clearly says delivery has not started', async () => {
+  it('carries the approved subject into signup with the conditional Monday delivery cadence', async () => {
     const cta = renderToStaticMarkup(<FollowSubject subject="2026-general" />)
     expect(cta).toContain('href="/subscribe?follow=2026-general"')
     expect(cta).toContain('weekly email')
-    expect(cta).toContain('has not started')
+    expect(cta).toContain('Mondays at 9:30 a.m. PDT / 8:30 a.m. PST')
+    expect(cta).toContain('only when a story or election you follow has a newly published update')
+    expect(cta).not.toContain('has not started')
     const page = renderToStaticMarkup(await SubscribePage({ searchParams: Promise.resolve({ follow: '2026-general' }) }))
     expect(page).toContain('November 2026 election and campaign money')
     expect(page).toContain('Save this follow')
     expect(page).toContain('does not change its saved choices')
     expect(page).toContain('General council previews and recaps are off')
+    expect(page).toContain('Mondays at 9:30 a.m. PDT / 8:30 a.m. PST')
     expect(page).not.toContain('you will receive updates immediately')
   })
   it('does not create an unknown follow or reflect it into a form', async () => {
@@ -29,6 +32,8 @@ describe('truthful subject follow journeys', () => {
     expect(html).toContain('Include council previews and recaps')
     expect(html).toContain('They do not filter email delivery')
     expect(html).not.toContain('updates on everything')
-    expect(html).toContain('has not started')
+    expect(html).toContain('Mondays at 9:30 a.m. PDT / 8:30 a.m. PST')
+    expect(html).toContain('only when a story or election you follow has a newly published update')
+    expect(html).not.toContain('planned weekly digest')
   })
 })

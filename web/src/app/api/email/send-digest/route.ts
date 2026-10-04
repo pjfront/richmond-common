@@ -23,9 +23,9 @@ import { PROVIDER_EMAIL_ID, readDigestCanaryProof } from '@/lib/digest-canary-pr
 const RICHMOND_FIPS = '0660620'
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://richmondcommons.org'
 const DIGEST_CAPABILITY = 'subscriber-weekly-digest-v1'
-// This release can send only the operator canary. The post-canary activation
-// change must deliberately flip this code gate while adding the schedule.
-const DIGEST_BROADCAST_ENABLED = false
+// Paired with the Monday schedule in subscriber-weekly-digest.yml. Keep this
+// activation release held until the representative operator canary is verified.
+const DIGEST_BROADCAST_ENABLED = true
 const EMAIL_LOCAL_PATTERN = /^[A-Za-z0-9!#$%&'*+/=?^_`{|}~.-]+$/
 const EMAIL_DOMAIN_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$/
 
@@ -173,7 +173,7 @@ export async function POST(request: NextRequest) {
 
     const subscribers = await loadActiveSubscribers(supabase, RICHMOND_FIPS)
     if (subscribers.length === 0) {
-      return NextResponse.json({ sent: 0, period, reason: 'no active subscribers' })
+      return NextResponse.json({ mode, sent: 0, period, reason: 'no active subscribers' })
     }
 
     const subscriberIds = subscribers.map((subscriber) => subscriber.id)
@@ -247,6 +247,7 @@ export async function POST(request: NextRequest) {
     })
 
     return NextResponse.json({
+      mode,
       period,
       meeting_count: meetings.length,
       reviewed_update_count: briefs.length,

@@ -6,6 +6,9 @@ on:
   # in-file ref guard runs.
   repository_dispatch:
     types: [subscriber-digest-canary]
+  # Monday 09:30 PDT / 08:30 PST. The API selects the completed UTC week.
+  schedule:
+    - cron: '30 16 * * 1'
 
 permissions:
   contents: read
@@ -16,9 +19,9 @@ concurrency:
 
 jobs:
   deliver:
-    # This first release is deliberately canary-only. A separate post-canary
-    # change adds the Monday schedule; this typed dispatch cannot broadcast.
+    # Manual requests remain canary-only, including after schedule activation.
     if: >-
+      github.repository == 'pjfront/richmond-common' &&
       github.event_name == 'repository_dispatch' &&
       github.event.action == 'subscriber-digest-canary' &&
       github.actor == github.repository_owner &&
@@ -32,7 +35,7 @@ jobs:
         run: |
           set -euo pipefail
           if ! jq -e 'type == "object" and length == 0' \
-              <<<"$CLIENT_PAYLOAD" > /dev/null; then
+              <<<"$CLIENT_PAYLOAD" > /dev/null 2>&1; then
             echo "::error::ACTION: Do not trigger the canary again. Give this run URL to a coding assistant and ask it to remove every unexpected subscriber-digest-canary payload field before sending a new owner-only typed event."
             exit 1
           fi
@@ -65,8 +68,8 @@ jobs:
           fi
           if ! jq -e \
             '.capability == "subscriber-weekly-digest-v1" and
-             .canary_ready == true and .broadcast_ready == false' \
-            "$RESPONSE_FILE" > /dev/null; then
+             .canary_ready == true and (.broadcast_ready | type == "boolean")' \
+            "$RESPONSE_FILE" > /dev/null 2>&1; then
             echo "::error::ACTION: Do not trigger the canary again. Confirm the approved batch was deployed and the server-side canary address was configured, then give this run URL to a coding assistant."
             exit 1
           fi
@@ -101,7 +104,92 @@ jobs:
           fi
           if ! jq -e \
             '.mode == "canary" and .sent == 1 and .provider_confirmed == true' \
-            "$RESPONSE_FILE" > /dev/null; then
+            "$RESPONSE_FILE" > /dev/null 2>&1; then
             echo "::error::ACTION: No canary was confirmed. Do not trigger it again until a coding assistant verifies the completed-week recaps, deployment capability, and provider result from this run."
+            exit 1
+          fi
+
+  broadcast:
+    # Only this exact automatic event on the original trusted main can send to
+    # subscribers. Payloads and manual reruns cannot select broadcast mode.
+    if: >-
+      github.repository == 'pjfront/richmond-common' &&
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'schedule' &&
+      github.event.schedule == '30 16 * * 1' &&
+      github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Verify the deployed broadcast capability
+        env:
+          API_SECRET: ${{ secrets.API_SECRET }}
+        run: |
+          set -euo pipefail
+          if [ -z "${API_SECRET:-}" ]; then
+            echo "::error::ACTION: Do not rerun delivery. Ask a coding assistant to verify the repository API_SECRET configuration without displaying it."
+            exit 1
+          fi
+          RESPONSE_FILE="$RUNNER_TEMP/subscriber-digest-broadcast-capability.json"
+          set +e
+          HTTP_CODE=$(curl -sS \
+            --connect-timeout 10 \
+            --max-time 20 \
+            --max-filesize 65536 \
+            --output "$RESPONSE_FILE" \
+            --write-out '%{http_code}' \
+            "https://richmondcommons.org/api/email/send-digest" \
+            -H "Authorization: Bearer $API_SECRET")
+          CURL_STATUS=$?
+          set -e
+          if [ "$CURL_STATUS" -ne 0 ] || [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::ACTION: Do not rerun delivery. Give this run URL to a coding assistant to verify the production deployment and read-only digest capability."
+            exit 1
+          fi
+          if ! jq -e \
+            '.capability == "subscriber-weekly-digest-v1" and .broadcast_ready == true' \
+            "$RESPONSE_FILE" > /dev/null 2>&1; then
+            echo "::error::ACTION: Do not rerun delivery. The deployed subscriber broadcast is not activated; verify the approved paired application and schedule release."
+            exit 1
+          fi
+
+      - name: Make one tracked subscriber delivery attempt
+        env:
+          API_SECRET: ${{ secrets.API_SECRET }}
+        run: |
+          set -euo pipefail
+          RESPONSE_FILE="$RUNNER_TEMP/subscriber-digest-broadcast.json"
+          # No HTTP retry: the service owns durable weekly claims and recovery.
+          set +e
+          HTTP_CODE=$(curl -sS -X POST \
+            --connect-timeout 10 \
+            --max-time 90 \
+            --max-filesize 65536 \
+            --output "$RESPONSE_FILE" \
+            --write-out '%{http_code}' \
+            "https://richmondcommons.org/api/email/send-digest" \
+            -H "Authorization: Bearer $API_SECRET" \
+            -H "Content-Type: application/json" \
+            --data-binary '{"mode":"broadcast"}')
+          CURL_STATUS=$?
+          set -e
+          if [ "$CURL_STATUS" -ne 0 ] || [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::ACTION: Do not rerun delivery. A partial or uncertain send is possible; give this run URL to a coding assistant to inspect the delivery ledger and provider results before using bounded recovery."
+            exit 1
+          fi
+          if ! jq -e '
+            .mode == "broadcast" and (has("error") | not) and
+            (if has("reason") then
+               (keys == ["mode", "period", "reason", "sent"]) and .sent == 0 and
+               (.reason == "no recaps or reviewed updates in completed week" or
+                .reason == "no active subscribers")
+             else
+               .fully_delivered == true and
+               ([.sent, .failed, .already_sent, .deferred, .manual_review, .total_subscribers] |
+                all(type == "number" and . >= 0 and . <= 500 and floor == .)) and
+               .failed == 0 and .deferred == 0 and .manual_review == 0 and
+               (.sent + .already_sent == .total_subscribers)
+             end)' "$RESPONSE_FILE" > /dev/null 2>&1; then
+            echo "::error::ACTION: Do not rerun delivery. The completed-week result is incomplete or unrecognized; ask a coding assistant to inspect the delivery ledger and provider results without editing consent or sending again."
             exit 1
           fi

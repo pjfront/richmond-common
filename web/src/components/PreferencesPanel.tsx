@@ -91,7 +91,7 @@ export default function PreferencesPanel({
       <section className="border-t border-slate-200 pt-6" aria-labelledby="council-email-heading">
         <h2 id="council-email-heading" className="text-lg font-semibold text-civic-navy">General council emails</h2>
         <label className="mt-2 flex min-h-11 items-center gap-3 text-slate-700"><input type="checkbox" checked={receiveCouncilUpdates} onChange={event => setReceiveCouncilUpdates(event.target.checked)} className="h-5 w-5 accent-civic-navy" />Include council previews and recaps</label>
-        <p className="mt-2 text-sm text-slate-600">This includes council emails outside your followed stories. In the planned weekly digest, topic choices below filter meeting recaps; leaving topics blank includes every available recap. Topics do not filter separate pre-meeting or recap emails.</p>
+        <p className="mt-2 text-sm text-slate-600">This includes council emails outside your followed stories. In the weekly digest, topic choices below filter meeting recaps; leaving topics blank includes every available recap. Topics do not filter separate pre-meeting or recap emails.</p>
         {receiveCouncilUpdates && <div className="mt-4"><TopicPreferences selectedTopics={topics} onChange={setTopics} /></div>}
       </section>
 

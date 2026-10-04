@@ -406,20 +406,12 @@ def test_workflow_yaml_is_parseable():
         assert yaml.safe_load(_workflow_text(name))
 
 
-def test_weekly_digest_is_canary_only_before_schedule_activation():
+def test_weekly_digest_has_a_separate_trusted_main_schedule_after_activation():
     workflow = _workflow_text("subscriber-weekly-digest.yml")
-    route = (
-        ROOT
-        / "web"
-        / "src"
-        / "app"
-        / "api"
-        / "email"
-        / "send-digest"
-        / "route.ts"
-    ).read_text(encoding="utf-8")
     assert "github.ref == 'refs/heads/main'" in workflow
-    assert "schedule:" not in workflow
+    assert "github.repository == 'pjfront/richmond-common'" in workflow
+    assert "github.event.schedule == '30 16 * * 1'" in workflow
+    assert "github.run_attempt == 1" in workflow
     assert "workflow_dispatch:" not in workflow
     assert "repository_dispatch:" in workflow
     assert "types: [subscriber-digest-canary]" in workflow
@@ -428,18 +420,18 @@ def test_weekly_digest_is_canary_only_before_schedule_activation():
     assert "$SITE_URL" not in workflow
     assert "SUBSCRIBER_DIGEST_ENABLED" not in workflow
     assert "--data-binary '{\"mode\":\"canary\"}'" in workflow
-    assert '\"mode\":\"broadcast\"' not in workflow
-    assert "const DIGEST_BROADCAST_ENABLED = false" in route
+    assert "--data-binary '{\"mode\":\"broadcast\"}'" in workflow
     assert '.capability == "subscriber-weekly-digest-v1"' in workflow
     assert ".canary_ready == true" in workflow
-    assert ".broadcast_ready == false" in workflow
+    assert ".broadcast_ready == true" in workflow
     assert '.sent == 1 and .provider_confirmed == true' in workflow
     assert workflow.count("::error::ACTION:") >= 5
     assert "Check the Resend sent-email log and the canary inbox" in workflow
     assert "Do not trigger the canary again" in workflow
     assert "--output \"$RESPONSE_FILE\"" in workflow
-    assert workflow.count("--max-time 20") == 2
-    assert workflow.count("--max-filesize 65536") == 2
+    assert workflow.count("--max-time 20") == 3
+    assert workflow.count("--max-time 90") == 1
+    assert workflow.count("--max-filesize 65536") == 4
     assert "|| true" not in workflow
 
 

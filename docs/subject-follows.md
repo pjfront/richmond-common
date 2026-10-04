@@ -1,6 +1,6 @@
 # Subject follows and delivery activation
 
-Status, September 6, 2026: deployed at `97abc9bd5c4ae81911b90034e2f10823dd5df8af`. Migrations 150 and 151 were applied together from committed source `8db732ff3f3b92f2b875396da31ca6d9d9b3907b`; replay and production access/data-preservation checks passed. Weekly subscriber broadcasts remain disabled. Validation used disposable PostgreSQL, mocked providers, production read/access checks, and browsers without live form submission. No live signup, provider send, subscriber-email schedule activation, or billing change was performed. See the [release evidence](research/2026-09-06-release-evidence.md).
+This revision contains the paired weekly activation: the broadcast gate, Monday workflow and resident-facing cadence copy. It must remain held until the authorized representative canary is verified. See the [launch record](weekly-digest-launch.md) for current activation state and the [release evidence](research/2026-09-06-release-evidence.md) for deployed-source verification. Migrations 150 and 151 were already applied together from committed source `8db732ff3f3b92f2b875396da31ca6d9d9b3907b`; replay and production access/data-preservation checks passed. Activation needs no new migration or change to existing subscriber choices.
 
 ## Resident choices
 
@@ -13,15 +13,15 @@ The existing email subscription and private bearer management link are reused. F
 | `flock-cameras-and-data-privacy` | `/stories/flock-cameras-and-data-privacy` |
 | `2026-general` | `/elections/2026-general` |
 
-The story and election CTAs carry their subject to `/subscribe?follow=<subject>`. The page and management form explain the intended weekly cadence: send when a followed subject has a newly published reviewed update. They explicitly say weekly delivery has not started. There is no email for every source poll or each operator approval.
+The story and election CTAs carry their subject to `/subscribe?follow=<subject>`. The page, management form and welcome email explain the conditional weekly cadence: Mondays at 16:30 UTC (9:30 a.m. PDT / 8:30 a.m. PST), when a followed subject has a newly published reviewed update. A scheduler may run late. There is no email for every source poll or each operator approval.
 
 `receive_council_updates` is a separate, explicit preference. Existing subscribers retain `true`; a new follow-only subscription starts with `false`.
 
 | Council updates | Topics | Subjects | Delivery selection |
 | --- | --- | --- | --- |
-| On | Empty | Empty | Existing pre-meeting/recap mail; all meeting recaps in the planned weekly digest |
+| On | Empty | Empty | Existing pre-meeting/recap mail; all meeting recaps in the weekly digest |
 | On | Selected | Selected | Existing pre-meeting/recap mail; topic-matched weekly recaps plus matching reviewed subject updates |
-| Off | Any | Selected | Only matching reviewed subject updates in the planned weekly digest |
+| Off | Any | Selected | Only matching reviewed subject updates in the weekly digest |
 | Off | Any | Empty | No update emails |
 
 Topics filter weekly recap content; they do not filter the existing individual orientation/recap paths. Turning council updates off excludes those paths entirely, including signup orientation, broadcasts, and durable recovery. Welcome and management links remain available. District and candidate selections are saved context, not delivery filters; their form labels say this.
@@ -56,12 +56,12 @@ The original claim implementation is renamed `claim_email_delivery_v141` and mad
 
 Local checks include executable PGlite assertions for service grants, anonymous denial, transaction rollback, active-email idempotence, token rotation, legacy preference preservation, council opt-outs, private claim enforcement, publication identity, withdrawal/republication, and payload changes. Vitest covers API signup/management, shared selection, source caps/failures, source/version rendering, brief-only canary composition, and durable recovery. Provider calls in tests are mocked. The database-permissions CI job runs `tests/subscription_subject_follows.integration.mjs` and `tests/subscriber_table_security.integration.mjs` using pinned PGlite 0.5.8. The latter starts with broad hosted-style defaults and checks all table privileges, including TRUNCATE, across anonymous, authenticated, PUBLIC-only and service roles.
 
-Production application and replay preserved existing subscriber, preference, delivery and activation records. All seven API table privileges are denied on private subscription tables, service table grants are unchanged, service-only RPC access is verified, and direct access to the legacy claim core is denied. Authoritative generated types and the application are deployed with `DIGEST_BROADCAST_ENABLED=false`.
+Production application and replay preserved existing subscriber, preference, delivery and activation records. All seven API table privileges are denied on private subscription tables, service table grants are unchanged, service-only RPC access is verified, and direct access to the legacy claim core is denied. The initial subject-follow deployment kept `DIGEST_BROADCAST_ENABLED=false`; this paired activation changes it only after the exact canary check.
 
 Before enabling real weekly delivery:
 
-1. Complete an isolated end-to-end signup/provider rehearsal for general signup, follow-only signup, existing-active signup, management, unsubscribe/reactivation, and retries. Executable database/API tests already cover these contracts; no live form submission/provider send was used for release verification. Confirm follow-only accounts remain excluded from individual orientation/recap sends and the old tracked-mail rollback path. Use only test recipients/providers during this stage.
-2. Run the existing explicitly authorized operator canary workflow against a reviewed completed-week fixture, including a brief-only week and verified source links. Confirm the provider result; an ambiguous outcome requires review and must not be blindly rerun. No such canary was sent during implementation.
-3. Review a separate, paired activation change: deliberately enable the digest broadcast code gate, add the weekly schedule to the existing email workflow, and replace the rollout-not-started copy in `web/src/lib/subscription-subjects.ts`. Verify no duplicate scheduler or independent sender is introduced. This document does not authorize or perform that activation.
+1. Verify the signup, management, unsubscribe/reactivation and retry contracts with the existing executable API/database tests and mocked providers. Confirm follow-only accounts remain excluded from individual orientation/recap sends and the old tracked-mail rollback path. These tests are not an actual subscriber signup or live provider delivery.
+2. Complete the explicitly authorized canary against the reviewed completed-week fixture using the one-attempt procedure in the launch record. Verify the exact provider ID, configured destination, stored subject/body hashes and provider-reported delivery state. The authenticated proof endpoint exposes no email body, recipient address or provider key. An ambiguous or unavailable result holds activation; it must not cause another send.
+3. Review and deploy this paired code/workflow/copy change after the canary passes. The existing workflow retains an owner-only empty canary event and adds a separate original-repository, trusted-main Monday job. Shared non-cancelling concurrency, an activated-capability check and one bounded broadcast request preserve the existing durable delivery path. Partial/uncertain results fail for ledger review; the scheduler does not blindly resend.
 
-Public story pages work independently of mail activation. Saving choices is useful before launch, but no current CTA promises that weekly emails are already arriving.
+Public story pages work independently of mail delivery. A resident with no new matching content receives no weekly email. For a full delivery stop, disable the broadcast gate and schedule and handle any queued digest recovery through the existing guarded ledger; those first two switches cannot recall an in-flight provider send.
