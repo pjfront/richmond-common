@@ -125,7 +125,7 @@
       false
     ]
   },
-  "runtime_limits": "No PostgREST HTTP or managed-provider baseline tested. Missing/partial data is not zero activity.",
+  "runtime_limits": "Local SQL, PostgREST/proxy contracts, target-specific anonymous permissions and Next basic_public rendered HTTP/API flows verified. Managed-provider baseline and compact-core visual browser verification remain untested. Missing/partial source coverage is not zero activity.",
   "empty_database_bytes": 8033971,
   "added_database_bytes": 39627612,
   "new_local_database": "basic_core_measure_20261004",
@@ -156,111 +156,171 @@
   "canonical_archive_modified": false,
   "provider_created": false,
   "postgrest_http": {
-    "checked_at": 1791170568,
+    "checked_at": 1791173342,
+    "database": "basic_core_measure_20261004",
     "all_passed": true,
-    "cloud_calls": false,
-    "data_rows_modified": false,
-    "temporary_http_services_stopped_after_test": true,
     "checks": [
       {
         "name": "legacy_search_site_contract",
-        "passed": true
+        "http_status": 200,
+        "passed": true,
+        "records_returned": 10
       },
       {
         "name": "legacy_agenda_nested_projection",
-        "passed": true
+        "http_status": 206,
+        "passed": true,
+        "records_returned": 10
       },
       {
         "name": "legacy_meeting_projection",
-        "passed": true
+        "http_status": 206,
+        "passed": true,
+        "records_returned": 10
       },
       {
         "name": "legacy_motion_projection",
-        "passed": true
+        "http_status": 206,
+        "passed": true,
+        "records_returned": 10
       },
       {
         "name": "legacy_vote_projection",
-        "passed": true
+        "http_status": 206,
+        "passed": true,
+        "records_returned": 10
       },
       {
         "name": "legacy_finance_full_public_projection",
-        "passed": true
+        "http_status": 206,
+        "passed": true,
+        "records_returned": 1000
       },
       {
         "name": "legacy_finance_coverage_projection",
-        "passed": true
+        "http_status": 200,
+        "passed": true,
+        "records_returned": 8
+      },
+      {
+        "name": "anon_core_source_metadata_projection",
+        "http_status": 200,
+        "passed": true,
+        "records_returned": 1
+      },
+      {
+        "name": "target_specific_anon_pytest",
+        "passed": true,
+        "target": "compact_core"
       },
       {
         "name": "core_proxy_rejects_mutation",
-        "passed": true
+        "http_status": 403,
+        "passed": true,
+        "records_returned": null
       }
     ],
-    "passed_checks": 8,
-    "total_checks": 8
+    "data_rows_modified": false,
+    "cloud_calls": false,
+    "temporary_http_services_stopped_after_test": true,
+    "passed_checks": 10,
+    "total_checks": 10,
+    "checked_at_utc": "2026-10-05T04:09:02+00:00",
+    "verification_layer": "Local PostgREST/proxy HTTP contracts plus target-specific anonymous permissions",
+    "http_checks": 9,
+    "target_specific_anon_verified": true
   },
   "next_basic_public_http": {
-    "checked_at": 1791170869,
+    "checked_at": 1791172594,
+    "database": "basic_core_measure_20261004",
+    "profile": "basic_public",
+    "anon_only": true,
     "all_passed": true,
-    "cloud_calls": false,
-    "data_rows_modified": false,
-    "temporary_http_services_stopped_after_test": true,
     "checks": [
       {
         "name": "basic_home",
+        "http_status": 200,
+        "passed": true
+      },
+      {
+        "name": "basic_source_status_visible",
+        "http_status": 200,
         "passed": true
       },
       {
         "name": "basic_search_page",
+        "http_status": 200,
         "passed": true
       },
       {
         "name": "basic_housing_search_records",
-        "passed": true
+        "http_status": 200,
+        "passed": true,
+        "records_returned": 8
       },
       {
         "name": "basic_money_page",
+        "http_status": 200,
         "passed": true
       },
       {
         "name": "basic_finance_export",
-        "passed": true
+        "http_status": 200,
+        "passed": true,
+        "records_returned": 1424
       },
       {
         "name": "basic_meeting_index",
+        "http_status": 200,
         "passed": true
       },
       {
         "name": "basic_vote_records_and_hold",
-        "passed": true
+        "http_status": 200,
+        "passed": true,
+        "records_returned": 9
       },
       {
         "name": "basic_ordinary_item_votes_page",
+        "http_status": 200,
         "passed": true
       },
       {
         "name": "basic_exact_meeting_page",
+        "http_status": 200,
         "passed": true
       },
       {
         "name": "basic_held_item_page",
+        "http_status": 200,
         "passed": true
       },
       {
         "name": "basic_operator_hidden",
+        "http_status": 404,
         "passed": true
       },
       {
         "name": "basic_semantic_route_hidden",
+        "http_status": 404,
         "passed": true
       },
       {
         "name": "basic_email_hidden",
+        "http_status": 404,
         "passed": true
       }
     ],
-    "passed_checks": 13,
-    "total_checks": 13
+    "cloud_calls": false,
+    "data_rows_modified": false,
+    "temporary_http_services_stopped_after_test": true,
+    "local_archive_3100_preserved": true,
+    "passed_checks": 14,
+    "total_checks": 14,
+    "checked_at_utc": "2026-10-05T03:56:34+00:00",
+    "verification_layer": "Local Next rendered HTTP pages and API responses using the compact target anonymous reader"
   },
   "compact_core_browser_visual_verified": false,
-  "compact_core_browser_limitation": "Actual rendered Next HTTP/API flows were checked against the compact database; visual browser checks reported elsewhere used the local archive database."
+  "compact_core_browser_limitation": "Actual rendered Next HTTP/API flows were checked against the compact database; visual browser checks reported elsewhere used the local archive database.",
+  "managed_provider_baseline_verified": false
 }
