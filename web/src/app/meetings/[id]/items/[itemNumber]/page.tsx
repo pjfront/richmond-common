@@ -14,6 +14,7 @@ import SimilarDiscussions from '@/components/SimilarDiscussions'
 import ProceedingTypeBadge from '@/components/ProceedingTypeBadge'
 import OperatorAgendaItemSections from '@/components/OperatorAgendaItemSections'
 import VoteSourceReviewNotice from '@/components/VoteSourceReviewNotice'
+import { featureEnabled } from '@/lib/feature-policy'
 
 export const dynamic = 'force-static'
 export const revalidate = 86400
@@ -209,7 +210,7 @@ export default async function AgendaItemDetailPage({ params }: ItemPageProps) {
       </OperatorGate>
 
       {/* Similar Discussions — semantic similarity via pgvector embeddings. */}
-      <SimilarDiscussions itemId={item.id} />
+      {featureEnabled('similar_discussions') && <SimilarDiscussions itemId={item.id} />}
 
       {/* Back to meeting */}
       <div className="mt-8 pt-6 border-t border-slate-200">

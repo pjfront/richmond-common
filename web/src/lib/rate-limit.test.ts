@@ -16,6 +16,23 @@ vi.mock('./supabase-admin', () => ({
 
 import { clientKey, enforceRateLimit, limits } from './rate-limit'
 
+describe('local archive login limiter', () => {
+  afterEach(() => { vi.unstubAllEnvs(); vi.useRealTimers() })
+  it('limits loopback login attempts without invoking a write RPC or authorizing paid work', async () => {
+    vi.stubEnv('VERCEL', '')
+    vi.stubEnv('RICHMOND_LOCAL_ARCHIVE', 'true')
+    vi.useFakeTimers().setSystemTime(new Date('2030-01-01T00:00:00Z'))
+    mocked.getSupabaseAdmin.mockClear()
+    for (let count = 0; count < limits.login.maxCount; count++) expect(await enforceRateLimit('login', 'anon')).toEqual({ allowed: true, backendAvailable: false })
+    const denied = await enforceRateLimit('login', 'anon')
+    expect(denied.allowed).toBe(false)
+    expect(denied.response?.status).toBe(429)
+    expect(mocked.getSupabaseAdmin).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(limits.login.windowSecs * 1000)
+    expect((await enforceRateLimit('login', 'anon')).allowed).toBe(true)
+  })
+})
+
 function fakeRequest(headers: Record<string, string>): NextRequest {
   const headerMap = new Map(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v]))
   return {

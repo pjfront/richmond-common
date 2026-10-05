@@ -8,7 +8,7 @@ import type { ResidentSnapshot, StoryAgendaEntry } from '@/lib/queries/civic-sto
 const mocks = vi.hoisted(() => ({ snapshot: vi.fn() }))
 vi.mock('@/lib/queries/civic-stories', () => ({ getResidentSnapshot: mocks.snapshot }))
 vi.mock('@/components/SuggestCorrectionLink', () => ({ default: () => <button>Suggest a correction</button> }))
-import HomePage from '@/app/page'
+import HomePage from '@/components/LegacyResidentHome'
 import StoryPage from '@/app/stories/[slug]/page'
 import { StoryAgenda } from './CivicStory'
 

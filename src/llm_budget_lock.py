@@ -607,6 +607,8 @@ def _reserve_projected_spend_pre_call(
     """Authorize and count one paid-call ceiling atomically in this process."""
     global _process_spend_usd
     _assert_accounting_not_poisoned()
+    from feature_policy import assert_worker_provider_allowed
+    assert_worker_provider_allowed("embeddings" if model.startswith("text-embedding-") else "inference")
     _assert_api_unlocked()
     if not math.isfinite(projected_cost) or projected_cost < 0:
         raise LLMBudgetAccountingError(

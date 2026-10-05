@@ -1,4 +1,3 @@
-import { isReadOnlyStage } from './read-only-stage'
 import type { AgendaItemWithMotions } from './types'
 
 export interface StageVoteSourceReview {
@@ -20,7 +19,8 @@ export const POINT_MOLATE_VOTE_REVIEW = {
 export function stageVoteSourceReviewForItem(item: {
   id: string; meeting_id: string; item_number: string
 }): StageVoteSourceReview | null {
-  if (!isReadOnlyStage() || item.id !== POINT_MOLATE_VOTE_REVIEW.itemId
+  // A known source conflict follows the record in every tier, including local.
+  if (item.id !== POINT_MOLATE_VOTE_REVIEW.itemId
     || item.meeting_id !== POINT_MOLATE_VOTE_REVIEW.meetingId
     || item.item_number.toLowerCase() !== POINT_MOLATE_VOTE_REVIEW.itemNumber) return null
   return { reason: POINT_MOLATE_VOTE_REVIEW.reason, sourceUrl: POINT_MOLATE_VOTE_REVIEW.sourceUrl, checkedAt: POINT_MOLATE_VOTE_REVIEW.checkedAt }

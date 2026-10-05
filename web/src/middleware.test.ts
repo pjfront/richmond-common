@@ -6,16 +6,19 @@ vi.mock('iron-session', async importOriginal => ({ ...(await importOriginal<type
 vi.mock('@/lib/operator-session', () => ({ getOperatorSessionOptions: () => ({ cookieName: 'test', password: 'x'.repeat(32) }) }))
 import { config, middleware } from './middleware'
 import { sealSiteAccess, SITE_ACCESS_COOKIE } from '@/lib/site-access'
+import * as featurePolicy from '@/lib/feature-policy'
 
 describe('sitewide middleware boundary', () => {
   beforeEach(() => {
+    // Exercise the existing password/session layer independently of tiers.
+    vi.spyOn(featurePolicy, 'featureRouteAllowed').mockReturnValue(true)
     vi.stubEnv('SITE_ACCESS_REQUIRED', 'true')
     vi.stubEnv('SITE_ACCESS_PASSWORD', 'fixture-preview-password')
     vi.stubEnv('RICHMOND_READ_ONLY_STAGE', 'false')
     mocks.session.isOperator = false
     mocks.getIronSession.mockReset().mockResolvedValue(mocks.session)
   })
-  afterEach(() => vi.unstubAllEnvs())
+  afterEach(() => { vi.unstubAllEnvs(); vi.restoreAllMocks() })
   const basic = `Basic ${btoa('richmond:fixture-preview-password')}`
 
   it.each(['/', '/meetings/id?_rsc=a', '/api/search', '/api/finance/export', '/_next/static/app.js', '/_next/image', '/_next/data/build/item.json', '/data/a.geojson', '/sitemap.xml'])('matches %s before any content routing', url => {
@@ -51,6 +54,24 @@ describe('sitewide middleware boundary', () => {
     expect(publicResponse.headers.has('X-Robots-Tag')).toBe(false)
     const operator = await middleware(new NextRequest('https://richmondcommons.org/operator/settings'))
     expect(operator.status).toBe(307)
+  })
+})
+
+describe('local runtime boundary before authentication', () => {
+  beforeEach(() => {
+    vi.stubEnv('VERCEL', '')
+    vi.stubEnv('RICHMOND_LOCAL_ARCHIVE', 'true')
+    vi.stubEnv('RICHMOND_FEATURE_PROFILE', 'local_archive')
+    vi.stubEnv('RICHMOND_READ_ONLY_STAGE', 'false')
+    vi.stubEnv('SITE_ACCESS_REQUIRED', 'false')
+  })
+  afterEach(() => vi.unstubAllEnvs())
+  it('allows local reads and blocks foreign origins, cloud hosts, and writes', async () => {
+    expect((await middleware(new NextRequest('http://127.0.0.1:3100/council'))).headers.get('x-middleware-next')).toBe('1')
+    expect((await middleware(new NextRequest('http://127.0.0.1:3100/council', { headers: { Origin: 'https://attacker.example' } }))).status).toBe(403)
+    expect((await middleware(new NextRequest('https://richmondcommons.org/council'))).status).toBe(403)
+    expect((await middleware(new NextRequest('http://127.0.0.1:3100/api/operator/settings', { method: 'PUT' }))).status).toBe(404)
+    expect((await middleware(new NextRequest('http://127.0.0.1:3100/api/email/send-digest'))).status).toBe(404)
   })
 })
 

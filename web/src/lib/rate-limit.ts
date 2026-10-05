@@ -1,6 +1,7 @@
 import { createHmac } from 'node:crypto'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getSupabaseAdmin } from './supabase-admin'
+import { isLocalArchive } from './feature-policy'
 
 // Postgres-backed rate limiter using the check_and_increment_rate_limit RPC
 // (migration 107). Counters live in the rate_limit_buckets table; the RPC
@@ -33,6 +34,25 @@ const NON_IDENTIFYING_FALLBACK = /^[a-z][a-z0-9_-]{0,31}$/
 const CLIENT_KEY_RETENTION_MS = 24 * 60 * 60 * 1000
 const CLEANUP_RETRY_MS = 5 * 60 * 1000
 let nextCleanupAt = 0
+const localBuckets = new Map<LimitName, { startedAt: number; count: number }>()
+
+function localRateLimit(name: LimitName): RateLimitResult {
+  // Loopback-only archive: one bounded bucket per operation, no database
+  // mutation and no provider authorization. Restarting resets local buckets.
+  const cfg = limits[name]
+  const now = Date.now()
+  let bucket = localBuckets.get(name)
+  if (!bucket || now - bucket.startedAt >= cfg.windowSecs * 1000) {
+    bucket = { startedAt: now, count: 0 }
+    localBuckets.set(name, bucket)
+  }
+  bucket.count = Math.min(bucket.count + 1, cfg.maxCount + 1)
+  if (bucket.count <= cfg.maxCount) return { allowed: true, backendAvailable: false }
+  return { allowed: false, backendAvailable: false, response: NextResponse.json(
+    { error: 'Too many requests. Please try again later.' },
+    { status: 429, headers: { 'Retry-After': String(Math.ceil((bucket.startedAt + cfg.windowSecs * 1000 - now) / 1000)) } },
+  ) }
+}
 
 function pseudonymizeClientAddress(address: string, fallback: string): string {
   // IRON_SESSION_PASSWORD is already a required, high-entropy, server-only
@@ -114,6 +134,7 @@ export async function enforceRateLimit(
   name: LimitName,
   key: string,
 ): Promise<RateLimitResult> {
+  if (isLocalArchive()) return localRateLimit(name)
   const cfg = limits[name]
   const bucketKey = `${name}:${storageSafeClientKey(key)}`
 

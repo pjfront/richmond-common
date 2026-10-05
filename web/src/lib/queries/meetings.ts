@@ -270,6 +270,7 @@ export async function getAdjacentMeetings(
       .from('meetings')
       .select('id, meeting_date, meeting_type')
       .eq('city_fips', cityFips)
+      .is('source_cancelled_at', null)
 
     if (bodyId) {
       query = query.eq('body_id', bodyId)
@@ -450,6 +451,7 @@ export async function getAgendaItemSlugs(
     .select('meeting_id, item_number, meetings!inner(meeting_date, city_fips)')
     .is('agenda_source_retired_at', null)
     .eq('meetings.city_fips', cityFips)
+    .is('meetings.source_cancelled_at', null)
 
   if (!data) return []
 

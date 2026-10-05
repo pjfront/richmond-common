@@ -313,6 +313,16 @@ sources:
 # ══════════════════════════════════════════════════════════════
 
 tables:
+  core_projection_status:
+    layer: 2
+    description: "Dated compact-source checks and explicit partial, pending or withheld feature coverage."
+    written_by:
+      sources: [escribemeetings, netfile]
+      enrichments: []
+    read_by:
+      enrichments: []
+      queries: [getBasicSourceRefreshStatus]
+    notes: "Created only by the new compact bootstrap or explicit local source-link preparation; src/basic_refresh.py writes it through narrow adapters. It is not a migration of the original hosted database or a generic enrichment step."
   finance_assertions:
     layer: 1
     description: "Immutable original transactions and amendment metadata; private raw evidence."
@@ -1896,6 +1906,13 @@ queries:
     returns: "Complete bounded individual entries retaining amounts, kinds, dates, recipient identity and source links. No election attribution or aggregation."
 
   # ── Search ──────────────────────────────────────────────────
+  getBasicSourceRefreshStatus:
+    file: queries/basic-source-status.ts
+    tables: [core_projection_status]
+    used_by: ["/"]
+    returns: "Anon-only agenda_refresh and finance status, checked_at and source_scope; never a complete-record or scheduled-uptime claim."
+    description: "Basic public profile only. Missing checks and failed metadata reads have distinct unavailable notices. Local archives retain their saved-record disclosure instead."
+
   searchCommons:
     file: queries/commons-search.ts
     tables: [meetings, agenda_items, motions, votes, finance_events, finance_source_coverage]
@@ -1957,6 +1974,9 @@ queries:
 # ══════════════════════════════════════════════════════════════
 
 pages:
+  "/library":
+    queries: []
+    description: "Loopback local archive tool directory from the shared feature catalog; no hosted route or new source-freshness claim."
   "/stories":
     queries: [getResidentSnapshot]
     description: "Three source-checked continuing Richmond issue histories with recent agenda entries."
@@ -1993,8 +2013,8 @@ pages:
               electionToSlug]
 
   "/":
-    description: "Read-only stage shows the search-first Commons home; normal mode retains sourced civic stories, upcoming council meetings and November choices."
-    queries: [getResidentSnapshot, searchCommons]
+    description: "Basic public and local archive profiles show the search-first Commons home; basic also shows dated source checks. The retained legacy home uses sourced civic stories, upcoming council meetings and November choices."
+    queries: [getResidentSnapshot, searchCommons, getBasicSourceRefreshStatus]
     api_routes: ["/api/commons/search"]
 
   "/meetings":
@@ -2662,6 +2682,11 @@ api_routes:
 # ══════════════════════════════════════════════════════════════
 
 field_map:
+  "/library":
+    "available local tools":
+      sources: []
+      note: "Static shared web/src/data/feature-tiers.json catalog filtered by the local archive profile. Links retain existing operator authentication; no source rows or fresh source dates are inferred."
+
   "/stories":
     "recent and upcoming agenda entries":
       query: getResidentSnapshot
@@ -2825,7 +2850,13 @@ field_map:
       api_route: "/api/commons/search"
       column: "agenda_items.title + topic_label + category; meetings.meeting_date + agenda_url + minutes_url; motions.motion_text + result + source; votes.official_name + vote_choice + source; public finance event and coverage projections"
       sources: [escribemeetings, minutes_extraction, netfile]
-      note: "Only rendered on the read-only stage home. The shared Commons client explicitly submits lexical keywords and deterministic filters; it displays exact record/source links and the same bounded-result and source-coverage limitations as /search. Normal mode uses getResidentSnapshot above."
+      note: "Rendered on the basic public, local archive and read-only stage homes. The shared Commons client explicitly submits lexical keywords and deterministic filters; it displays exact record/source links and the same bounded-result and source-coverage limitations as /search. The retained legacy home uses getResidentSnapshot above."
+
+    "basic source check dates and scope":
+      query: getBasicSourceRefreshStatus
+      column: "core_projection_status.feature + status + checked_at + source_scope"
+      sources: [escribemeetings, netfile]
+      note: "Exactly agenda_refresh and finance metadata through the anon reader in the basic public profile. New votes and paper filings remain pending; missing or failed checks never imply freshness or no activity."
 
   # ── Meeting List (/meetings) ────────────────────────────────
 

@@ -3,6 +3,7 @@ import { getIronSession } from 'iron-session'
 import { getOperatorSessionOptions, type OperatorSession } from '@/lib/operator-session'
 import { protectSiteResponse, siteAccessResponse } from '@/lib/site-access'
 import { isReadOnlyStage, stageRouteAllowed } from '@/lib/read-only-stage'
+import { featureRouteAllowed, isLocalArchive, localRequestAllowed } from '@/lib/feature-policy'
 
 const PUBLIC_OPERATOR_PATHS = new Set(['/operator/login'])
 
@@ -10,6 +11,16 @@ export async function middleware(request: NextRequest) {
   // This capability boundary precedes cookies and production machine-service
   // exceptions. Authentication can grant browsing, never staging write access.
   const { pathname } = request.nextUrl
+  if (process.env.RICHMOND_LOCAL_ARCHIVE === 'true' && (!isLocalArchive() || !localRequestAllowed(request.nextUrl, request.headers))) {
+    return NextResponse.json({ error: 'The local archive accepts loopback requests only.' }, {
+      status: 403, headers: { 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow' },
+    })
+  }
+  if (!featureRouteAllowed(pathname, request.method)) {
+    return protectSiteResponse(NextResponse.json({ error: 'This feature is disabled in the current tier.' }, {
+      status: 404, headers: { 'Cache-Control': 'private, no-store', 'X-Robots-Tag': 'noindex, nofollow' },
+    }))
+  }
   if (isReadOnlyStage() && !stageRouteAllowed(pathname, request.method)) {
     return protectSiteResponse(NextResponse.json({ error: 'This route is unavailable in the read-only preview.' }, {
       status: 404,

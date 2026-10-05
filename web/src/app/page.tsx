@@ -3,12 +3,14 @@ import { Suspense } from 'react'
 import CommonsSearchClient from '@/components/CommonsSearchClient'
 import LegacyResidentHome from '@/components/LegacyResidentHome'
 import { isReadOnlyStage } from '@/lib/read-only-stage'
+import { featureProfile } from '@/lib/feature-policy'
+import BasicSourceRefreshStatus, { SourceRefreshLoading } from '@/components/BasicSourceRefreshStatus'
 
 // Preserve the existing resident home until an intentional public relaunch.
 export const revalidate = 3600
 
 export default async function HomePage() {
-  return isReadOnlyStage() ? <SearchFirstHome /> : LegacyResidentHome()
+  return isReadOnlyStage() || featureProfile() === 'basic_public' || featureProfile().startsWith('local_') ? <SearchFirstHome /> : LegacyResidentHome()
 }
 
 function SearchFirstHome() {
@@ -18,6 +20,7 @@ function SearchFirstHome() {
         <p className="mb-4 text-sm font-semibold uppercase tracking-wider text-civic-navy">Richmond, California</p>
         <h1 id="search-heading" className="max-w-3xl text-4xl font-bold leading-tight tracking-tight text-civic-navy sm:text-5xl">Find the public record.</h1>
         <p className="mt-5 max-w-2xl text-lg leading-relaxed text-slate-700">Search agenda items, see how the council voted, and follow reported campaign money. Open the original records behind each result.</p>
+        {featureProfile() === 'basic_public' && <Suspense fallback={<SourceRefreshLoading />}><BasicSourceRefreshStatus /></Suspense>}
         <div className="mt-8 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
           <Suspense fallback={<SearchLoading />}>
             <CommonsSearchClient />

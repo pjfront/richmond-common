@@ -20,13 +20,15 @@ describe('single-item stage source-review hold', () => {
     expect(item.motions).toHaveLength(2)
     expect(item.plain_language_summary).toBe('Beckles abstained.')
   })
-  it('does not hold ordinary records, the same item label in another meeting, or normal mode', () => {
+  it('does not hold ordinary records but preserves the known conflict in every tier', () => {
     vi.stubEnv('RICHMOND_READ_ONLY_STAGE', 'true')
     for (const ordinary of [{ ...item, id: 'another-item' }, { ...item, meeting_id: 'another-meeting' }, { ...item, item_number: 'J-3' }]) {
       expect(stageVoteSourceReviewForItem(ordinary)).toBeNull()
       expect(holdStageVoteSourceRecords(ordinary)).toBe(ordinary)
     }
     vi.stubEnv('RICHMOND_READ_ONLY_STAGE', 'false')
-    expect(holdStageVoteSourceRecords(item)).toBe(item)
+    expect(holdStageVoteSourceRecords(item).motions).toHaveLength(0)
+    vi.stubEnv('RICHMOND_LOCAL_ARCHIVE', 'true')
+    expect(holdStageVoteSourceRecords(item).motions).toHaveLength(0)
   })
 })

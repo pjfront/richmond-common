@@ -8,7 +8,11 @@ const mocked = vi.hoisted(() => ({
   rpc: vi.fn(),
   clientKey: vi.fn(),
   enforceRateLimit: vi.fn(),
+  featureEnabled: vi.fn(),
+  capabilityEnabled: vi.fn(),
 }))
+
+vi.mock('@/lib/feature-policy', () => ({ featureEnabled: mocked.featureEnabled, capabilityEnabled: mocked.capabilityEnabled }))
 
 vi.mock('@/lib/queries', () => ({
   searchHybrid: mocked.searchHybrid,
@@ -49,6 +53,9 @@ describe('GET /api/search paid embedding boundary', () => {
   let fetchMock: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
+    // The funded provider tests explicitly open the outer tier boundary.
+    mocked.featureEnabled.mockReturnValue(true)
+    mocked.capabilityEnabled.mockReturnValue(true)
     process.env.OPENAI_API_KEY = 'test-openai-key'
     delete process.env.RICHMOND_API_MONTHLY_CAP_USD
     delete process.env.RICHMOND_API_BUDGET_LOCK
@@ -101,6 +108,15 @@ describe('GET /api/search paid embedding boundary', () => {
     expect(mocked.rpc).not.toHaveBeenCalled()
     expect(fetchMock).not.toHaveBeenCalled()
     expect(mocked.searchSite).not.toHaveBeenCalled()
+  })
+
+  it('cannot use a configured provider key when the tier disables embeddings', async () => {
+    mocked.capabilityEnabled.mockReturnValue(false)
+    const response = await GET(requestFor('basic tier search'))
+    expect(response.status).toBe(200)
+    expect(mocked.searchSite).toHaveBeenCalledOnce()
+    expect(mocked.rpc).not.toHaveBeenCalled()
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it('falls back to keyword search when the rate-limit backend is unavailable', async () => {

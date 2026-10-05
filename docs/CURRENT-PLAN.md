@@ -1,6 +1,14 @@
 # Richmond Commons: current implementation plan
 
-Updated October 3, 2026. This is the active plan; earlier sprint experiments remain historical context.
+Updated October 4, 2026. This is the active plan; earlier sprint experiments remain historical context.
+
+## Current priority: free basic service and a complete local archive
+
+The operator declined the recurring hosting cost and then clarified the intended outcome: keep the smallest useful free site updating, group the rest into reversible feature tiers, and provide a local edition with the retained records and tools. This supersedes an immediate full public relaunch and the proposed database deletion. Keep the original hosted database intact until a compact replacement and recovery are verified; no deletion is currently authorized. Do not change GoodJobber or shared organization billing.
+
+The public site is paused, ingestion and delivery workflows are disabled, and model spending is locked. Complete local backups of the database, source documents and provider configuration were verified on October 4. The local restored runtime is isolated from cloud credentials. Default public profile is `basic_public`; the localhost profile is `local_archive`. The shared catalog is [feature-tiers.json](../web/src/data/feature-tiers.json); the web route boundary and Python refresh policy consume it. Optional local AI and funded cloud AI remain disabled pending dependency, quality and budget checks. A tier change never removes data or silently resumes a paused provider, job or delivery.
+
+Basic refresh covers deterministic agenda acquisition, keyword tags, and electronic campaign assertions. Existing votes remain available with source-review holds; new structured votes require reviewed extraction, and reviewed paper finance snapshots retain their dated partial coverage. Full source documents and private records belong in the local archive, outside a free public database's storage budget. The public cutover must prove compact PostgreSQL size, import/search/record behavior, a narrow updater and displayed freshness before retiring the old paid Richmond project. Until that cutover, the hosted database continues to incur its existing charge; taking the site offline alone does not remove it.
 
 ## Active product direction: search-first relaunch
 

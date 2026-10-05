@@ -92,3 +92,7 @@ data/
 src/data/raw/nextrequest/24-428/documents/
 src/data/raw/nextrequest/24-428/searchable_corpus.json
 .vercel
+
+# Private local runtime and complete data backups
+/local-runtime/
+/local-backups/

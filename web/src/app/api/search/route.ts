@@ -3,6 +3,7 @@ import { searchHybrid, searchSite } from '@/lib/queries'
 import { getSupabaseAdmin } from '@/lib/supabase-admin'
 import { clientKey, enforceRateLimit } from '@/lib/rate-limit'
 import type { SearchResultType, SearchResponse } from '@/lib/types'
+import { capabilityEnabled, featureEnabled } from '@/lib/feature-policy'
 
 // Rate authorization is Postgres-backed via web/src/lib/rate-limit.ts.
 
@@ -74,7 +75,7 @@ function budgetLocked(): boolean {
 async function embedQuery(text: string): Promise<number[] | null> {
   // The global kill switch is an authorization boundary, so it precedes even
   // the free process-local cache. Locked requests use keyword search only.
-  if (budgetLocked()) return null
+  if (budgetLocked() || !featureEnabled('semantic_search') || !capabilityEnabled('embeddings')) return null
 
   const cached = getCachedEmbedding(text)
   if (cached) return cached

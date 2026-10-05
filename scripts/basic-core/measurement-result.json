@@ -1,0 +1,266 @@
+{
+  "measured_at": "2026-10-05T03:12:47.696285+00:00",
+  "local_only": true,
+  "source_modified": false,
+  "physical_database_bytes": 47661583,
+  "public_relation_bytes": 38903808,
+  "tables": {
+    "agenda_items": {
+      "table_bytes": 5292032,
+      "index_bytes": 8101888,
+      "total_bytes": 13393920
+    },
+    "bodies": {
+      "table_bytes": 49152,
+      "index_bytes": 16384,
+      "total_bytes": 65536
+    },
+    "closed_session_items": {
+      "table_bytes": 630784,
+      "index_bytes": 245760,
+      "total_bytes": 876544
+    },
+    "conflict_flags": {
+      "table_bytes": 8192,
+      "index_bytes": 8192,
+      "total_bytes": 16384
+    },
+    "core_projection_status": {
+      "table_bytes": 49152,
+      "index_bytes": 16384,
+      "total_bytes": 65536
+    },
+    "finance_public_coverage": {
+      "table_bytes": 49152,
+      "index_bytes": 16384,
+      "total_bytes": 65536
+    },
+    "finance_public_events": {
+      "table_bytes": 860160,
+      "index_bytes": 401408,
+      "total_bytes": 1261568
+    },
+    "item_topics": {
+      "table_bytes": 843776,
+      "index_bytes": 811008,
+      "total_bytes": 1654784
+    },
+    "meeting_attendance": {
+      "table_bytes": 671744,
+      "index_bytes": 598016,
+      "total_bytes": 1269760
+    },
+    "meetings": {
+      "table_bytes": 581632,
+      "index_bytes": 294912,
+      "total_bytes": 876544
+    },
+    "motions": {
+      "table_bytes": 2572288,
+      "index_bytes": 3031040,
+      "total_bytes": 5603328
+    },
+    "officials": {
+      "table_bytes": 139264,
+      "index_bytes": 40960,
+      "total_bytes": 180224
+    },
+    "public_comments": {
+      "table_bytes": 8192,
+      "index_bytes": 24576,
+      "total_bytes": 32768
+    },
+    "topics": {
+      "table_bytes": 49152,
+      "index_bytes": 16384,
+      "total_bytes": 65536
+    },
+    "votes": {
+      "table_bytes": 6995968,
+      "index_bytes": 6479872,
+      "total_bytes": 13475840
+    }
+  },
+  "counts": {
+    "bodies": 19,
+    "officials": 763,
+    "meetings": 860,
+    "agenda_items": 11989,
+    "motions": 10463,
+    "votes": 59188,
+    "meeting_attendance": 6035,
+    "topics": 14,
+    "item_topics": 7866,
+    "closed_session_items": 1860,
+    "public_comments": 0,
+    "finance_public_events": 1424,
+    "finance_public_coverage": 8
+  },
+  "held_agenda_items_retained": 1,
+  "held_motions_exported": 0,
+  "finance_out_of_scope": 0,
+  "finance_coverage_status_counts": {
+    "partial": 8
+  },
+  "unvalidated_foreign_keys": 0,
+  "fts_checks": {
+    "agenda_item:housing": {
+      "bounded_match_count": 50
+    },
+    "agenda_item:Point Molate": {
+      "bounded_match_count": 50
+    },
+    "vote_explainer:Point Molate": {
+      "bounded_match_count": 32
+    }
+  },
+  "reader_checks": {
+    "role_exists": true,
+    "agenda_count": 11989,
+    "search_match_count": 20,
+    "write_privileges": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "runtime_limits": "No PostgREST HTTP or managed-provider baseline tested. Missing/partial data is not zero activity.",
+  "empty_database_bytes": 8033971,
+  "added_database_bytes": 39627612,
+  "new_local_database": "basic_core_measure_20261004",
+  "representative_reads": {
+    "passed": true,
+    "read_only": true,
+    "local_only": true,
+    "checks": {
+      "recent_meeting_agenda_items": 3,
+      "recent_meeting_attendance_embeds": 7,
+      "item_motion_count": 1,
+      "item_vote_rows": 7,
+      "exact_j2_identity_retained": true,
+      "exact_j2_disputed_motions_absent": true,
+      "valid_item_topic_embeds": 7866,
+      "source_linked_finance_events": 1424,
+      "partial_finance_sources_with_limits": 8,
+      "other_city_search_empty": true,
+      "search_limit_clamped": true,
+      "empty_search_empty": true,
+      "unsupported_search_kind_empty": true,
+      "excluded_relations_absent": true
+    },
+    "http_postgrest_verified": true
+  },
+  "source_snapshot_at": "2026-10-04T20:12:27.558596-07:00",
+  "jsonl_bytes": 35837240,
+  "canonical_archive_modified": false,
+  "provider_created": false,
+  "postgrest_http": {
+    "checked_at": 1791170568,
+    "all_passed": true,
+    "cloud_calls": false,
+    "data_rows_modified": false,
+    "temporary_http_services_stopped_after_test": true,
+    "checks": [
+      {
+        "name": "legacy_search_site_contract",
+        "passed": true
+      },
+      {
+        "name": "legacy_agenda_nested_projection",
+        "passed": true
+      },
+      {
+        "name": "legacy_meeting_projection",
+        "passed": true
+      },
+      {
+        "name": "legacy_motion_projection",
+        "passed": true
+      },
+      {
+        "name": "legacy_vote_projection",
+        "passed": true
+      },
+      {
+        "name": "legacy_finance_full_public_projection",
+        "passed": true
+      },
+      {
+        "name": "legacy_finance_coverage_projection",
+        "passed": true
+      },
+      {
+        "name": "core_proxy_rejects_mutation",
+        "passed": true
+      }
+    ],
+    "passed_checks": 8,
+    "total_checks": 8
+  },
+  "next_basic_public_http": {
+    "checked_at": 1791170869,
+    "all_passed": true,
+    "cloud_calls": false,
+    "data_rows_modified": false,
+    "temporary_http_services_stopped_after_test": true,
+    "checks": [
+      {
+        "name": "basic_home",
+        "passed": true
+      },
+      {
+        "name": "basic_search_page",
+        "passed": true
+      },
+      {
+        "name": "basic_housing_search_records",
+        "passed": true
+      },
+      {
+        "name": "basic_money_page",
+        "passed": true
+      },
+      {
+        "name": "basic_finance_export",
+        "passed": true
+      },
+      {
+        "name": "basic_meeting_index",
+        "passed": true
+      },
+      {
+        "name": "basic_vote_records_and_hold",
+        "passed": true
+      },
+      {
+        "name": "basic_ordinary_item_votes_page",
+        "passed": true
+      },
+      {
+        "name": "basic_exact_meeting_page",
+        "passed": true
+      },
+      {
+        "name": "basic_held_item_page",
+        "passed": true
+      },
+      {
+        "name": "basic_operator_hidden",
+        "passed": true
+      },
+      {
+        "name": "basic_semantic_route_hidden",
+        "passed": true
+      },
+      {
+        "name": "basic_email_hidden",
+        "passed": true
+      }
+    ],
+    "passed_checks": 13,
+    "total_checks": 13
+  },
+  "compact_core_browser_visual_verified": false,
+  "compact_core_browser_limitation": "Actual rendered Next HTTP/API flows were checked against the compact database; visual browser checks reported elsewhere used the local archive database."
+}

@@ -13,6 +13,7 @@ import RecapEmailPanel from '@/components/RecapEmailPanel'
 import OperatorMeetingSections from '@/components/OperatorMeetingSections'
 import { S29_PUBLIC_TREATMENT_ENABLED } from '@/lib/s29-release-phase'
 import { isReadOnlyStage } from '@/lib/read-only-stage'
+import { featureEnabled } from '@/lib/feature-policy'
 import {
   canonicalUrl,
   meetingEventStructuredData,
@@ -194,7 +195,7 @@ export default async function MeetingDetailPage({
       </OperatorGate>
 
       {/* Stay informed CTA */}
-      {!isReadOnlyStage() && <SubscribeCTA />}
+      {!isReadOnlyStage() && featureEnabled('subscriptions') && <SubscribeCTA />}
 
       {/* Attendance */}
       <div className="mb-6">

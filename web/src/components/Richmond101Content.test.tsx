@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { NextRequest } from 'next/server'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const operatorSession = vi.hoisted(() => ({ isOperator: false }))
 
@@ -25,6 +25,14 @@ function source(relativePath: string): string {
 }
 
 describe('Richmond 101 operator draft', () => {
+  beforeEach(() => {
+    vi.stubEnv('VERCEL', '')
+    vi.stubEnv('RICHMOND_LOCAL_ARCHIVE', 'true')
+    vi.stubEnv('RICHMOND_FEATURE_PROFILE', 'local_archive')
+    vi.stubEnv('RICHMOND_READ_ONLY_STAGE', 'false')
+    vi.stubEnv('SITE_ACCESS_REQUIRED', 'false')
+  })
+  afterEach(() => vi.unstubAllEnvs())
   it('visibly identifies draft, AI, review, and source-check status', () => {
     const markup = renderToStaticMarkup(<Richmond101Content />)
 
@@ -74,7 +82,7 @@ describe('Richmond 101 operator draft', () => {
     operatorSession.isOperator = false
 
     const response = await middleware(
-      new NextRequest('https://richmondcommons.org/operator/richmond-101'),
+      new NextRequest('http://127.0.0.1:3100/operator/richmond-101'),
     )
     const locationHeader = response.headers.get('location')
 
@@ -82,7 +90,7 @@ describe('Richmond 101 operator draft', () => {
     expect(locationHeader).not.toBeNull()
 
     const location = new URL(locationHeader as string)
-    expect(location.origin).toBe('https://richmondcommons.org')
+    expect(location.origin).toBe('http://localhost:3100')
     expect(`${location.pathname}?next=${location.searchParams.get('next')}`).toBe(
       '/operator/login?next=/operator/richmond-101',
     )
@@ -92,7 +100,7 @@ describe('Richmond 101 operator draft', () => {
     operatorSession.isOperator = true
 
     const response = await middleware(
-      new NextRequest('https://richmondcommons.org/operator/richmond-101'),
+      new NextRequest('http://127.0.0.1:3100/operator/richmond-101'),
     )
 
     expect(response.status).toBe(200)
