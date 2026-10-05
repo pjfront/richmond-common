@@ -34,3 +34,29 @@ def test_unready_local_publisher_never_calls_github(capsys):
         assert state.main(["unused"]) == 2
         api.assert_not_called()
         assert "blocked" in capsys.readouterr().out
+
+
+def test_run_summary_reports_failure_without_private_details():
+    reports = {"agenda": {"status": "completed", "modelCalls": 0, "results": [{"items_written": 3, "title": "private row"}]},
+               "finance": {"status": "failed", "reason": "private address/password"}}
+    summary = state.run_summary(reports, "failure")
+    assert "| agenda | checked |" in summary
+    assert "items_written: 3" in summary
+    assert "| finance | check_failed |" in summary
+    assert "publication: **failure**" in summary
+    assert "External notifications are disabled" in summary
+    assert "private" not in summary and "password" not in summary
+    assert "unavailable" in state.run_summary({}, "private injected value")
+
+
+def test_local_summary_needs_no_token_and_never_calls_github(tmp_path, capsys):
+    reports = tmp_path / "reports"
+    reports.mkdir()
+    (reports / "agenda.json").write_text(json.dumps({"status": "failed", "reason": "secret"}), encoding="utf-8")
+    summary = tmp_path / "summary.md"
+    with patch.dict("os.environ", {"GITHUB_STEP_SUMMARY": str(summary), "BASIC_REFRESH_AUDIT_OUTCOME": "skipped"}, clear=True), patch.object(state, "api", Mock()) as api:
+        assert state.main(["--summary", str(reports)]) == 0
+        api.assert_not_called()
+    assert "check_failed" in summary.read_text(encoding="utf-8")
+    assert "secret" not in summary.read_text(encoding="utf-8")
+    assert "summarized" in capsys.readouterr().out

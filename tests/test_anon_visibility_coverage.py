@@ -34,7 +34,9 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from test_anon_visibility import PUBLIC_TABLES, PUBLIC_TABLES_CONDITIONAL
+import pytest
+
+from test_anon_visibility import PUBLIC_TABLES, PUBLIC_TABLES_BY_TARGET, PUBLIC_TABLES_CONDITIONAL, public_tables_for_target
 
 _ROOT = Path(__file__).parent.parent
 _QUERIES_DIR = _ROOT / "web" / "src" / "lib" / "queries"
@@ -42,7 +44,7 @@ _QUERIES_DIR = _ROOT / "web" / "src" / "lib" / "queries"
 # ── Classification sets ──────────────────────────────────────────────
 #
 # Every table referenced from `web/src/lib/queries/*.ts` must appear in
-# exactly one of four places:
+# exactly one of five places:
 #
 #   1. PUBLIC_TABLES (in test_anon_visibility.py) — the default. Adding
 #      X here also adds the strict HTTP test (anon SELECT must return
@@ -52,10 +54,13 @@ _QUERIES_DIR = _ROOT / "web" / "src" / "lib" / "queries"
 #      on real-world state (publication_tier filter, view HAVING clause,
 #      etc.). The soft test (HTTP 200, row count not asserted) still
 #      catches the D56b shape of "RLS blocks anon entirely."
-#   3. EXEMPT (below) — only when the queries.ts call is genuinely not
+#   3. PUBLIC_TABLES_BY_TARGET — public relations in explicitly selected
+#      compact/local schemas. Strict HTTP >=1-row checks run on those
+#      targets; no migration or request against the historical host is implied.
+#   4. EXEMPT (below) — only when the queries.ts call is genuinely not
 #      anon-facing (e.g., reached only by a server-side admin path).
 #      Reason must be documented inline.
-#   4. KNOWN_COVERAGE_GAPS (below) — transitional debt. Tables that
+#   5. KNOWN_COVERAGE_GAPS (below) — transitional debt. Tables that
 #      queries.ts already read at the time this test landed (2026-05-18)
 #      but no anon-visibility test yet covers. Locked here so the gap
 #      can shrink but cannot grow. New code must NOT use this path.
@@ -85,6 +90,7 @@ EXEMPT: dict[str, str] = {
 #     entirely. EXEMPT entry removed (function no longer exists in
 #     queries.ts). Set has stayed empty since.
 KNOWN_COVERAGE_GAPS: frozenset[str] = frozenset()
+TARGET_PUBLIC_TABLES = frozenset(table for tables in PUBLIC_TABLES_BY_TARGET.values() for table in tables)
 
 # Same regex used by tests/test_d1_provenance.py. Kept duplicated rather
 # than imported because the two tests audit different concerns and the
@@ -124,6 +130,7 @@ def test_every_queries_table_is_anon_visibility_covered():
     covered = (
         set(PUBLIC_TABLES)
         | set(PUBLIC_TABLES_CONDITIONAL)
+        | TARGET_PUBLIC_TABLES
         | set(EXEMPT)
         | KNOWN_COVERAGE_GAPS
     )
@@ -145,6 +152,8 @@ def test_every_queries_table_is_anon_visibility_covered():
         f"  - Conditional data (publication_tier filter, view HAVING, "
         f"etc.): add to PUBLIC_TABLES_CONDITIONAL — the soft test "
         f"asserts HTTP 200 but allows empty results.\n"
+        f"  - Public compact/local schema only: register in PUBLIC_TABLES_BY_TARGET "
+        f"and run its strict anon HTTP test on that explicit target.\n"
         f"  - Server-side / admin-only: add to EXEMPT in "
         f"tests/test_anon_visibility_coverage.py with a one-line reason.\n"
         f"  - Transitional only: add to KNOWN_COVERAGE_GAPS with a TODO "
@@ -159,7 +168,7 @@ def test_known_coverage_gaps_only_shrinks():
     table was properly classified.
     """
     properly_classified = (
-        set(PUBLIC_TABLES) | set(PUBLIC_TABLES_CONDITIONAL) | set(EXEMPT)
+        set(PUBLIC_TABLES) | set(PUBLIC_TABLES_CONDITIONAL) | TARGET_PUBLIC_TABLES | set(EXEMPT)
     )
     classified_elsewhere = properly_classified & KNOWN_COVERAGE_GAPS
     assert not classified_elsewhere, (
@@ -191,3 +200,28 @@ def test_no_stale_exempt_or_gap_entries():
         f"dead. Drop the entry from "
         f"tests/test_anon_visibility_coverage.py."
     )
+
+
+def test_core_status_is_public_on_explicit_targets_without_a_hosted_exemption():
+    """The new UI projection remains anon-tested, not hidden in admin/debt buckets."""
+    for target in ("compact_core", "local_archive"):
+        assert "core_projection_status" in public_tables_for_target(target)
+    assert public_tables_for_target("hosted_archive") == ()
+    assert "core_projection_status" not in PUBLIC_TABLES
+    assert "core_projection_status" not in PUBLIC_TABLES_CONDITIONAL
+    assert "core_projection_status" not in EXEMPT
+    assert "core_projection_status" not in KNOWN_COVERAGE_GAPS
+
+
+def test_unknown_target_cannot_silently_drop_anon_checks():
+    with pytest.raises(ValueError, match="Unknown anon visibility target"):
+        public_tables_for_target("misspelled-compact")
+
+
+@pytest.mark.parametrize("status,rows", [(403, []), (200, [])])
+def test_target_public_metadata_check_rejects_blocked_or_empty_seed(monkeypatch, status, rows):
+    import test_anon_visibility as visibility
+    monkeypatch.setattr(visibility, "ANON_VISIBILITY_TARGET", "compact_core")
+    monkeypatch.setattr(visibility, "_anon_select", lambda table: (status, rows))
+    with pytest.raises(AssertionError):
+        visibility.test_anon_can_read_target_specific_public_table("core_projection_status")

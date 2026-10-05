@@ -60,21 +60,50 @@ def api(path: str, *, method: str = "GET", body: dict | None = None):
         return None
 
 
-def main(argv: list[str] | None = None) -> int:
-    args = argv if argv is not None else sys.argv[1:]
-    repository = os.environ.get("GITHUB_REPOSITORY", "")
-    if (os.environ.get("GITHUB_ACTIONS") != "true" or os.environ.get("GITHUB_REF") != "refs/heads/main"
-            or os.environ.get("RICHMOND_BASIC_READY") != "true" or not os.environ.get("GH_TOKEN")
-            or not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository) or len(args) != 1):
-        print(json.dumps({"status": "blocked", "reason": "Aggregate state publishing requires the ready trusted main workflow"}))
-        return 2
-    root = Path(args[0])
+def read_reports(root: Path) -> dict:
     reports = {}
     for source in ("agenda", "finance"):
         try:
             reports[source] = json.loads((root / f"{source}.json").read_text(encoding="utf-8"))
         except (OSError, ValueError):
             reports[source] = {"status": "failed"}
+    return reports
+
+
+def run_summary(reports: dict, audit_outcome: str) -> str:
+    """Render fixed labels and allowlisted counts, never raw errors or rows."""
+    state = aggregate_state({}, reports, "this run")
+    audit = audit_outcome if audit_outcome in {"success", "failure", "cancelled", "skipped"} else "unavailable"
+    lines = ["## Basic source checks", "", "External notifications are disabled (deferred-free-audit).",
+             "The automation state branch retains each source's last successful check.", "",
+             "| Source | This run | Reviewed scope | Aggregate counts |",
+             "| --- | --- | --- | --- |"]
+    for name, row in state["sources"].items():
+        counts = ", ".join(f"{key}: {value}" for key, value in sorted(row["counts"].items())) or "none"
+        lines.append(f"| {name} | {row['outcome']} | {row['scope']} | {counts} |")
+    lines.extend(["", f"Aggregate state publication: **{audit}**.",
+                  "New vote extraction and numeric paper-finance coverage remain pending.", ""])
+    return "\n".join(lines)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = argv if argv is not None else sys.argv[1:]
+    if len(args) == 2 and args[0] == "--summary":
+        destination = os.environ.get("GITHUB_STEP_SUMMARY")
+        if not destination:
+            print(json.dumps({"status": "blocked", "reason": "Run summary requires the GitHub summary file"}))
+            return 2
+        with Path(destination).open("a", encoding="utf-8") as stream:
+            stream.write(run_summary(read_reports(Path(args[1])), os.environ.get("BASIC_REFRESH_AUDIT_OUTCOME", "")))
+        print(json.dumps({"status": "summarized", "notifications": "disabled"}))
+        return 0
+    repository = os.environ.get("GITHUB_REPOSITORY", "")
+    if (os.environ.get("GITHUB_ACTIONS") != "true" or os.environ.get("GITHUB_REF") != "refs/heads/main"
+            or os.environ.get("RICHMOND_BASIC_READY") != "true" or not os.environ.get("GH_TOKEN")
+            or not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository) or len(args) != 1):
+        print(json.dumps({"status": "blocked", "reason": "Aggregate state publishing requires the ready trusted main workflow"}))
+        return 2
+    reports = read_reports(Path(args[0]))
     prefix = f"repos/{repository}"
     branch = api(prefix + "/git/ref/heads/" + BRANCH)
     if branch is None:

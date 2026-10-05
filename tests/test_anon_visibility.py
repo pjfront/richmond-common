@@ -23,18 +23,20 @@ import requests
 from dotenv import load_dotenv
 
 _ROOT = Path(__file__).parent.parent
-load_dotenv(_ROOT / ".env", override=True)
-# Frontend keeps the anon key under NEXT_PUBLIC_ prefix in web/.env.local
-load_dotenv(_ROOT / "web" / ".env.local", override=False)
+ANON_VISIBILITY_TARGET = os.getenv("RICHMOND_ANON_VISIBILITY_TARGET", "hosted_archive")
+if ANON_VISIBILITY_TARGET == "hosted_archive":
+    load_dotenv(_ROOT / ".env", override=True)
+    # Frontend keeps the anon key under NEXT_PUBLIC_ prefix in web/.env.local
+    load_dotenv(_ROOT / "web" / ".env.local", override=False)
 
 SUPABASE_URL = (
     os.getenv("SUPABASE_URL")
     or os.getenv("NEXT_PUBLIC_SUPABASE_URL")
-)
+) if ANON_VISIBILITY_TARGET == "hosted_archive" else os.getenv("RICHMOND_ANON_VISIBILITY_URL")
 SUPABASE_ANON_KEY = (
     os.getenv("SUPABASE_ANON_KEY")
     or os.getenv("NEXT_PUBLIC_SUPABASE_ANON_KEY")
-)
+) if ANON_VISIBILITY_TARGET == "hosted_archive" else os.getenv("RICHMOND_ANON_VISIBILITY_KEY")
 
 
 def _is_placeholder(url: str | None, key: str | None) -> bool:
@@ -64,6 +66,7 @@ pytestmark = pytest.mark.skipif(
 # commissions and projects commission_id instead of id. Both previously
 # gave false negatives reading column-name 400s as RLS regressions.
 _ANON_SELECT_COLUMN: dict[str, str] = {
+    "core_projection_status": "feature",
     "finance_public_events": "event_key",
     "finance_public_coverage": "scope_key",
     "form_summary_cache": "filing_id",
@@ -178,6 +181,38 @@ PUBLIC_TABLES_CONDITIONAL = [
     # When a commission roster goes stale, the view auto-populates.
     "v_commission_staleness",
 ]
+
+
+# Additional public relations for explicitly selected data targets. The
+# historical hosted schema is unchanged; compact/local bootstrap owns this
+# metadata table. This is public classification, never a server-only exemption.
+# Both schemas seed or write at least one status, so anon must see a real row.
+PUBLIC_TABLES_BY_TARGET: dict[str, tuple[str, ...]] = {
+    "compact_core": ("core_projection_status",),
+    "local_archive": ("core_projection_status",),
+}
+
+
+def public_tables_for_target(target: str) -> tuple[str, ...]:
+    if target == "hosted_archive":
+        return ()
+    if target not in PUBLIC_TABLES_BY_TARGET:
+        raise ValueError(f"Unknown anon visibility target: {target}")
+    return PUBLIC_TABLES_BY_TARGET[target]
+
+
+@pytest.mark.parametrize("table", public_tables_for_target(ANON_VISIBILITY_TARGET))
+def test_anon_can_read_target_specific_public_table(table: str):
+    """Use an explicit compact/local endpoint; never demand this table on the old host.
+
+    Run with RICHMOND_ANON_VISIBILITY_TARGET=compact_core and explicit
+    RICHMOND_ANON_VISIBILITY_URL/KEY, selecting this test with -k
+    target_specific. Existing hosted-table tests remain unchanged.
+    Nonhosted targets never load production dotenv files or generic keys.
+    """
+    status, rows = _anon_select(table)
+    assert status == 200, f"Anon SELECT on {table} for {ANON_VISIBILITY_TARGET} returned HTTP {status}"
+    assert len(rows) >= 1, f"Seeded public metadata {table} is empty or hidden from anon for {ANON_VISIBILITY_TARGET}"
 
 
 @pytest.mark.parametrize("table", PUBLIC_TABLES_CONDITIONAL)

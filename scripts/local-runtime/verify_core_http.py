@@ -82,6 +82,12 @@ def main():
         check("legacy_finance_full_public_projection", status, status in (200, 206) and isinstance(rows, list) and len(rows) == 1000 and count == "1424", len(rows) if isinstance(rows, list) else None)
         status, _, rows = request("finance_public_coverage?select=source,form_type,scope_key,status,checked_at,activity_from,activity_through,filing_count,assertion_count,pending_count,limitations,source_url&scope_key=eq.0660620:calendar-2026")
         check("legacy_finance_coverage_projection", status, status == 200 and isinstance(rows, list) and len(rows) == 8 and all(row["status"] == "partial" for row in rows), len(rows) if isinstance(rows, list) else None)
+        status, _, rows = request("core_projection_status?" + urllib.parse.urlencode({"select": "feature,status,checked_at,source_scope", "feature": "in.(agenda_refresh,finance)", "limit": "2"}))
+        check("anon_core_source_metadata_projection", status, status == 200 and isinstance(rows, list) and 1 <= len(rows) <= 2 and all(row.get("feature") in {"agenda_refresh", "finance"} for row in rows), len(rows) if isinstance(rows, list) else None)
+        test_env = runner.safe_env()
+        test_env.update({"RICHMOND_ANON_VISIBILITY_TARGET": "compact_core", "RICHMOND_ANON_VISIBILITY_URL": "http://127.0.0.1:59880", "RICHMOND_ANON_VISIBILITY_KEY": secrets["anon_key"]})
+        runner.private_run([runner.sys.executable, "-m", "pytest", "tests/test_anon_visibility.py", "-k", "target_specific", "-q"], runtime, "core-anon-pytest.private.log", env=test_env)
+        checks.append({"name": "target_specific_anon_pytest", "passed": True, "target": "compact_core"})
         status, _, _ = request("agenda_items?id=eq.00000000-0000-0000-0000-000000000000", {"title": "BLOCKED TEST"}, "PATCH")
         check("core_proxy_rejects_mutation", status, status == 403)
         report = {"checked_at": int(time.time()), "database": CORE_DATABASE, "all_passed": all(row["passed"] for row in checks), "checks": checks, "data_rows_modified": False, "cloud_calls": False, "temporary_http_services_stopped_after_test": True}

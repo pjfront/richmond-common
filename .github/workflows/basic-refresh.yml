@@ -1,5 +1,7 @@
 name: Basic Core Refresh
 
+# Operator notification policy: deferred-free-audit. Aggregate state and the
+# run summary expose failures; external notifications remain disabled.
 # Unready by default: no apply job, credentials or source requests until the
 # separate Free target has been validated and BASIC_READY explicitly enabled.
 on:
@@ -55,10 +57,16 @@ jobs:
           echo "agenda_code=$agenda_code" >> "$GITHUB_OUTPUT"
           echo "finance_code=$finance_code" >> "$GITHUB_OUTPUT"
       - name: Preserve aggregate audit state and last success
+        id: audit
         if: always() && steps.sources.outcome == 'success'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python scripts/basic-core/record_refresh_state.py refresh-results
+      - name: Summarize source checks without external notifications
+        if: always()
+        env:
+          BASIC_REFRESH_AUDIT_OUTCOME: ${{ steps.audit.outcome }}
+        run: python scripts/basic-core/record_refresh_state.py --summary refresh-results
       - name: Fail visibly when either source check needs attention
         if: always() && (steps.sources.outputs.agenda_code != '0' || steps.sources.outputs.finance_code != '0')
         run: exit 1

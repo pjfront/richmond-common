@@ -36,6 +36,11 @@
 # new entry is required when adding a public-facing table.
 
 tables:
+  core_projection_status:
+    status: exempt
+    targets: [compact_core, local_archive]
+    schema: scripts/basic-core/public-core.sql
+    reason: "Public operational source-check metadata, not extracted civic facts. status and source_scope describe a bounded acquisition or pending review; checked_at is intentionally nullable so a missing or never-checked source cannot look current. A confidence probability or invented extraction timestamp would misrepresent this state. Basic-source UI reads only agenda_refresh/finance via anon, shows unavailable/never-checked/partial/pending-review states, and retains official source links and coverage limitations. Created only by compact/local bootstrap, not a migration to the historical hosted database; strict target-aware anon visibility is registered."
   finance_public_events:
     status: exempt
     reason: "Security-invoker projection of finance_events; original filing URLs, extracted_at, source_tier and confidence_score are NOT NULL on the base table. Public RLS excludes unresolved and low-confidence entries."
