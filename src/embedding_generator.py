@@ -262,6 +262,8 @@ def generate_embeddings(texts: list[str]) -> list[list[float]]:
     if not non_empty_texts:
         return [[0.0] * DIMENSIONS] * len(texts)
 
+    from feature_policy import assert_worker_provider_allowed
+    assert_worker_provider_allowed("embeddings")
     client = _get_openai_client()
     # Reservation/accounting failures happen before the SDK request,
     # guaranteeing that an unaccounted paid call is never attempted.

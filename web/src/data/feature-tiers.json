@@ -1,0 +1,444 @@
+{
+  "schemaVersion": 1,
+  "defaults": {
+    "public": "basic_public",
+    "local": "local_archive"
+  },
+  "features": {
+    "search": {
+      "label": "Search records",
+      "group": "record_core",
+      "routes": [
+        "/search",
+        "/api/commons/search",
+        "/api/search"
+      ],
+      "description": "Keyword search and supported deterministic question patterns."
+    },
+    "meetings": {
+      "label": "Meetings",
+      "group": "record_core",
+      "routes": [
+        "/meetings"
+      ],
+      "description": "Browse meetings and their source records."
+    },
+    "agenda_items": {
+      "label": "Agenda items",
+      "group": "record_core",
+      "routes": [
+        "/meetings/*/items/*"
+      ],
+      "description": "Agenda titles, descriptions, attachments and provenance."
+    },
+    "tags": {
+      "label": "Topic tags",
+      "group": "record_core",
+      "routes": [],
+      "description": "Deterministic keyword tags and curated topic labels.",
+      "localRoutes": [
+        "/topics"
+      ]
+    },
+    "votes": {
+      "label": "Recorded votes",
+      "group": "record_core",
+      "routes": [],
+      "description": "Preserved recorded choices, with source and pending coverage made explicit."
+    },
+    "campaign_finance": {
+      "label": "Campaign money",
+      "group": "record_core",
+      "routes": [
+        "/money"
+      ],
+      "description": "Public finance projections and reviewed paper snapshots.",
+      "localRoutes": [
+        "/donors"
+      ]
+    },
+    "source_links": {
+      "label": "Official sources",
+      "group": "record_core",
+      "routes": [],
+      "description": "Source URLs and dated coverage; never an inference of complete records."
+    },
+    "exports": {
+      "label": "Download records",
+      "group": "record_core",
+      "routes": [
+        "/api/finance/export"
+      ],
+      "description": "Allowlisted public record exports."
+    },
+    "council": {
+      "label": "Council profiles",
+      "group": "deep_records",
+      "routes": [
+        "/council"
+      ],
+      "description": "Official profiles and retained meeting history."
+    },
+    "elections": {
+      "label": "Elections",
+      "group": "deep_records",
+      "routes": [
+        "/elections"
+      ],
+      "description": "Election, candidate and district records; existing operator protection still applies."
+    },
+    "commissions": {
+      "label": "Commissions",
+      "group": "deep_records",
+      "routes": [
+        "/commissions"
+      ],
+      "description": "Commission membership and meeting records."
+    },
+    "public_records": {
+      "label": "Public records requests",
+      "group": "deep_records",
+      "routes": [
+        "/public-records"
+      ],
+      "description": "Retained requests, responses and source documents.",
+      "localRoutes": [
+        "/api/public-records"
+      ]
+    },
+    "city_data": {
+      "label": "City data",
+      "group": "deep_records",
+      "routes": [],
+      "description": "Archived contracts, expenditures, permits, payroll and neighborhood source datasets; no standalone page is currently implemented."
+    },
+    "financial_disclosures": {
+      "label": "Financial disclosures",
+      "group": "deep_records",
+      "routes": [],
+      "description": "Archived Form 700 and behested-payment source records; no standalone page is currently implemented."
+    },
+    "organizations": {
+      "label": "Organizations",
+      "group": "deep_records",
+      "routes": [
+        "/orgs",
+        "/pac",
+        "/unions",
+        "/corporations"
+      ],
+      "description": "Retained organization, PAC, union and corporation records."
+    },
+    "stories": {
+      "label": "Published stories",
+      "group": "deep_records",
+      "routes": [
+        "/stories"
+      ],
+      "description": "Existing reviewed publication artifacts; visibility does not publish drafts."
+    },
+    "voting_analytics": {
+      "label": "Voting analysis",
+      "group": "analysis",
+      "routes": [
+        "/council/analytics",
+        "/meetings/most-discussed"
+      ],
+      "description": "Recorded split votes and retained voting analysis."
+    },
+    "influence": {
+      "label": "Influence analysis",
+      "group": "analysis",
+      "routes": [
+        "/influence"
+      ],
+      "description": "Existing analysis, with original operator authorization unchanged.",
+      "localRoutes": [
+        "/api/flag-details"
+      ]
+    },
+    "financial_connections": {
+      "label": "Financial connections",
+      "group": "analysis",
+      "routes": [
+        "/financial-connections"
+      ],
+      "description": "Retained financial connection analysis and provenance."
+    },
+    "data_quality": {
+      "label": "Data quality",
+      "group": "analysis",
+      "routes": [
+        "/data-quality"
+      ],
+      "description": "Read existing coverage and quality records.",
+      "localRoutes": [
+        "/api/data-quality",
+        "/api/data-freshness"
+      ]
+    },
+    "operator_tools": {
+      "label": "Operator tools",
+      "group": "analysis",
+      "routes": [
+        "/operator"
+      ],
+      "description": "Private operator tools; a feature flag never substitutes for authentication.",
+      "localRoutes": [
+        "/api/operator/session",
+        "/api/operator/settings",
+        "/api/operator/sync-health",
+        "/api/operator/decisions",
+        "/api/operator/agenda-item-context",
+        "/api/operator/meeting-context",
+        "/api/operator/council-context",
+        "/api/operator/recap-state",
+        "/api/operator/send-recap"
+      ]
+    },
+    "stored_ai_content": {
+      "label": "Saved explanations",
+      "group": "ai",
+      "routes": [],
+      "description": "Read saved summaries, explanations and recaps without regenerating them.",
+      "localRoutes": [
+        "/reports",
+        "/updates"
+      ]
+    },
+    "similar_discussions": {
+      "label": "Similar discussions",
+      "group": "ai",
+      "routes": [],
+      "description": "Optional related-record retrieval; initially disabled."
+    },
+    "semantic_search": {
+      "label": "Semantic search",
+      "group": "ai",
+      "routes": [],
+      "description": "Optional vector retrieval; embedding calls require a separate capability and budget guard."
+    },
+    "subscriptions": {
+      "label": "Email subscriptions",
+      "group": "communication",
+      "routes": [
+        "/subscribe",
+        "/api/subscribe",
+        "/api/email"
+      ],
+      "description": "Optional subscriber and email delivery flows; initially disabled."
+    },
+    "accounts": {
+      "label": "Resident accounts",
+      "group": "communication",
+      "routes": [],
+      "description": "Future optional resident accounts; no resident account page is implemented. Operator/site access authentication is separate."
+    }
+  },
+  "profiles": {
+    "basic_public": {
+      "label": "Public basic",
+      "allowPaid": false,
+      "features": {
+        "search": true,
+        "meetings": true,
+        "agenda_items": true,
+        "tags": true,
+        "votes": true,
+        "campaign_finance": true,
+        "source_links": true,
+        "exports": true,
+        "council": false,
+        "elections": false,
+        "commissions": false,
+        "public_records": false,
+        "city_data": false,
+        "financial_disclosures": false,
+        "organizations": false,
+        "stories": false,
+        "voting_analytics": false,
+        "influence": false,
+        "financial_connections": false,
+        "data_quality": false,
+        "operator_tools": false,
+        "stored_ai_content": false,
+        "similar_discussions": false,
+        "semantic_search": false,
+        "subscriptions": false,
+        "accounts": false
+      },
+      "capabilities": {
+        "refresh_agenda": true,
+        "refresh_tags": true,
+        "refresh_finance": true,
+        "inference": false,
+        "embeddings": false,
+        "ocr": false,
+        "email": false,
+        "accounts": false
+      }
+    },
+    "local_archive": {
+      "label": "Local archive",
+      "allowPaid": false,
+      "features": {
+        "search": true,
+        "meetings": true,
+        "agenda_items": true,
+        "tags": true,
+        "votes": true,
+        "campaign_finance": true,
+        "source_links": true,
+        "exports": true,
+        "council": true,
+        "elections": true,
+        "commissions": true,
+        "public_records": true,
+        "city_data": true,
+        "financial_disclosures": true,
+        "organizations": true,
+        "stories": true,
+        "voting_analytics": true,
+        "influence": true,
+        "financial_connections": true,
+        "data_quality": true,
+        "operator_tools": true,
+        "stored_ai_content": true,
+        "similar_discussions": false,
+        "semantic_search": false,
+        "subscriptions": false,
+        "accounts": false
+      },
+      "capabilities": {
+        "refresh_agenda": true,
+        "refresh_tags": true,
+        "refresh_finance": true,
+        "inference": false,
+        "embeddings": false,
+        "ocr": false,
+        "email": false,
+        "accounts": false
+      }
+    },
+    "local_ai": {
+      "label": "Local AI options",
+      "allowPaid": false,
+      "features": {
+        "search": true,
+        "meetings": true,
+        "agenda_items": true,
+        "tags": true,
+        "votes": true,
+        "campaign_finance": true,
+        "source_links": true,
+        "exports": true,
+        "council": true,
+        "elections": true,
+        "commissions": true,
+        "public_records": true,
+        "city_data": true,
+        "financial_disclosures": true,
+        "organizations": true,
+        "stories": true,
+        "voting_analytics": true,
+        "influence": true,
+        "financial_connections": true,
+        "data_quality": true,
+        "operator_tools": true,
+        "stored_ai_content": true,
+        "similar_discussions": false,
+        "semantic_search": false,
+        "subscriptions": false,
+        "accounts": false
+      },
+      "capabilities": {
+        "refresh_agenda": true,
+        "refresh_tags": true,
+        "refresh_finance": true,
+        "inference": false,
+        "embeddings": false,
+        "ocr": false,
+        "email": false,
+        "accounts": false
+      },
+      "prerequisites": [
+        "Implement and verify a local provider adapter before inference can be enabled.",
+        "Restore the local index and use an embedding model compatible with its dimensions and existing vectors; changing the model requires rebuilding the index.",
+        "Local archive capabilities remain disabled until the adapter, index and explicit capability guards are implemented."
+      ]
+    },
+    "cloud_ai": {
+      "label": "Cloud AI options",
+      "allowPaid": true,
+      "features": {
+        "search": true,
+        "meetings": true,
+        "agenda_items": true,
+        "tags": true,
+        "votes": true,
+        "campaign_finance": true,
+        "source_links": true,
+        "exports": true,
+        "council": false,
+        "elections": false,
+        "commissions": false,
+        "public_records": false,
+        "city_data": false,
+        "financial_disclosures": false,
+        "organizations": false,
+        "stories": false,
+        "voting_analytics": false,
+        "influence": false,
+        "financial_connections": false,
+        "data_quality": false,
+        "operator_tools": false,
+        "stored_ai_content": true,
+        "similar_discussions": false,
+        "semantic_search": false,
+        "subscriptions": false,
+        "accounts": false
+      },
+      "capabilities": {
+        "refresh_agenda": true,
+        "refresh_tags": true,
+        "refresh_finance": true,
+        "inference": false,
+        "embeddings": false,
+        "ocr": false,
+        "email": false,
+        "accounts": false
+      },
+      "prerequisites": [
+        "Configure and verify a cloud provider adapter, provider credentials and a positive enforced model budget.",
+        "Explicitly enable the requested capability and satisfy existing provider/budget guards; a profile or JSON switch alone does not activate services.",
+        "A compact database and source-link storage policy are required independently of inference."
+      ]
+    }
+  },
+  "storage": {
+    "basic_public": {
+      "mode": "compact_public",
+      "writerReady": true,
+      "maxDatabaseBytes": 500000000,
+      "blockedReason": null
+    },
+    "local_archive": {
+      "mode": "full_archive",
+      "writerReady": true,
+      "maxDatabaseBytes": null,
+      "blockedReason": null
+    },
+    "local_ai": {
+      "mode": "full_archive",
+      "writerReady": true,
+      "maxDatabaseBytes": null,
+      "blockedReason": null
+    },
+    "cloud_ai": {
+      "mode": "compact_public",
+      "writerReady": true,
+      "maxDatabaseBytes": 500000000,
+      "blockedReason": null
+    }
+  }
+}

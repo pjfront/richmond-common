@@ -5,7 +5,7 @@ import type { ResidentSnapshot } from '@/lib/queries/civic-stories'
 
 const mocks = vi.hoisted(() => ({ getResidentSnapshot: vi.fn() }))
 vi.mock('@/lib/queries/civic-stories', () => mocks)
-import HomePage from '@/app/page'
+import HomePage from '@/components/LegacyResidentHome'
 
 const empty: ResidentSnapshot = { status: 'available', fetchedAt: '2026-09-06', upcoming: [], recent: [], entries: {}, itemLimitReached: false }
 

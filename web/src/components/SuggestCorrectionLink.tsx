@@ -3,7 +3,8 @@
 import { useFeedbackModal } from './FeedbackModal'
 
 export default function SuggestCorrectionLink() {
-  const { openModal } = useFeedbackModal()
+  const { openModal, available } = useFeedbackModal()
+  if (!available) return null
   return (
     <button
       onClick={openModal}

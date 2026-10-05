@@ -944,6 +944,8 @@ class LLMClient:
         # The Moonshot vision estimator receives the full prompt. Honor the
         # hard kill switch before constructing a client or transmitting that
         # provider-bound preflight request.
+        from feature_policy import assert_worker_provider_allowed
+        assert_worker_provider_allowed("inference")
         llm_budget_lock._assert_api_unlocked()
 
         # Resolve the selected provider's own credential before touching the

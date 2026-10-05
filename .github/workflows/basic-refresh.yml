@@ -1,0 +1,72 @@
+name: Basic Core Refresh
+
+# Operator notification policy: deferred-free-audit. Aggregate state and the
+# run summary expose failures; external notifications remain disabled.
+# Unready by default: no apply job, credentials or source requests until the
+# separate Free target has been validated and BASIC_READY explicitly enabled.
+on:
+  schedule:
+    - cron: '17 10 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: basic-core-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    if: github.ref == 'refs/heads/main' && vars.RICHMOND_BASIC_READY == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: write # Aggregate audit state on a separate automation branch.
+    env:
+      RICHMOND_BASIC_READY: ${{ vars.RICHMOND_BASIC_READY }}
+      RICHMOND_BASIC_PROJECT_REF: ${{ vars.RICHMOND_BASIC_PROJECT_REF }}
+      RICHMOND_BASIC_POOLER_HOST: ${{ vars.RICHMOND_BASIC_POOLER_HOST }}
+      RICHMOND_FEATURE_PROFILE: basic_public
+      RICHMOND_API_BUDGET_LOCK: 'true'
+      RICHMOND_API_MONTHLY_CAP_USD: '0'
+      RICHMOND_EVENT_BUDGET_USD: '0'
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Install reviewed dependencies
+        run: pip install -r requirements.txt
+      - name: Refresh independent bounded source projections
+        id: sources
+        env:
+          # This is a NEW dedicated secret, never the legacy DATABASE_URL.
+          RICHMOND_BASIC_DATABASE_URL: ${{ secrets.RICHMOND_BASIC_DATABASE_URL }}
+        run: |
+          mkdir -p refresh-results
+          set +e
+          python src/basic_refresh.py --apply --target public --profile basic_public --steps agenda tags --agenda-limit 20 > refresh-results/agenda.json
+          agenda_code=$?
+          # Explicit reviewed horizon remains fixed; agendas continue in later
+          # cycles even when finance requires review or this check fails.
+          python src/basic_refresh.py --apply --target public --profile basic_public --steps finance --year 2026 --through 2026-11-03 > refresh-results/finance.json
+          finance_code=$?
+          echo "agenda_code=$agenda_code" >> "$GITHUB_OUTPUT"
+          echo "finance_code=$finance_code" >> "$GITHUB_OUTPUT"
+      - name: Preserve aggregate audit state and last success
+        id: audit
+        if: always() && steps.sources.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/basic-core/record_refresh_state.py refresh-results
+      - name: Summarize source checks without external notifications
+        if: always()
+        env:
+          BASIC_REFRESH_AUDIT_OUTCOME: ${{ steps.audit.outcome }}
+        run: python scripts/basic-core/record_refresh_state.py --summary refresh-results
+      - name: Fail visibly when either source check needs attention
+        if: always() && (steps.sources.outputs.agenda_code != '0' || steps.sources.outputs.finance_code != '0')
+        run: exit 1

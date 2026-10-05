@@ -1,105 +1,43 @@
-import type { Metadata } from "next"
-import { Inter } from "next/font/google"
-import { NuqsAdapter } from "nuqs/adapters/next/app"
-import Nav, { type NextElectionLink } from "@/components/Nav"
-import Footer from "@/components/Footer"
-import FloatingFeedbackButton from "@/components/FloatingFeedbackButton"
-import { OperatorModeProvider } from "@/components/OperatorModeProvider"
-import { FeedbackModalProvider } from "@/components/FeedbackModal"
-import PrivacyAnalytics from "@/components/PrivacyAnalytics"
-import { CivicLanguageProvider } from "@/components/civic/CivicLanguage"
-import { getUpcomingElection, electionToSlug } from "@/lib/queries"
-import { S29_PUBLIC_TREATMENT_ENABLED } from "@/lib/s29-release-phase"
-import { serializeJsonLd, siteStructuredData } from "@/lib/structured-data"
-import "./globals.css"
+import type { Metadata } from 'next'
+import { Inter } from 'next/font/google'
+import { NuqsAdapter } from 'nuqs/adapters/next/app'
+import StageHeader from '@/components/StageHeader'
+import StageFooter from '@/components/StageFooter'
+import { CivicLanguageProvider } from '@/components/civic/CivicLanguage'
+import Nav from '@/components/Nav'
+import { OperatorModeProvider } from '@/components/OperatorModeProvider'
+import { isLocalArchive } from '@/lib/feature-policy'
+import './globals.css'
 
-// ISR default: 24h. Civic data changes weekly at most; hourly was 24x overkill
-// and the dominant Vercel function-invocation + Supabase egress cost driver.
-// Pipeline writes call /api/revalidate to bust caches on real data changes.
 export const revalidate = 86400
 
-const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-inter",
-})
-
-const siteDescription =
-  "Your city government, in one place and in plain language. Follow council votes, campaign contributions, and public meetings."
+const inter = Inter({ subsets: ['latin'], variable: '--font-inter' })
 
 export const metadata: Metadata = {
-  title: {
-    default: "Richmond Commons",
-    template: "%s | Richmond Commons",
-  },
-  description: siteDescription,
-  metadataBase: new URL("https://richmondcommons.org"),
-  openGraph: {
-    title: "Richmond Commons",
-    description: siteDescription,
-    url: "https://richmondcommons.org",
-    siteName: "Richmond Commons",
-    locale: "en_US",
-    type: "website",
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: "Richmond Commons",
-    description: siteDescription,
-  },
-  robots: {
-    index: true,
-    follow: true,
-  },
+  title: isLocalArchive()
+    ? { default: 'Richmond Commons · Local archive', template: '%s | Richmond Commons local archive' }
+    : { default: 'Richmond Commons · Private preview', template: '%s | Richmond Commons preview' },
+  description: 'A private preview of search across Richmond agenda items, recorded votes, and reported campaign money.',
+  robots: { index: false, follow: false, noarchive: true, nosnippet: true },
 }
 
-/** Resolve the upcoming-election link for the nav. Returns null when no
- *  election is on the calendar, in which case the Elections menu collapses
- *  to its static voter-info routes only (Find My District, etc.). */
-async function resolveNextElectionLink(): Promise<NextElectionLink | null> {
-  const election = await getUpcomingElection()
-  if (!election) return null
-  const date = new Date(election.election_date + 'T00:00:00')
-  const year = date.getFullYear()
-  const typeLabel = election.election_type
-    .charAt(0).toUpperCase() + election.election_type.slice(1)
-  const formattedDate = date.toLocaleDateString('en-US', {
-    weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
-  })
-  return {
-    slug: electionToSlug(election),
-    label: `${year} ${typeLabel}`,
-    description: `${formattedDate}: candidates and fundraising`,
-  }
-}
-
-export default async function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode
-}>) {
-  const nextElection = await resolveNextElectionLink()
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  const local = isLocalArchive()
+  const content = <>
+    {local ? <Nav /> : <StageHeader />}
+    {local && <div className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-center text-sm text-slate-700">
+      Local archive · Saved records · Paid AI and email off · <a href="/library" className="font-medium underline">Browse all tools</a>
+    </div>}
+    <main id="main-content" tabIndex={-1} className="flex-1">{children}</main>
+    <StageFooter local={local} />
+  </>
   return (
     <html lang="en">
-      <body className={`${inter.variable} antialiased flex flex-col min-h-screen`}>
-        {S29_PUBLIC_TREATMENT_ENABLED && (
-          <script
-            id="site-structured-data"
-            type="application/ld+json"
-            dangerouslySetInnerHTML={{ __html: serializeJsonLd(siteStructuredData()) }}
-          />
-        )}
+      <body className={`${inter.variable} flex min-h-screen flex-col antialiased`}>
         <NuqsAdapter>
-          <OperatorModeProvider>
-            <FeedbackModalProvider>
-              <Nav nextElection={nextElection} />
-              <CivicLanguageProvider>
-                <main id="main-content" tabIndex={-1} className="flex-1">{children}</main>
-              </CivicLanguageProvider>
-              <Footer />
-              <FloatingFeedbackButton />
-            </FeedbackModalProvider>
-            <PrivacyAnalytics />
-          </OperatorModeProvider>
+          <CivicLanguageProvider>
+            {local ? <OperatorModeProvider>{content}</OperatorModeProvider> : content}
+          </CivicLanguageProvider>
         </NuqsAdapter>
       </body>
     </html>

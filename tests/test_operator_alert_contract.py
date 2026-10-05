@@ -10,7 +10,8 @@ import yaml
 ROOT = Path(__file__).parent.parent
 WORKFLOWS = ROOT / ".github" / "workflows"
 
-# Manual/event-driven workflows need an explicit failure-notification policy.
+# Manual/event-driven workflows and scheduled free-audit exceptions need an
+# explicit failure-notification policy.
 # Supabase Preview is wrapped only because typed repository dispatch executes
 # default-branch code and the wrapper separately admits trusted PR-close cleanup.
 OPERATOR_CRITICAL_EVENT_WORKFLOW_POLICY = {
@@ -18,6 +19,7 @@ OPERATOR_CRITICAL_EVENT_WORKFLOW_POLICY = {
     "S29 analytics checkpoint": "wrapped",
     "Supabase Preview": "wrapped",
     "Weekly subscriber digest": "wrapped",
+    "Basic Core Refresh": "deferred-free-audit",
 }
 
 # Every run step that sends directly to OPERATOR_EMAIL through Resend must be
@@ -246,6 +248,11 @@ def test_failure_wrapper_exactly_covers_classified_operator_workflows():
         for name, policy in OPERATOR_CRITICAL_EVENT_WORKFLOW_POLICY.items()
         if policy == "wrapped"
     }
+    deferred_free_audit = {
+        name
+        for name, policy in OPERATOR_CRITICAL_EVENT_WORKFLOW_POLICY.items()
+        if policy == "deferred-free-audit"
+    }
     wrapped = _wrapped_workflow_names()
 
     assert scheduled
@@ -254,12 +261,38 @@ def test_failure_wrapper_exactly_covers_classified_operator_workflows():
     assert set(OPERATOR_CRITICAL_EVENT_WORKFLOW_POLICY.values()) == {
         "self-monitoring",
         "wrapped",
+        "deferred-free-audit",
     }
     assert len(wrapped) == len(set(wrapped)), "failure wrapper contains duplicates"
-    assert set(wrapped) == scheduled | main_push | explicitly_wrapped
+    assert deferred_free_audit == {"Basic Core Refresh"}
+    assert deferred_free_audit <= scheduled
+    assert set(wrapped) == (scheduled - deferred_free_audit) | main_push | explicitly_wrapped
 
     assert OPERATOR_CRITICAL_EVENT_WORKFLOW_POLICY["Supabase Preview"] == "wrapped"
     assert _preview_wrapper_has_trusted_pr_close_scope()
+
+
+def test_basic_refresh_has_explicit_deferred_free_audit_without_email():
+    workflow = _workflow_data(WORKFLOWS / "basic-refresh.yml")
+    text = _workflow_text("basic-refresh.yml")
+    assert "Operator notification policy: deferred-free-audit" in text
+    assert _job_if("basic-refresh.yml", "refresh") == (
+        "github.ref == 'refs/heads/main' && vars.RICHMOND_BASIC_READY == 'true'"
+    )
+    assert "Basic Core Refresh" not in _wrapped_workflow_names()
+    assert "RESEND_API_KEY" not in text and "OPERATOR_EMAIL" not in text
+    steps = workflow["jobs"]["refresh"]["steps"]
+    audit = next(step for step in steps if step.get("id") == "audit")
+    assert audit["if"] == "always() && steps.sources.outcome == 'success'"
+    assert audit["run"] == "python scripts/basic-core/record_refresh_state.py refresh-results"
+    summary = next(step for step in steps if step.get("name") == "Summarize source checks without external notifications")
+    assert summary["if"] == "always()"
+    assert summary["run"] == "python scripts/basic-core/record_refresh_state.py --summary refresh-results"
+    assert summary["env"]["BASIC_REFRESH_AUDIT_OUTCOME"] == "${{ steps.audit.outcome }}"
+    failed = next(step for step in steps if step.get("name") == "Fail visibly when either source check needs attention")
+    assert failed["run"] == "exit 1"
+    assert "agenda_code != '0'" in failed["if"]
+    assert "finance_code != '0'" in failed["if"]
 
 
 def test_failure_wrapper_stays_main_scoped_without_pr_noise():

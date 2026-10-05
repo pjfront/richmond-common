@@ -10,6 +10,7 @@ import {
 } from './_shared'
 import { isUuid } from '../uuid'
 import { cache } from 'react'
+import { holdStageVoteSourceRecords, stageVoteSourceReviewForItem } from '../stage-vote-source-review'
 import type {
   Meeting,
   AgendaItem,
@@ -107,10 +108,11 @@ export const getMeeting = cache(async function getMeeting(
     motionsByItem.set(m.agenda_item_id, arr)
   }
 
-  const agendaItems: AgendaItemWithMotions[] = (items as AgendaItem[]).map((item) => ({
+  const agendaItems: AgendaItemWithMotions[] = (items as AgendaItem[]).map((item) => holdStageVoteSourceRecords({
     ...item,
     motions: motionsByItem.get(item.id) ?? [],
   }))
+  const voteReview = agendaItems.find(item => item.voteSourceReview)?.voteSourceReview
 
   const attendanceWithOfficials = (attendance ?? []).map((a) => {
     const official = (a as Record<string, unknown>).officials as { name: string; role: string } | null
@@ -131,6 +133,7 @@ export const getMeeting = cache(async function getMeeting(
 
   return {
     ...(meeting as Meeting),
+    ...(voteReview ? { minutes_url: voteReview.sourceUrl } : {}),
     body_name: meetingBody?.name ?? null,
     agenda_items: agendaItems,
     attendance: attendanceWithOfficials,
@@ -267,6 +270,7 @@ export async function getAdjacentMeetings(
       .from('meetings')
       .select('id, meeting_date, meeting_type')
       .eq('city_fips', cityFips)
+      .is('source_cancelled_at', null)
 
     if (bodyId) {
       query = query.eq('body_id', bodyId)
@@ -406,9 +410,10 @@ export const getAgendaItemDetail = cache(async function getAgendaItemDetail(
   }
   const sibling = (position: number): AgendaItemSibling | null => {
     const row = siblings[position]
-    return row ? { item_number: row.item_number, summary_headline: row.summary_headline, title: row.title } : null
+    return row ? { item_number: row.item_number, summary_headline: stageVoteSourceReviewForItem(row) ? null : row.summary_headline, title: row.title } : null
   }
-  return {
+  const voteReview = stageVoteSourceReviewForItem(item)
+  return holdStageVoteSourceRecords({
     ...item,
     motions: motionsWithVotes,
     // Keep a nullable legacy estimate as raw data; never promote it to a count
@@ -418,7 +423,7 @@ export const getAgendaItemDetail = cache(async function getAgendaItemDetail(
     meeting_date: meeting.meeting_date,
     meeting_type: meeting.meeting_type,
     meeting_agenda_url: meeting.agenda_url,
-    meeting_minutes_url: meeting.minutes_url,
+    meeting_minutes_url: voteReview?.sourceUrl ?? meeting.minutes_url,
     comments,
     written_comment_count: writtenCount,
     spoken_comment_count: spokenCount,
@@ -431,7 +436,7 @@ export const getAgendaItemDetail = cache(async function getAgendaItemDetail(
     continued_to_item: null,
     prev_item: sibling(index - 1),
     next_item: sibling(index + 1),
-  }
+  })
 })
 
 
@@ -446,6 +451,7 @@ export async function getAgendaItemSlugs(
     .select('meeting_id, item_number, meetings!inner(meeting_date, city_fips)')
     .is('agenda_source_retired_at', null)
     .eq('meetings.city_fips', cityFips)
+    .is('meetings.source_cancelled_at', null)
 
   if (!data) return []
 

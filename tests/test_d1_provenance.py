@@ -131,6 +131,20 @@ def test_queries_ts_tables_match_manifest():
     )
 
 
+def test_core_source_status_records_nullable_metadata_and_target_schema():
+    """This public state record is not a grandfathered fact or a hosted migration."""
+    entry = _load_manifest()["tables"]["core_projection_status"]
+    assert entry["status"] == "exempt"
+    assert set(entry["targets"]) == {"compact_core", "local_archive"}
+    assert entry["schema"] == "scripts/basic-core/public-core.sql"
+    assert "intentionally nullable" in entry["reason"]
+    schema = (_ROOT / entry["schema"]).read_text(encoding="utf-8")
+    table = re.search(r"CREATE TABLE public\.core_projection_status\s*\((.*?)\);", schema, re.DOTALL)
+    assert table is not None
+    assert "checked_at timestamptz" in table.group(1)
+    assert "checked_at timestamptz NOT NULL" not in table.group(1)
+
+
 def test_compliant_tables_actually_compliant():
     """Layer 2: tables marked compliant have all four columns NOT NULL.
 

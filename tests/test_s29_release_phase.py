@@ -64,9 +64,10 @@ def test_source_flag_matches_the_authorized_resident_release() -> None:
     assert "not proof of production deployment" in phase["note"]
 
 
-def test_every_discovery_surface_uses_the_source_gate() -> None:
+def test_legacy_discovery_surfaces_keep_the_source_gate() -> None:
+    # The October private-search stage replaced the root layout. The remaining
+    # legacy pages still retain the authorized resident-release source gate.
     surfaces = (
-        "web/src/app/layout.tsx",
         "web/src/app/council/[slug]/page.tsx",
         "web/src/app/elections/[slug]/page.tsx",
         "web/src/app/meetings/[id]/page.tsx",
@@ -79,3 +80,16 @@ def test_every_discovery_surface_uses_the_source_gate() -> None:
     sitemap = (ROOT / "web/src/app/sitemap.ts").read_text(encoding="utf-8")
     assert "? buildTreatmentSitemap(asOf)" in sitemap
     assert ": buildBaselineSitemap()" in sitemap
+
+
+def test_private_search_layout_does_not_publish_legacy_discovery_markup() -> None:
+    source = (ROOT / "web/src/app/layout.tsx").read_text(encoding="utf-8")
+    robots = re.search(r"robots:\s*\{([^}]+)\}", source)
+    assert robots is not None
+    assert re.search(r"\bindex:\s*false\b", robots.group(1))
+    assert re.search(r"\bfollow:\s*false\b", robots.group(1))
+    assert re.search(r"\bnoarchive:\s*true\b", robots.group(1))
+    assert re.search(r"\bnosnippet:\s*true\b", robots.group(1))
+    assert "siteStructuredData" not in source
+    assert "site-structured-data" not in source
+    assert "S29_PUBLIC_TREATMENT_ENABLED" not in source
